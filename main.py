@@ -54,7 +54,7 @@ def main():
         function_results = []
         if response.function_calls:
             for call in response.function_calls:
-                function_call_result = call_function(call, args.workspace, args.verbose_functions)
+                function_call_result = call_function(call, workspace, args.verbose_functions)
                 if not function_call_result.parts:
                     raise Exception("function_call_result has no parts")
                 if not function_call_result.parts[0].function_response:
