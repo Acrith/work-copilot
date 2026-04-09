@@ -8,11 +8,13 @@ from google.genai import types
 #LocalFiles
 from prompts import system_prompt
 from functions.call_function import available_functions, call_function
+from permissions import PermissionMode, PermissionContext, load_rules
 
 MAX_ITERATIONS = 20
 
 def main():
     load_dotenv()
+
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("No API key found!")
@@ -22,11 +24,20 @@ def main():
     parser.add_argument("--workspace", default=".", help="Workspace directory the agent can use")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--verbose-functions", action="store_true", help="Show function calls and args")
+    parser.add_argument("--permission-mode", choices=[m.value for m in PermissionMode], default=PermissionMode.DEFAULT.value, help="Permission mode for tool execution")
     args = parser.parse_args()
 
+    # Resolve Workspace
     workspace = os.path.abspath(args.workspace)
     if not os.path.isdir(workspace):
         raise ValueError(f"Workspace is not a directory: {args.workspace}")
+
+    # Resolve Permission Context
+    permission_context = PermissionContext(
+        mode=PermissionMode(args.permission_mode),
+        workspace=workspace,
+        rules=load_rules(workspace),
+    )
 
     client = genai.Client(api_key=api_key)
     messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
@@ -59,8 +70,14 @@ def main():
                 print("TOOL CALLS")
                 print("─" * 40)
                 printed_tool_header = True
+
             for call in response.function_calls:
-                function_call_result = call_function(call, workspace, args.verbose_functions)
+                function_call_result = call_function(
+                    call,
+                    workspace,
+                    permission_context,
+                    args.verbose_functions,
+                )
                 if not function_call_result.parts:
                     raise Exception("function_call_result has no parts")
                 if not function_call_result.parts[0].function_response:
@@ -69,12 +86,7 @@ def main():
                     raise Exception("function_call_result has no response")
                 function_results.append(function_call_result.parts[0])
                 if args.verbose is True:
-                    # Extract the function name from the call
-                    function_name = call.name
-                    if function_name == "search_in_files" and "result" in function_call_result.parts[0].function_response.response:
-                        print(function_call_result.parts[0].function_response.response["result"])
-                    else:
-                        print(function_call_result.parts[0].function_response)
+                    print(function_call_result.parts[0].function_response)
         # Otherwise just print response
         else:
             print("\n" + "─" * 40)

@@ -1,9 +1,12 @@
 from google.genai import types
+
 from functions.get_files_info import schema_get_files_info, get_files_info
 from functions.get_file_content import schema_get_file_content, get_file_content
 from functions.write_file import schema_write_file, write_file
 from functions.run_python_file import schema_run_python_file, run_python_file
 from functions.search_in_files import schema_search_in_files, search_in_files
+
+from permissions import Decision, evaluate_request, extract_target_path
 
 available_functions = types.Tool(
     function_declarations=[
@@ -15,7 +18,27 @@ available_functions = types.Tool(
     ],
 )
 
-def call_function(function_call, working_directory, verbose=False):
+# Approval engine
+def approval_prompt(function_name: str, args: dict) -> str:
+    print("\nPermission required")
+    print(f"Tool: {function_name}")
+    print(f"Args: {args}")
+    print("[y] allow once   [n] deny   [s] allow tool for session   [p] allow path for session")
+    return input("> ").strip().lower()
+
+def make_tool_response(name: str, payload: dict):
+    return types.Content(
+        role="tool",
+        parts=[
+            types.Part.from_function_response(
+                name=name,
+                response=payload,
+            )
+        ],
+    )
+#---
+
+def call_function(function_call, working_directory, permission_context, verbose=False):
     if verbose:
         print(f"[tool] {function_call.name}({function_call.args})")
     else:
@@ -41,20 +64,42 @@ def call_function(function_call, working_directory, verbose=False):
                 )
             ],
         )
+    #---
     
     # Arg handling and function calling
     args = dict(function_call.args) if function_call.args else {}
-    args["working_directory"] = working_directory
+    decision = evaluate_request(permission_context, function_name, args)
 
+    if decision == Decision.DENY:
+        return make_tool_response(
+            function_name,
+            {"error": f"Permission denied for {function_name} in mode={permission_context.mode.value}"},
+        )
+
+    if decision == Decision.ASK:
+        answer = approval_prompt(function_name, args)
+        if answer == "n":
+            return make_tool_response(
+                function_name,
+                {"error": f"User denied {function_name}"},
+            )
+        if answer == "s":
+            permission_context.session_allow_tools.add(function_name)
+        elif answer == "p":
+            target_path = extract_target_path(function_name, args)
+            if target_path:
+                permission_context.session_allow_paths.add(target_path)
+        elif answer != "y":
+            return make_tool_response(
+                function_name,
+                {"error": f"Unrecognized approval response. Denied {function_name}"},
+            )
+
+    args["working_directory"] = working_directory
     function_result = function_map[function_name](**args)
 
-    return types.Content(
-        role="tool",
-        parts=[
-            types.Part.from_function_response(
-                name=function_name,
-                response={"result": function_result},
-            )
-        ],
+    return make_tool_response(
+        function_name,
+        {"result": function_result},
     )
 
