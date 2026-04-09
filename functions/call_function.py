@@ -25,7 +25,12 @@ available_functions = types.Tool(
 def approval_prompt(function_name: str, args: dict) -> str:
     print("\nPermission required")
     print(f"Tool: {function_name}")
-    print(f"Args: {args}")
+
+    if function_name == "write_file":
+        print(f"Path: {args.get('file_path', '<unknown>')}")
+    else:
+        print(f"Args: {args}")
+        
     print("[y] allow once   [n] deny   [s] allow tool for session   [p] allow path for session")
     return input("> ").strip().lower()
 
