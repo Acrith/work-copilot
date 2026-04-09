@@ -1,3 +1,6 @@
+import os
+import difflib
+
 from google.genai import types
 
 from functions.get_files_info import schema_get_files_info, get_files_info
@@ -38,6 +41,39 @@ def make_tool_response(name: str, payload: dict):
     )
 #---
 
+# Write diff engine
+def normalize_tool_path(working_directory: str, file_path: str) -> tuple[str, str]:
+    workspace = os.path.abspath(working_directory)
+    target = os.path.normpath(os.path.join(workspace, file_path))
+    return workspace, target
+
+def build_write_preview(working_directory: str, file_path: str, new_content: str) -> str:
+    workspace, target = normalize_tool_path(working_directory, file_path)
+
+    if os.path.commonpath([workspace, target]) != workspace:    
+        return f"Preview unavailable: \"{file_path}\" is outside the workspace."
+    
+    if not os.path.exists(target):
+        added = "\n".join(f"+ {line}" for line in new_content.splitlines())
+        return f"Preview unavailable: \"{file_path}\" is a directory."
+    
+    try:
+        with open(target, "r", encoding="utf-8") as f:
+            old_content = f.read()
+    except Exception as e:
+        return f"Could not read existing file for preview: {e}"
+    
+    diff = difflib.unified_diff(
+        old_content.splitlines(),
+        new_content.splitlines(),
+        fromfile=f"{file_path} (current)",
+        tofile=f"{file_path} (proposed)",
+        lineterm="",
+    )
+    preview = "\n".join(diff)
+    return preview if preview.strip() else f"No content changes for \"{file_path}\"."
+#---
+
 def call_function(function_call, working_directory, permission_context, verbose=False):
     if verbose:
         print(f"[tool] {function_call.name}({function_call.args})")
@@ -75,6 +111,17 @@ def call_function(function_call, working_directory, permission_context, verbose=
             function_name,
             {"error": f"Permission denied for {function_name} in mode={permission_context.mode.value}"},
         )
+
+    if decision == Decision.ASK and function_name == "write_file":
+        preview = build_write_preview(
+            working_directory,
+            args.get("file_path", ""),
+            args.get("content", ""),
+        )
+        print("\nProposed change preview")
+        print("─" * 40)
+        print(preview[:4000])
+        print("─" * 40)
 
     if decision == Decision.ASK:
         answer = approval_prompt(function_name, args)
