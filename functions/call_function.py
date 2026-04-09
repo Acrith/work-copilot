@@ -17,9 +17,9 @@ available_functions = types.Tool(
 
 def call_function(function_call, working_directory, verbose=False):
     if verbose:
-        print(f" - Calling function: {function_call.name}({function_call.args})")
+        print(f"[tool] {function_call.name}({function_call.args})")
     else:
-        print(f" - Calling function: {function_call.name}")
+        print(f"[tool] {function_call.name}")
 
     # Function map for tool calling and error handling
     function_map = {

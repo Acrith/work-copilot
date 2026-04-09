@@ -30,6 +30,7 @@ def main():
 
     client = genai.Client(api_key=api_key)
     messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
+    printed_tool_header = False
 
     for _ in range(MAX_ITERATIONS):
         response = client.models.generate_content(
@@ -53,6 +54,11 @@ def main():
         # Function calling parse if function call is required
         function_results = []
         if response.function_calls:
+            if not printed_tool_header:
+                print("\n" + "─" * 40)
+                print("TOOL CALLS")
+                print("─" * 40)
+                printed_tool_header = True
             for call in response.function_calls:
                 function_call_result = call_function(call, workspace, args.verbose_functions)
                 if not function_call_result.parts:
@@ -63,10 +69,19 @@ def main():
                     raise Exception("function_call_result has no response")
                 function_results.append(function_call_result.parts[0])
                 if args.verbose is True:
-                    print(function_call_result.parts[0].function_response)
+                    # Extract the function name from the call
+                    function_name = call.name
+                    if function_name == "search_in_files" and "result" in function_call_result.parts[0].function_response.response:
+                        print(function_call_result.parts[0].function_response.response["result"])
+                    else:
+                        print(function_call_result.parts[0].function_response)
         # Otherwise just print response
         else:
+            print("\n" + "─" * 40)
+            print("AGENT RESPONSE")
+            print("─" * 40)
             print(response.text)
+            print()
             return
         
         # Append function feedback to messages
