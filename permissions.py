@@ -104,7 +104,11 @@ def extract_target_path(tool_name: str, args: dict[str, Any]) -> str | None:
 def is_protected_path(path: str | None) -> bool:
     if not path:
         return False
-    normalized = path.replace("\\", "/").lstrip("./")
+
+    normalized = os.path.normpath(path).replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+
     parts = normalized.split("/")
     return any(part in PROTECTED_PATHS for part in parts if part)
 
