@@ -33,6 +33,7 @@ WRITE_TOOLS = {
 
 EXEC_TOOLS = {
     "run_python_file",
+    "run_tests",
 }
 
 PROTECTED_PATHS = {

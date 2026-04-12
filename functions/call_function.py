@@ -5,6 +5,7 @@ from functions.get_file_content import schema_get_file_content, get_file_content
 from functions.write_file import schema_write_file, write_file
 from functions.run_python_file import schema_run_python_file, run_python_file
 from functions.search_in_files import schema_search_in_files, search_in_files
+from functions.run_tests import schema_run_tests, run_tests
 
 from permissions import Decision, evaluate_request, extract_target_path
 from previews import build_write_preview
@@ -17,6 +18,7 @@ available_functions = types.Tool(
         schema_write_file,
         schema_run_python_file,
         schema_search_in_files,
+        schema_run_tests
     ],
 )
 
@@ -43,7 +45,8 @@ def call_function(function_call, working_directory, permission_context, verbose=
         "get_files_info": get_files_info,
         "write_file": write_file,
         "run_python_file": run_python_file,
-        "search_in_files": search_in_files
+        "search_in_files": search_in_files,
+        "run_tests": run_tests,
     }
 
     function_name = function_call.name or ""
