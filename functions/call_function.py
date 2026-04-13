@@ -104,7 +104,7 @@ def call_function(function_call, working_directory, permission_context, verbose=
                 args.get("content", ""),
             )
             print_write_preview(preview)
-        
+            
         elif function_name == "update":
             preview = build_update_preview(
                 working_directory,
@@ -114,12 +114,20 @@ def call_function(function_call, working_directory, permission_context, verbose=
             )
             print_write_preview(preview)
 
-        answer = approval_prompt(function_name, args)
+        answer, feedback = approval_prompt(function_name, args)
+
         if answer == "n":
             return make_tool_response(
                 function_name,
                 {"error": f"User denied {function_name}"},
             )
+
+        if answer == "f":
+            return make_tool_response(
+                function_name,
+                {"error": f"User denied {function_name}: {feedback}"},
+            )
+
         if answer == "s":
             permission_context.session_allow_tools.add(function_name)
         elif answer == "p":

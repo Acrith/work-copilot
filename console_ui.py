@@ -10,6 +10,7 @@ class TermStyle:
     YELLOW = "\033[33m"
     BLUE = "\033[34m"
     CYAN = "\033[36m"
+    MAGENTA = "\033[35m"
 
 
 def styled(text: str, *styles: str) -> str:
@@ -42,12 +43,15 @@ def cyan(text: str) -> str:
     return styled(text, TermStyle.CYAN)
 
 
+def magenta(text: str) -> str:
+    return styled(text, TermStyle.MAGENTA)
+
+
 def warning(text: str) -> str:
     return styled(text, TermStyle.YELLOW, TermStyle.BOLD)
 
 
-# Approval UI
-def approval_prompt(function_name: str, args: dict) -> str:
+def approval_prompt(function_name: str, args: dict) -> tuple[str, str | None]:
     print()
     print(warning("Permission required"))
     print(f"{bold('Tool:')} {cyan(function_name)}")
@@ -60,10 +64,18 @@ def approval_prompt(function_name: str, args: dict) -> str:
     print(
         f"{green('[y]')} allow once   "
         f"{red('[n]')} deny   "
+        f"{magenta('[f]')} deny with feedback   "
         f"{cyan('[s]')} allow tool for session   "
         f"{yellow('[p]')} allow path for session"
     )
-    return input(bold("> ")).strip().lower()
+
+    answer = input(bold("> ")).strip().lower()
+
+    if answer == "f":
+        feedback = input(bold("Reason: ")).strip()
+        return "f", feedback or "No reason provided."
+
+    return answer, None
 
 
 def print_write_preview(preview: str) -> None:

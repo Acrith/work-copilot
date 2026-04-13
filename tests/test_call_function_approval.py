@@ -31,7 +31,7 @@ def test_write_file_ask_yes_shows_preview_and_executes(
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
     mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value="y")
+    mocked_prompt = MagicMock(return_value=("y", None))
 
     monkeypatch.setattr(call_function_module, "write_file", mocked_write)
     monkeypatch.setattr(call_function_module, "build_write_preview", mocked_preview)
@@ -80,7 +80,7 @@ def test_write_file_ask_no_returns_error_and_does_not_execute(
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
     mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value="n")
+    mocked_prompt = MagicMock(return_value=("n", None))
 
     monkeypatch.setattr(call_function_module, "write_file", mocked_write)
     monkeypatch.setattr(call_function_module, "build_write_preview", mocked_preview)
@@ -117,7 +117,7 @@ def test_session_allow_tool_skips_second_prompt_for_write_file(
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
     mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value="s")
+    mocked_prompt = MagicMock(return_value=("s", None))
 
     monkeypatch.setattr(call_function_module, "write_file", mocked_write)
     monkeypatch.setattr(call_function_module, "build_write_preview", mocked_preview)
@@ -157,7 +157,7 @@ def test_session_allow_path_applies_only_to_same_exec_path(
     monkeypatch, mock_working_directory, permission_context
 ):
     mocked_run = MagicMock(return_value={"ok": True})
-    mocked_prompt = MagicMock(side_effect=["p", "y"])
+    mocked_prompt = MagicMock(side_effect=[("p", None), ("y", None)])
 
     monkeypatch.setattr(call_function_module, "run_python_file", mocked_run)
     monkeypatch.setattr(call_function_module, "approval_prompt", mocked_prompt)
@@ -206,3 +206,79 @@ def test_session_allow_path_applies_only_to_same_exec_path(
         working_directory=mock_working_directory,
     )
     assert mocked_run.call_count == 3
+
+def test_update_denied_without_feedback(monkeypatch, tmp_path):
+    file_path = tmp_path / "sample.txt"
+    file_path.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+
+    permission_context = PermissionContext(
+        mode=PermissionMode.DEFAULT,
+        workspace=str(tmp_path),
+        rules=PermissionRuleSet(),
+    )
+
+    monkeypatch.setattr(
+        call_function_module,
+        "approval_prompt",
+        lambda function_name, args: ("n", None),
+    )
+
+    function_call = create_function_call(
+        "update",
+        {
+            "file_path": "sample.txt",
+            "old_text": "beta",
+            "new_text": "delta",
+        },
+    )
+
+    response = call_function_module.call_function(
+        function_call,
+        str(tmp_path),
+        permission_context,
+    )
+
+    assert response.parts[0].function_response.name == "update"
+    assert response.parts[0].function_response.response["error"] == "User denied update"
+    assert file_path.read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"
+
+
+def test_update_denied_with_feedback(monkeypatch, tmp_path):
+    file_path = tmp_path / "sample.txt"
+    file_path.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+
+    permission_context = PermissionContext(
+        mode=PermissionMode.DEFAULT,
+        workspace=str(tmp_path),
+        rules=PermissionRuleSet(),
+    )
+
+    monkeypatch.setattr(
+        call_function_module,
+        "approval_prompt",
+        lambda function_name, args: (
+            "f",
+            "wrong file, create a new dedicated test file instead",
+        ),
+    )
+
+    function_call = create_function_call(
+        "update",
+        {
+            "file_path": "sample.txt",
+            "old_text": "beta",
+            "new_text": "delta",
+        },
+    )
+
+    response = call_function_module.call_function(
+        function_call,
+        str(tmp_path),
+        permission_context,
+    )
+
+    assert response.parts[0].function_response.name == "update"
+    assert response.parts[0].function_response.response["error"] == (
+        "User denied update: wrong file, create a new dedicated test file instead"
+    )
+    assert file_path.read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"

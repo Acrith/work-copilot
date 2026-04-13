@@ -142,7 +142,7 @@ def test_valid_update_asks_approval(monkeypatch, tmp_path):
     def fake_approval_prompt(function_name, args):
         nonlocal approval_called
         approval_called = True
-        return "y"
+        return "y", None
 
     def fake_print_write_preview(preview):
         nonlocal preview_called
