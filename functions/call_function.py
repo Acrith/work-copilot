@@ -34,10 +34,6 @@ def make_tool_response(name: str, payload: dict):
     )
 
 def call_function(function_call, working_directory, permission_context, verbose=False):
-    if verbose:
-        print(f"[tool] {function_call.name}({function_call.args})")
-    else:
-        print(f"[tool] {function_call.name}")
 
     # Function map for tool calling and error handling
     function_map = {

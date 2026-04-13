@@ -12,6 +12,57 @@ from permissions import PermissionMode, PermissionContext, load_rules
 
 MAX_ITERATIONS = 20
 
+def extract_text_parts(response) -> list[str]:
+    texts = []
+
+    if not response.candidates:
+        return texts
+
+    for candidate in response.candidates:
+        content = getattr(candidate, "content", None)
+        if not content:
+            continue
+
+        parts = getattr(content, "parts", None) or []
+        for part in parts:
+            text = getattr(part, "text", None)
+            if not text:
+                continue
+
+            stripped = text.strip()
+            if stripped:
+                texts.append(stripped)
+
+    return texts
+
+
+def is_meaningful_update(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+
+    # Avoid showing fake "updates" that are really just tool-like noise
+    if stripped.startswith("[tool]"):
+        return False
+
+    return True
+
+
+def format_tool_call(function_call, verbose: bool) -> str:
+    if verbose:
+        return f"• [tool] {function_call.name}({function_call.args})"
+    return f"• [tool] {function_call.name}"
+
+
+def print_update_line(text: str):
+    print(f"• {text}")
+
+
+def print_final_response(text: str):
+    print()
+    print(text)
+    print()
+
 def main():
     load_dotenv()
 
@@ -62,16 +113,17 @@ def main():
             print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
             print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
-        # Function calling parse if function call is required
+        text_parts = extract_text_parts(response)
         function_results = []
+
         if response.function_calls:
-            if not printed_tool_header:
-                print("\n" + "─" * 40)
-                print("TOOL CALLS")
-                print("─" * 40)
-                printed_tool_header = True
+            for text in text_parts:
+                if is_meaningful_update(text):
+                    print_update_line(text)
 
             for call in response.function_calls:
+                print(format_tool_call(call, args.verbose_functions))
+
                 function_call_result = call_function(
                     call,
                     workspace,
@@ -87,17 +139,15 @@ def main():
                 function_results.append(function_call_result.parts[0])
                 if args.verbose is True:
                     print(function_call_result.parts[0].function_response)
-        # Otherwise just print response
-        else:
-            print("\n" + "─" * 40)
-            print("AGENT RESPONSE")
-            print("─" * 40)
-            print(response.text)
-            print()
-            return
         
-        # Append function feedback to messages
-        messages.append(types.Content(role="user", parts=function_results))
+            # Append function feedback to messages
+            messages.append(types.Content(role="user", parts=function_results))
+            continue
+        
+        final_text = "\n".join(text_parts).strip()
+        if final_text:
+            print_final_response(final_text)
+            return
     
     print(f"Max iterations ({MAX_ITERATIONS}) reached.")
     sys.exit(1)
