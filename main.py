@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from console_ui import (
+    format_tool_call,
+    print_agent_update,
+    print_error,
+    print_final_response,
+    print_verbose_stats,
+)
 from functions.call_function import available_functions, call_function
 from permissions import PermissionContext, PermissionMode, load_rules
 from prompts import system_prompt
@@ -42,27 +49,10 @@ def is_meaningful_update(text: str) -> bool:
     if not stripped:
         return False
 
-    # Avoid showing fake "updates" that are really just tool-like noise
     if stripped.startswith("[tool]"):
         return False
 
     return True
-
-
-def format_tool_call(function_call, verbose: bool) -> str:
-    if verbose:
-        return f"• [tool] {function_call.name}({function_call.args})"
-    return f"• [tool] {function_call.name}"
-
-
-def print_update_line(text: str):
-    print(f"• {text}")
-
-
-def print_final_response(text: str):
-    print()
-    print(text)
-    print()
 
 
 def main():
@@ -74,10 +64,16 @@ def main():
 
     parser = argparse.ArgumentParser(description="Chatbot")
     parser.add_argument("user_prompt", type=str, help="User prompt")
-    parser.add_argument("--workspace", default=".", help="Workspace directory the agent can use")
+    parser.add_argument(
+        "--workspace",
+        default=".",
+        help="Workspace directory the agent can use",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument(
-        "--verbose-functions", action="store_true", help="Show function calls and args"
+        "--verbose-functions",
+        action="store_true",
+        help="Show function calls and args",
     )
     parser.add_argument(
         "--permission-mode",
@@ -87,12 +83,10 @@ def main():
     )
     args = parser.parse_args()
 
-    # Resolve Workspace
     workspace = os.path.abspath(args.workspace)
     if not os.path.isdir(workspace):
         raise ValueError(f"Workspace is not a directory: {args.workspace}")
 
-    # Resolve Permission Context
     permission_context = PermissionContext(
         mode=PermissionMode(args.permission_mode),
         workspace=workspace,
@@ -107,7 +101,8 @@ def main():
             model="gemini-2.5-flash",
             contents=messages,
             config=types.GenerateContentConfig(
-                tools=[available_functions], system_instruction=system_prompt
+                tools=[available_functions],
+                system_instruction=system_prompt,
             ),
         )
 
@@ -115,10 +110,8 @@ def main():
             for candidate in response.candidates:
                 messages.append(candidate.content)
 
-        if args.verbose is True:
-            print(f"User prompt: {args.user_prompt}")
-            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        if args.verbose:
+            print_verbose_stats(args.user_prompt, response)
 
         text_parts = extract_text_parts(response)
         function_results = []
@@ -126,7 +119,7 @@ def main():
         if response.function_calls:
             for text in text_parts:
                 if is_meaningful_update(text):
-                    print_update_line(text)
+                    print_agent_update(text)
 
             for call in response.function_calls:
                 print(format_tool_call(call, args.verbose_functions))
@@ -143,11 +136,12 @@ def main():
                     raise Exception("function_call_result has no function_response")
                 if not function_call_result.parts[0].function_response.response:
                     raise Exception("function_call_result has no response")
+
                 function_results.append(function_call_result.parts[0])
-                if args.verbose is True:
+
+                if args.verbose:
                     print(function_call_result.parts[0].function_response)
 
-            # Append function feedback to messages
             messages.append(types.Content(role="user", parts=function_results))
             continue
 
@@ -156,7 +150,7 @@ def main():
             print_final_response(final_text)
             return
 
-    print(f"Max iterations ({MAX_ITERATIONS}) reached.")
+    print_error(f"Max iterations ({MAX_ITERATIONS}) reached.")
     sys.exit(1)
 
 
