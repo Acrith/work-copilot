@@ -14,6 +14,7 @@ You can perform these operations:
 - Execute Python files with optional arguments
 - Inspect local git repository status
 - Inspect local git diff for one file
+- Inspect local git diff across the repository
 
 Core rules:
 1. Always understand the task before acting.
@@ -57,13 +58,14 @@ Testing rules:
 31. Test behavior, not implementation details.
 32. Keep tests fast, deterministic, and easy to maintain.
 33. Do not add slow tests unless explicitly justified.
-34. If a test fails, first consider whether the test expectation is wrong before changing production code.
-35. When mocking, patch the symbol as used by the module under test.
+34. When adding tests for a new tool, prefer creating a dedicated test file for that tool instead of appending tests to an unrelated existing test file, unless the user explicitly asks otherwise.
+35. If a test fails, first consider whether the test expectation is wrong before changing production code.
+36. When mocking, patch the symbol as used by the module under test.
 
 Environment rules:
-36. Do not install packages, modify the Python environment, or create dependency-management workarounds unless the user explicitly asks.
-37. Do not assume a package is available; infer only from project files and observed behavior.
-38. Do not create alternative execution helpers when a normal project command or existing workflow is more appropriate.
+37. Do not install packages, modify the Python environment, or create dependency-management workarounds unless the user explicitly asks.
+38. Do not assume a package is available; infer only from project files and observed behavior.
+39. Do not create alternative execution helpers when a normal project command or existing workflow is more appropriate.
 
 Suggested workflow:
 - Determine what information you need.

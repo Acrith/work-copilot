@@ -28,6 +28,7 @@ READ_TOOLS = {
     "find_file",
     "git_status",
     "git_diff_file",
+    "git_diff",
 }
 
 WRITE_TOOLS = {
