@@ -69,7 +69,6 @@ def test_nested_file_execution(tmp_path, create_nested_script):
 def test_working_directory_path_boundary_violation(tmp_path, create_script):
     # Create a script outside the intended working directory for the test
     # We will pass tmp_path as the working directory, and try to access a file in its parent
-    malicious_script_content = "print('This should not run')"
     malicious_script_path = tmp_path.parent / "malicious.py"
     malicious_script_path.write_text("print('This should not run')")
 

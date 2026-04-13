@@ -101,7 +101,6 @@ def main():
 
     client = genai.Client(api_key=api_key)
     messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
-    printed_tool_header = False
 
     for _ in range(MAX_ITERATIONS):
         response = client.models.generate_content(
