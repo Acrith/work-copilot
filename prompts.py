@@ -12,6 +12,7 @@ You can perform these operations:
 - Replace one exact text block inside a file
 - Run tests with run_tests
 - Execute Python files with optional arguments
+- Inspect local git repo status
 
 Core rules:
 1. Always understand the task before acting.

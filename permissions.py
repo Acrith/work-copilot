@@ -26,6 +26,7 @@ READ_TOOLS = {
     "get_file_content",
     "search_in_files",
     "find_file",
+    "git_status",
 }
 
 WRITE_TOOLS = {
