@@ -7,8 +7,9 @@ from functions.run_python_file import run_python_file, schema_run_python_file
 from functions.run_tests import run_tests, schema_run_tests
 from functions.search_in_files import schema_search_in_files, search_in_files
 from functions.write_file import schema_write_file, write_file
+from functions.update_file import schema_update_file, update_file, plan_update
 from permissions import Decision, evaluate_request, extract_target_path
-from previews import build_write_preview
+from previews import build_write_preview, build_update_preview
 
 available_functions = types.Tool(
     function_declarations=[
@@ -18,6 +19,7 @@ available_functions = types.Tool(
         schema_run_python_file,
         schema_search_in_files,
         schema_run_tests,
+        schema_update_file,
     ],
 )
 
@@ -44,6 +46,7 @@ def call_function(function_call, working_directory, permission_context, verbose=
         "run_python_file": run_python_file,
         "search_in_files": search_in_files,
         "run_tests": run_tests,
+        "update": update_file,
     }
 
     function_name = function_call.name or ""
@@ -63,6 +66,16 @@ def call_function(function_call, working_directory, permission_context, verbose=
     args = dict(function_call.args) if function_call.args else {}
     decision = evaluate_request(permission_context, function_name, args)
 
+    if function_name == "update":
+        update_plan = plan_update(
+            working_directory,
+            args.get("file_path", ""),
+            args.get("old_text", ""),
+            args.get("new_text", ""),
+        )
+        if update_plan["status"] != "ready":
+            decision = Decision.ALLOW
+
     if decision == Decision.DENY:
         return make_tool_response(
             function_name,
@@ -71,15 +84,24 @@ def call_function(function_call, working_directory, permission_context, verbose=
             },
         )
 
-    if decision == Decision.ASK and function_name == "write_file":
-        preview = build_write_preview(
-            working_directory,
-            args.get("file_path", ""),
-            args.get("content", ""),
-        )
-        print_write_preview(preview)
-
     if decision == Decision.ASK:
+        if function_name == "write_file":
+            preview = build_write_preview(
+                working_directory,
+                args.get("file_path", ""),
+                args.get("content", ""),
+            )
+            print_write_preview(preview)
+        
+        elif function_name == "update":
+            preview = build_update_preview(
+                working_directory,
+                args.get("file_path", ""),
+                args.get("old_text", ""),
+                args.get("new_text", ""),
+            )
+            print_write_preview(preview)
+
         answer = approval_prompt(function_name, args)
         if answer == "n":
             return make_tool_response(

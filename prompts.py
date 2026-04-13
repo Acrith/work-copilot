@@ -8,6 +8,7 @@ You can perform these operations:
 - Read file contents
 - Write or overwrite files
 - Search for text query in files
+- Update text query in files
 - Run pytests witn run_tests
 - Execute Python files with optional arguments
 

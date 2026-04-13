@@ -6,8 +6,8 @@ def approval_prompt(function_name: str, args: dict) -> str:
     print("\nPermission required")
     print(f"Tool: {function_name}")
 
-    if function_name == "write_file":
-        print(f"Path: {args.get('file_path', '<unknown>')}")
+    if function_name in {"write_file", "update"}:
+        print(f"Path: {args.get('file_path', '')}")
     else:
         print(f"Args: {args}")
 

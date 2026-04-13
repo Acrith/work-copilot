@@ -4,6 +4,8 @@ import re
 import shutil
 import textwrap
 
+from functions.update_file import plan_update
+
 RESET = "\033[0m"
 DIM = "\033[2m"
 RED = "\033[31m"
@@ -50,6 +52,25 @@ def build_write_preview(working_directory: str, file_path: str, new_content: str
     preview = "\n".join(diff)
     return preview if preview.strip() else f'No content changes for "{file_path}".'
 
+def build_update_preview(working_directory, file_path, old_text, new_text):
+    plan = plan_update(working_directory, file_path, old_text, new_text)
+
+    if plan["status"] == "error":
+        return f'Preview unavailable: {plan["message"]}'
+
+    if plan["status"] == "no_change":
+        return plan["message"]
+
+    diff = difflib.unified_diff(
+        plan["current_content"].splitlines(),
+        plan["updated_content"].splitlines(),
+        fromfile=f"{file_path} (current)",
+        tofile=f"{file_path} (proposed)",
+        lineterm="",
+    )
+    preview = "\n".join(diff)
+    return preview if preview.strip() else f'No content changes for "{file_path}".'
+    
 
 # Formatting engine
 def format_diff_for_terminal(diff_text: str) -> str:

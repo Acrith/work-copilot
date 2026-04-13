@@ -29,6 +29,7 @@ READ_TOOLS = {
 
 WRITE_TOOLS = {
     "write_file",
+    "update",
 }
 
 EXEC_TOOLS = {
@@ -97,7 +98,7 @@ def normalize_relative_path(path: str | None) -> str | None:
 
 
 def extract_target_path(tool_name: str, args: dict[str, Any]) -> str | None:
-    if tool_name in {"get_file_content", "write_file", "run_python_file"}:
+    if tool_name in {"get_file_content", "write_file", "update", "run_python_file"}:
         return normalize_relative_path(args.get("file_path"))
     if tool_name == "get_files_info":
         return normalize_relative_path(args.get("directory", "."))
