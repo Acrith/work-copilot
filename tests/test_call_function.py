@@ -83,3 +83,101 @@ def test_missing_arguments_are_forwarded_as_is(
     mocked.assert_called_once_with(
         working_directory=mock_working_directory,
     )
+
+def test_invalid_update_skips_approval(monkeypatch, mock_working_directory):
+    permission_context = PermissionContext(
+        mode=PermissionMode.DEFAULT,
+        workspace=mock_working_directory,
+        rules=PermissionRuleSet(),
+    )
+
+    approval_called = False
+
+    def fake_approval_prompt(function_name, args):
+        nonlocal approval_called
+        approval_called = True
+        return "y"
+
+    monkeypatch.setattr(
+        call_function_module,
+        "approval_prompt",
+        fake_approval_prompt,
+    )
+
+    function_call = create_function_call(
+        "update",
+        {
+            "file_path": "missing.txt",
+            "old_text": "a",
+            "new_text": "b",
+        },
+    )
+
+    response = call_function_module.call_function(
+        function_call,
+        mock_working_directory,
+        permission_context,
+    )
+
+    assert approval_called is False
+    assert response.parts[0].function_response.name == "update"
+    assert response.parts[0].function_response.response["result"] == (
+        'Error: File not found: "missing.txt". '
+        "Use find_file or get_files_info to locate the correct path."
+    )
+
+def test_valid_update_asks_approval(monkeypatch, tmp_path):
+    file_path = tmp_path / "sample.txt"
+    file_path.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+
+    permission_context = PermissionContext(
+        mode=PermissionMode.DEFAULT,
+        workspace=str(tmp_path),
+        rules=PermissionRuleSet(),
+    )
+
+    approval_called = False
+    preview_called = False
+
+    def fake_approval_prompt(function_name, args):
+        nonlocal approval_called
+        approval_called = True
+        return "y"
+
+    def fake_print_write_preview(preview):
+        nonlocal preview_called
+        preview_called = True
+
+    monkeypatch.setattr(
+        call_function_module,
+        "approval_prompt",
+        fake_approval_prompt,
+    )
+    monkeypatch.setattr(
+        call_function_module,
+        "print_write_preview",
+        fake_print_write_preview,
+    )
+
+    function_call = create_function_call(
+        "update",
+        {
+            "file_path": "sample.txt",
+            "old_text": "beta",
+            "new_text": "delta",
+        },
+    )
+
+    response = call_function_module.call_function(
+        function_call,
+        str(tmp_path),
+        permission_context,
+    )
+
+    assert approval_called is True
+    assert preview_called is True
+    assert response.parts[0].function_response.name == "update"
+    assert response.parts[0].function_response.response["result"] == (
+        'Successfully updated "sample.txt"'
+    )
+    assert file_path.read_text(encoding="utf-8") == "alpha\ndelta\ngamma\n"
