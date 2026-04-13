@@ -25,6 +25,7 @@ READ_TOOLS = {
     "get_files_info",
     "get_file_content",
     "search_in_files",
+    "find_file",
 }
 
 WRITE_TOOLS = {

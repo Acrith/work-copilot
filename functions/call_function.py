@@ -1,15 +1,16 @@
 from google.genai import types
 
 from console_ui import approval_prompt, print_write_preview
+from functions.find_file import find_file, schema_find_file
 from functions.get_file_content import get_file_content, schema_get_file_content
 from functions.get_files_info import get_files_info, schema_get_files_info
 from functions.run_python_file import run_python_file, schema_run_python_file
 from functions.run_tests import run_tests, schema_run_tests
 from functions.search_in_files import schema_search_in_files, search_in_files
+from functions.update_file import plan_update, schema_update_file, update_file
 from functions.write_file import schema_write_file, write_file
-from functions.update_file import schema_update_file, update_file, plan_update
 from permissions import Decision, evaluate_request, extract_target_path
-from previews import build_write_preview, build_update_preview
+from previews import build_update_preview, build_write_preview
 
 available_functions = types.Tool(
     function_declarations=[
@@ -20,6 +21,7 @@ available_functions = types.Tool(
         schema_search_in_files,
         schema_run_tests,
         schema_update_file,
+        schema_find_file,
     ],
 )
 
@@ -47,6 +49,7 @@ def call_function(function_call, working_directory, permission_context, verbose=
         "search_in_files": search_in_files,
         "run_tests": run_tests,
         "update": update_file,
+        "find_file": find_file,
     }
 
     function_name = function_call.name or ""

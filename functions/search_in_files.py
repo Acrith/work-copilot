@@ -2,13 +2,14 @@ import os
 
 from google.genai import types
 
+from constants import SKIP_DIRS
+
 
 def search_in_files(working_directory, query):
     matches = []
-    skip_dirs = {".git", ".venv", "__pycache__"}
 
     for root, dirs, files in os.walk(working_directory):
-        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
 
         for name in files:
             full_path = os.path.join(root, name)
