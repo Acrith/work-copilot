@@ -1,6 +1,5 @@
-import os
-import pytest
 from functions.write_file import write_file
+
 
 def test_write_new_file_success(tmp_path):
     working_directory = tmp_path
@@ -14,6 +13,7 @@ def test_write_new_file_success(tmp_path):
     target_file = tmp_path / file_path
     assert target_file.exists()
     assert target_file.read_text() == content
+
 
 def test_overwrite_existing_file_success(tmp_path):
     working_directory = tmp_path
@@ -32,6 +32,7 @@ def test_overwrite_existing_file_success(tmp_path):
     assert initial_file.exists()
     assert initial_file.read_text() == updated_content
 
+
 def test_write_to_nested_path(tmp_path):
     working_directory = tmp_path
     file_path = "nested/dir/deep_file.txt"
@@ -48,20 +49,24 @@ def test_write_to_nested_path(tmp_path):
     assert target_file.parent.name == "dir"
     assert target_file.parent.parent.name == "nested"
 
+
 def test_fail_path_traversal_outside_working_directory(tmp_path):
     working_directory = tmp_path / "subdir"
     # Ensure subdir exists for os.path.abspath to resolve correctly relative to it
-    working_directory.mkdir() 
+    working_directory.mkdir()
 
     file_path = "../outside.txt"
     content = "This should not be written."
-    expected_error = f'Error: Cannot write to "{file_path}" as it is outside the permitted working directory'
+    expected_error = (
+        f'Error: Cannot write to "{file_path}" as it is outside the permitted working directory'
+    )
 
     result = write_file(str(working_directory), file_path, content)
     assert result == expected_error
 
     outside_file = tmp_path / "outside.txt"
     assert not outside_file.exists()
+
 
 def test_write_empty_content(tmp_path):
     working_directory = tmp_path
@@ -76,10 +81,13 @@ def test_write_empty_content(tmp_path):
     assert target_file.exists()
     assert target_file.read_text() == ""
 
+
 def test_write_content_with_special_characters_and_newlines(tmp_path):
     working_directory = tmp_path
     file_path = "special_content.txt"
-    content = "Line 1\nLine 2 with special chars: !@#$%^&*()_+-=[]{}|;:'\",.<>/?`~ and unicode: éàçü"
+    content = (
+        "Line 1\nLine 2 with special chars: !@#$%^&*()_+-=[]{}|;:'\",.<>/?`~ and unicode: éàçü"
+    )
     expected_output = f'Successfully wrote to "{file_path}" ({len(content)} characters written)'
 
     result = write_file(str(working_directory), file_path, content)
@@ -88,6 +96,7 @@ def test_write_content_with_special_characters_and_newlines(tmp_path):
     target_file = tmp_path / file_path
     assert target_file.exists()
     assert target_file.read_text() == content
+
 
 def test_write_to_non_existent_working_directory(tmp_path):
     # This test verifies the current behavior: if working_directory does not exist,
@@ -107,10 +116,11 @@ def test_write_to_non_existent_working_directory(tmp_path):
     assert target_file.read_text() == content
     assert working_directory.is_dir()
 
+
 def test_fail_when_writing_to_an_existing_directory(tmp_path):
     working_directory = tmp_path
     dir_path = "my_directory"
-    
+
     # Create a directory that we will try to write into as if it were a file
     (tmp_path / dir_path).mkdir()
 

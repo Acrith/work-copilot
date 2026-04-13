@@ -89,10 +89,12 @@ def tool_category(tool_name: str) -> str:
         return "exec"
     return "unknown"
 
+
 def normalize_relative_path(path: str | None) -> str | None:
     if not path:
         return None
     return os.path.normpath(path).replace("\\", "/")
+
 
 def extract_target_path(tool_name: str, args: dict[str, Any]) -> str | None:
     if tool_name in {"get_file_content", "write_file", "run_python_file"}:

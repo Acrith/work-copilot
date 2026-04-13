@@ -1,11 +1,17 @@
 import os
 import shutil
 import subprocess
-import sys
+
 from google.genai import types
 
 
-def run_tests(working_directory: str, test_path: str | None = None, keyword: str | None = None, max_failures: int | None = 1, quiet: bool = False):
+def run_tests(
+    working_directory: str,
+    test_path: str | None = None,
+    keyword: str | None = None,
+    max_failures: int | None = 1,
+    quiet: bool = False,
+):
     try:
         workspace = os.path.abspath(working_directory)
 

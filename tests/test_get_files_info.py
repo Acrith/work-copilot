@@ -13,10 +13,12 @@ def test_get_files_info_files_and_directories(tmp_path):
 
     result = get_files_info(str(tmp_path))
     lines = sorted(result.splitlines())
-    expected_lines = sorted([
-        f"- dir1: file_size={(tmp_path / 'dir1').stat().st_size} bytes, is_dir=True",
-        f"- file1.txt: file_size={(tmp_path / 'file1.txt').stat().st_size} bytes, is_dir=False",
-    ])
+    expected_lines = sorted(
+        [
+            f"- dir1: file_size={(tmp_path / 'dir1').stat().st_size} bytes, is_dir=True",
+            f"- file1.txt: file_size={(tmp_path / 'file1.txt').stat().st_size} bytes, is_dir=False",
+        ]
+    )
     assert lines == expected_lines
 
 
@@ -26,7 +28,9 @@ def test_get_files_info_specific_directory(tmp_path):
     (subdir / "subfile1.txt").write_text("subcontent1")
 
     result = get_files_info(str(tmp_path), "subdir")
-    expected_line = f"- subfile1.txt: file_size={(subdir / 'subfile1.txt').stat().st_size} bytes, is_dir=False"
+    expected_line = (
+        f"- subfile1.txt: file_size={(subdir / 'subfile1.txt').stat().st_size} bytes, is_dir=False"
+    )
     assert result == expected_line
 
 

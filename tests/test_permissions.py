@@ -112,27 +112,21 @@ def test_session_allow_path_overrides_protected_path():
 
 
 def test_explicit_ask_beats_session_allow_tool():
-    ctx = make_context(
-        rules=PermissionRuleSet(ask=["dangerous_tool"])
-    )
+    ctx = make_context(rules=PermissionRuleSet(ask=["dangerous_tool"]))
     ctx.session_allow_tools.add("dangerous_tool")
 
     assert evaluate_request(ctx, "dangerous_tool", {}) == Decision.ASK
 
 
 def test_explicit_ask_beats_session_allow_path():
-    ctx = make_context(
-        rules=PermissionRuleSet(ask=["write_file:ask_me.txt"])
-    )
+    ctx = make_context(rules=PermissionRuleSet(ask=["write_file:ask_me.txt"]))
     ctx.session_allow_paths.add("ask_me.txt")
 
     assert evaluate_request(ctx, "write_file", {"file_path": "ask_me.txt"}) == Decision.ASK
 
 
 def test_explicit_deny_beats_session_allow():
-    ctx = make_context(
-        rules=PermissionRuleSet(deny=["run_python_file:denied.py"])
-    )
+    ctx = make_context(rules=PermissionRuleSet(deny=["run_python_file:denied.py"]))
     ctx.session_allow_tools.add("run_python_file")
     ctx.session_allow_paths.add("denied.py")
 

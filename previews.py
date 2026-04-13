@@ -1,5 +1,5 @@
-import os
 import difflib
+import os
 import re
 import shutil
 import textwrap
@@ -13,31 +13,33 @@ BOLD = "\033[1m"
 
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
+
 # Write diff engine
 def normalize_tool_path(working_directory: str, file_path: str) -> tuple[str, str]:
     workspace = os.path.abspath(working_directory)
     target = os.path.normpath(os.path.join(workspace, file_path))
     return workspace, target
 
+
 def build_write_preview(working_directory: str, file_path: str, new_content: str) -> str:
     workspace, target = normalize_tool_path(working_directory, file_path)
 
-    if os.path.commonpath([workspace, target]) != workspace:    
-        return f"Preview unavailable: \"{file_path}\" is outside the workspace."
+    if os.path.commonpath([workspace, target]) != workspace:
+        return f'Preview unavailable: "{file_path}" is outside the workspace.'
 
     if os.path.isdir(target):
-        return f"Preview unavailable: \"{file_path}\" is a directory."
-    
+        return f'Preview unavailable: "{file_path}" is a directory.'
+
     if not os.path.exists(target):
         added = "\n".join(f"+ {line}" for line in new_content.splitlines())
         return f'New file: "{file_path}"\n' + (added or "+ <empty file>")
-    
+
     try:
         with open(target, "r", encoding="utf-8") as f:
             old_content = f.read()
     except Exception as e:
         return f"Could not read existing file for preview: {e}"
-    
+
     diff = difflib.unified_diff(
         old_content.splitlines(),
         new_content.splitlines(),
@@ -46,7 +48,8 @@ def build_write_preview(working_directory: str, file_path: str, new_content: str
         lineterm="",
     )
     preview = "\n".join(diff)
-    return preview if preview.strip() else f"No content changes for \"{file_path}\"."
+    return preview if preview.strip() else f'No content changes for "{file_path}".'
+
 
 # Formatting engine
 def format_diff_for_terminal(diff_text: str) -> str:
@@ -110,6 +113,7 @@ def format_diff_for_terminal(diff_text: str) -> str:
             out.append(f"{color}{gutter}  {sign} {part}{RESET}")
 
     return "\n".join(out)
+
 
 def is_unified_diff_preview(preview: str) -> bool:
     lines = preview.splitlines()

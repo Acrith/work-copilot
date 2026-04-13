@@ -1,16 +1,17 @@
+import argparse
 import os
 import sys
-import argparse
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-#LocalFiles
-from prompts import system_prompt
 from functions.call_function import available_functions, call_function
-from permissions import PermissionMode, PermissionContext, load_rules
+from permissions import PermissionContext, PermissionMode, load_rules
+from prompts import system_prompt
 
 MAX_ITERATIONS = 20
+
 
 def extract_text_parts(response) -> list[str]:
     texts = []
@@ -63,19 +64,27 @@ def print_final_response(text: str):
     print(text)
     print()
 
+
 def main():
     load_dotenv()
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("No API key found!")
-    
+
     parser = argparse.ArgumentParser(description="Chatbot")
     parser.add_argument("user_prompt", type=str, help="User prompt")
     parser.add_argument("--workspace", default=".", help="Workspace directory the agent can use")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
-    parser.add_argument("--verbose-functions", action="store_true", help="Show function calls and args")
-    parser.add_argument("--permission-mode", choices=[m.value for m in PermissionMode], default=PermissionMode.DEFAULT.value, help="Permission mode for tool execution")
+    parser.add_argument(
+        "--verbose-functions", action="store_true", help="Show function calls and args"
+    )
+    parser.add_argument(
+        "--permission-mode",
+        choices=[m.value for m in PermissionMode],
+        default=PermissionMode.DEFAULT.value,
+        help="Permission mode for tool execution",
+    )
     args = parser.parse_args()
 
     # Resolve Workspace
@@ -96,11 +105,10 @@ def main():
 
     for _ in range(MAX_ITERATIONS):
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model="gemini-2.5-flash",
             contents=messages,
             config=types.GenerateContentConfig(
-                tools=[available_functions],
-                system_instruction=system_prompt
+                tools=[available_functions], system_instruction=system_prompt
             ),
         )
 
@@ -139,18 +147,19 @@ def main():
                 function_results.append(function_call_result.parts[0])
                 if args.verbose is True:
                     print(function_call_result.parts[0].function_response)
-        
+
             # Append function feedback to messages
             messages.append(types.Content(role="user", parts=function_results))
             continue
-        
+
         final_text = "\n".join(text_parts).strip()
         if final_text:
             print_final_response(final_text)
             return
-    
+
     print(f"Max iterations ({MAX_ITERATIONS}) reached.")
     sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

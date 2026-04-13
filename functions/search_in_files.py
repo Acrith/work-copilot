@@ -1,5 +1,7 @@
 import os
+
 from google.genai import types
+
 
 def search_in_files(working_directory, query):
     matches = []
@@ -22,6 +24,7 @@ def search_in_files(working_directory, query):
                 matches.append(rel_path)
 
     return "\n".join(matches) if matches else "No matches found"
+
 
 schema_search_in_files = types.FunctionDeclaration(
     name="search_in_files",

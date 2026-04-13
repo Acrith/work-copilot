@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from google.genai import types
 
 import functions.call_function as call_function_module
@@ -57,7 +58,7 @@ def test_write_file_ask_yes_shows_preview_and_executes(
         "hello",
     )
     mocked_print_preview.assert_called_once_with("PREVIEW TEXT")
-    
+
     mocked_prompt.assert_called_once()
     tool_name, prompt_args = mocked_prompt.call_args.args
 

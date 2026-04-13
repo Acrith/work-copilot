@@ -1,4 +1,3 @@
-import pytest
 from previews import build_write_preview
 
 

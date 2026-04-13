@@ -1,8 +1,7 @@
-import pytest
 from functions.get_file_content import get_file_content
-import os
 
 MAX_CHARS = 10000
+
 
 def test_existing_file(tmp_path):
     # Create a dummy file
@@ -14,10 +13,12 @@ def test_existing_file(tmp_path):
     result = get_file_content(str(tmp_path), "test_file.txt")
     assert result == file_content
 
+
 def test_missing_file(tmp_path):
     # Test reading a non-existent file
     result = get_file_content(str(tmp_path), "non_existent_file.txt")
     assert "Error: File not found or is not a regular file" in result
+
 
 def test_nested_file(tmp_path):
     # Create a nested directory and file
@@ -31,6 +32,7 @@ def test_nested_file(tmp_path):
     result = get_file_content(str(tmp_path), "nested/nested_file.txt")
     assert result == file_content
 
+
 def test_path_traversal_outside_working_directory(tmp_path):
     # Create a file outside the working directory (tmp_path)
     # This simulates a file that should not be accessible via path traversal
@@ -43,6 +45,7 @@ def test_path_traversal_outside_working_directory(tmp_path):
     assert "Error: Cannot read" in result
     assert "outside the permitted working directory" in result
 
+
 def test_truncation_behavior(tmp_path):
     # Create a file with content larger than MAX_CHARS
     long_content = "a" * (MAX_CHARS + 100)
@@ -51,8 +54,12 @@ def test_truncation_behavior(tmp_path):
 
     # Test that the content is truncated
     result = get_file_content(str(tmp_path), "long_file.txt")
-    expected_truncated_content = long_content[:MAX_CHARS] + f'\n\n[...File "long_file.txt" truncated at {MAX_CHARS} characters]'
+    expected_truncated_content = (
+        long_content[:MAX_CHARS]
+        + f'\n\n[...File "long_file.txt" truncated at {MAX_CHARS} characters]'
+    )
     assert result == expected_truncated_content
+
 
 def test_empty_file(tmp_path):
     # Create an empty file
@@ -62,6 +69,7 @@ def test_empty_file(tmp_path):
     # Test reading the empty file
     result = get_file_content(str(tmp_path), "empty.txt")
     assert result == ""
+
 
 def test_file_in_subdirectory_with_same_name(tmp_path):
     # Create a file in the root and a subdirectory with a file of the same name
@@ -79,12 +87,14 @@ def test_file_in_subdirectory_with_same_name(tmp_path):
     result_b = get_file_content(str(tmp_path), "dir_b/file.txt")
     assert result_b == "content B"
 
+
 def test_invalid_working_directory(tmp_path):
     # Test with a non-existent working directory
     non_existent_dir = tmp_path / "non_existent_dir"
     result = get_file_content(str(non_existent_dir), "some_file.txt")
     assert "Error:" in result
     assert "some_file.txt" in result
+
 
 def test_file_with_special_characters_in_name(tmp_path):
     # Create a file with special characters in its name

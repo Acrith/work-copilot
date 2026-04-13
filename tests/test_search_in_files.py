@@ -1,6 +1,9 @@
-import pytest
 import os
+
+import pytest
+
 from functions.search_in_files import search_in_files
+
 
 @pytest.fixture
 def setup_files(tmp_path):
@@ -27,11 +30,13 @@ def setup_files(tmp_path):
 
     return tmp_path
 
+
 def test_one_matching_file(setup_files):
     working_directory = setup_files
     query = "test file"
     result = search_in_files(working_directory, query)
     assert result == "file1.txt"
+
 
 def test_multiple_matching_files(setup_files):
     working_directory = setup_files
@@ -41,17 +46,20 @@ def test_multiple_matching_files(setup_files):
     actual_matches = sorted(result.splitlines())
     assert actual_matches == expected_matches
 
+
 def test_no_matches(setup_files):
     working_directory = setup_files
     query = "nonexistent_query"
     result = search_in_files(working_directory, query)
     assert result == "No matches found"
 
+
 def test_nested_subdirectory_matches(setup_files):
     working_directory = setup_files
     query = "subdirectory with query"
     result = search_in_files(working_directory, query)
     assert result == "subdir/file3.txt"
+
 
 def test_skipped_directories(setup_files):
     working_directory = setup_files
@@ -62,6 +70,7 @@ def test_skipped_directories(setup_files):
     assert ".git/config" not in result
     assert "__pycache__/cache.pyc" not in result
     assert ".venv/activate" not in result
+
 
 def test_unreadable_or_non_utf8_files_skipped(setup_files):
     working_directory = setup_files
@@ -74,6 +83,7 @@ def test_unreadable_or_non_utf8_files_skipped(setup_files):
     assert result == "file1.txt"
     assert "unreadable.txt" not in result
 
+
 def test_returning_relative_file_paths(setup_files):
     working_directory = setup_files
     query = "subdirectory"
@@ -81,20 +91,24 @@ def test_returning_relative_file_paths(setup_files):
     assert result == "subdir/file3.txt"
     assert not os.path.isabs(result)
 
+
 def test_empty_query(setup_files):
     working_directory = setup_files
     query = ""
     result = search_in_files(working_directory, query)
     # An empty query should match all readable files.
-    expected_matches = sorted([
-        "file1.txt",
-        "file2.txt",
-        "subdir/file3.txt",
-        "nomatch.txt",
-        "complex_query.md",
-    ])
+    expected_matches = sorted(
+        [
+            "file1.txt",
+            "file2.txt",
+            "subdir/file3.txt",
+            "nomatch.txt",
+            "complex_query.md",
+        ]
+    )
     actual_matches = sorted(result.splitlines())
     assert actual_matches == expected_matches
+
 
 def test_complex_query(setup_files):
     working_directory = setup_files
