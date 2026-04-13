@@ -5,6 +5,7 @@ from functions.find_file import find_file, schema_find_file
 from functions.get_file_content import get_file_content, schema_get_file_content
 from functions.get_files_info import get_files_info, schema_get_files_info
 from functions.git_status import git_status, schema_git_status
+from functions.git_diff_file import git_diff_file, schema_git_diff_file
 from functions.run_python_file import run_python_file, schema_run_python_file
 from functions.run_tests import run_tests, schema_run_tests
 from functions.search_in_files import schema_search_in_files, search_in_files
@@ -24,6 +25,7 @@ available_functions = types.Tool(
         schema_update_file,
         schema_find_file,
         schema_git_status,
+        schema_git_diff_file,
     ],
 )
 
@@ -53,6 +55,7 @@ def call_function(function_call, working_directory, permission_context, verbose=
         "update": update_file,
         "find_file": find_file,
         "git_status": git_status,
+        "git_diff_file": git_diff_file,
     }
 
     function_name = function_call.name or ""
