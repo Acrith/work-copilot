@@ -5,6 +5,7 @@ import sys
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from rich.console import Console
 
 from console_ui import (
     format_tool_call,
@@ -18,6 +19,7 @@ from permissions import PermissionContext, PermissionMode, load_rules
 from prompts import system_prompt
 
 MAX_ITERATIONS = 20
+console = Console()
 
 
 def extract_text_parts(response) -> list[str]:
@@ -122,7 +124,8 @@ def main():
                     print_agent_update(text)
 
             for call in response.function_calls:
-                print(format_tool_call(call, args.verbose_functions))
+                if call.name not in {"write_file", "update"}:
+                    console.print(format_tool_call(call, args.verbose_functions))
 
                 function_call_result = call_function(
                     call,

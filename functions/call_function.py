@@ -1,6 +1,6 @@
 from google.genai import types
 
-from console_ui import approval_prompt, print_write_preview
+from console_ui import approval_prompt, print_mutation_preview
 from functions.find_file import find_file, schema_find_file
 from functions.get_file_content import get_file_content, schema_get_file_content
 from functions.get_files_info import get_files_info, schema_get_files_info
@@ -103,8 +103,8 @@ def call_function(function_call, working_directory, permission_context, verbose=
                 args.get("file_path", ""),
                 args.get("content", ""),
             )
-            print_write_preview(preview)
-            
+            print_mutation_preview(function_name, args.get("file_path", ""), preview)
+
         elif function_name == "update":
             preview = build_update_preview(
                 working_directory,
@@ -112,7 +112,7 @@ def call_function(function_call, working_directory, permission_context, verbose=
                 args.get("old_text", ""),
                 args.get("new_text", ""),
             )
-            print_write_preview(preview)
+            print_mutation_preview(function_name, args.get("file_path", ""), preview)
 
         answer, feedback = approval_prompt(function_name, args)
 

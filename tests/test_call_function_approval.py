@@ -35,7 +35,7 @@ def test_write_file_ask_yes_shows_preview_and_executes(
 
     monkeypatch.setattr(call_function_module, "write_file", mocked_write)
     monkeypatch.setattr(call_function_module, "build_write_preview", mocked_preview)
-    monkeypatch.setattr(call_function_module, "print_write_preview", mocked_print_preview)
+    monkeypatch.setattr(call_function_module, "print_mutation_preview", mocked_print_preview)
     monkeypatch.setattr(call_function_module, "approval_prompt", mocked_prompt)
 
     function_call = create_function_call(
@@ -57,7 +57,9 @@ def test_write_file_ask_yes_shows_preview_and_executes(
         "notes.txt",
         "hello",
     )
-    mocked_print_preview.assert_called_once_with("PREVIEW TEXT")
+    mocked_print_preview.assert_called_once_with(
+        "write_file", "notes.txt", "PREVIEW TEXT"
+    )
 
     mocked_prompt.assert_called_once()
     tool_name, prompt_args = mocked_prompt.call_args.args
@@ -84,7 +86,7 @@ def test_write_file_ask_no_returns_error_and_does_not_execute(
 
     monkeypatch.setattr(call_function_module, "write_file", mocked_write)
     monkeypatch.setattr(call_function_module, "build_write_preview", mocked_preview)
-    monkeypatch.setattr(call_function_module, "print_write_preview", mocked_print_preview)
+    monkeypatch.setattr(call_function_module, "print_mutation_preview", mocked_print_preview)
     monkeypatch.setattr(call_function_module, "approval_prompt", mocked_prompt)
 
     function_call = create_function_call(
@@ -106,7 +108,9 @@ def test_write_file_ask_no_returns_error_and_does_not_execute(
         "notes.txt",
         "hello",
     )
-    mocked_print_preview.assert_called_once_with("PREVIEW TEXT")
+    mocked_print_preview.assert_called_once_with(
+        "write_file", "notes.txt", "PREVIEW TEXT"
+    )
     mocked_prompt.assert_called_once()
     mocked_write.assert_not_called()
 
@@ -121,7 +125,7 @@ def test_session_allow_tool_skips_second_prompt_for_write_file(
 
     monkeypatch.setattr(call_function_module, "write_file", mocked_write)
     monkeypatch.setattr(call_function_module, "build_write_preview", mocked_preview)
-    monkeypatch.setattr(call_function_module, "print_write_preview", mocked_print_preview)
+    monkeypatch.setattr(call_function_module, "print_mutation_preview", mocked_print_preview)
     monkeypatch.setattr(call_function_module, "approval_prompt", mocked_prompt)
 
     first_call = create_function_call(

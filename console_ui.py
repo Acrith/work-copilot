@@ -1,122 +1,296 @@
-from previews import format_diff_for_terminal, is_unified_diff_preview
+from difflib import SequenceMatcher
+from itertools import zip_longest
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+from rich.tree import Tree
+
+from previews import is_unified_diff_preview, parse_unified_diff, summarize_diff
+
+console = Console(color_system="truecolor")
+
+GUTTER_STYLE = "bright_black"
+HUNK_STYLE = "bright_black"
+CONTEXT_STYLE = "dim"
+
+REMOVED_LINE_STYLE = "white on #370000"
+ADDED_LINE_STYLE = "white on #003700"
+
+REMOVED_HIGHLIGHT_STYLE = "bold white on #7c0000"
+ADDED_HIGHLIGHT_STYLE = "bold white on #007c00"
 
 
-class TermStyle:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    CYAN = "\033[36m"
-    MAGENTA = "\033[35m"
+def _tool_display_name(function_name: str) -> str:
+    names = {
+        "write_file": "Write",
+        "update": "Update",
+    }
+    return names.get(function_name, function_name.replace("_", " ").title())
 
 
-def styled(text: str, *styles: str) -> str:
-    if not styles:
-        return text
-    return f"{''.join(styles)}{text}{TermStyle.RESET}"
+def _tool_summary_verb(function_name: str) -> str:
+    verbs = {
+        "write_file": "Updated",
+        "update": "Updated",
+    }
+    return verbs.get(function_name, "Changed")
 
 
-def bold(text: str) -> str:
-    return styled(text, TermStyle.BOLD)
+def build_preview_summary(function_name: str, file_path: str, preview: str) -> str:
+    if preview.startswith("No content changes"):
+        return preview
 
+    if preview.startswith("Preview unavailable"):
+        return preview
 
-def dim(text: str) -> str:
-    return styled(text, TermStyle.DIM)
-
-
-def red(text: str) -> str:
-    return styled(text, TermStyle.RED)
-
-
-def green(text: str) -> str:
-    return styled(text, TermStyle.GREEN)
-
-
-def yellow(text: str) -> str:
-    return styled(text, TermStyle.YELLOW)
-
-
-def cyan(text: str) -> str:
-    return styled(text, TermStyle.CYAN)
-
-
-def magenta(text: str) -> str:
-    return styled(text, TermStyle.MAGENTA)
-
-
-def warning(text: str) -> str:
-    return styled(text, TermStyle.YELLOW, TermStyle.BOLD)
+    additions, removals = summarize_diff(preview)
+    verb = _tool_summary_verb(function_name)
+    return (
+        f"{verb} {file_path} with "
+        f"{additions} addition{'s' if additions != 1 else ''} and "
+        f"{removals} removal{'s' if removals != 1 else ''}"
+    )
 
 
 def approval_prompt(function_name: str, args: dict) -> tuple[str, str | None]:
-    print()
-    print(warning("Permission required"))
-    print(f"{bold('Tool:')} {cyan(function_name)}")
+    console.print()
+    console.print("Permission required", style="bold yellow")
+    console.print(f"[bold]Tool:[/bold] [cyan]{function_name}[/cyan]")
 
     if function_name in {"write_file", "update"}:
-        print(f"{bold('Path:')} {args.get('file_path', '')}")
+        console.print(f"[bold]Path:[/bold] {args.get('file_path', '')}")
     else:
-        print(f"{bold('Args:')} {dim(str(args))}")
+        console.print(f"[bold]Args:[/bold] {args}", highlight=False)
 
-    print(
-        f"{green('[y]')} allow once   "
-        f"{red('[n]')} deny   "
-        f"{magenta('[f]')} deny with feedback   "
-        f"{cyan('[s]')} allow tool for session   "
-        f"{yellow('[p]')} allow path for session"
-    )
+    options = Text()
+    options.append("[y]", style="green")
+    options.append(" allow once   ")
+    options.append("[n]", style="red")
+    options.append(" deny   ")
+    options.append("[f]", style="magenta")
+    options.append(" deny with feedback   ")
+    options.append("[s]", style="cyan")
+    options.append(" allow tool for session   ")
+    options.append("[p]", style="yellow")
+    options.append(" allow path for session")
+    console.print(options)
 
-    answer = input(bold("> ")).strip().lower()
+    answer = console.input("> ").strip().lower()
 
     if answer == "f":
-        feedback = input(bold("Reason: ")).strip()
+        feedback = console.input("Reason: ").strip()
         return "f", feedback or "No reason provided."
 
     return answer, None
 
 
-def print_write_preview(preview: str) -> None:
-    print()
-    print(bold(cyan("Proposed change preview")))
-    print(dim("─" * 40))
+def print_mutation_preview(function_name: str, file_path: str, preview: str) -> None:
+    title = f"{_tool_display_name(function_name)}({file_path})"
+    tree = Tree(Text(f"● {title}", style="bold green"), guide_style="bright_black")
 
     if is_unified_diff_preview(preview):
-        print(format_diff_for_terminal(preview[:4000]))
+        summary = build_preview_summary(function_name, file_path, preview)
+        tree.add(Text(summary, style="dim"))
+        console.print(tree)
+        print_rich_diff(preview)
     else:
-        print(preview[:4000])
+        tree.add(Text("Preview", style="dim"))
+        console.print(tree)
+        console.print(Panel(preview[:4000], border_style="bright_black"))
 
-    print(dim("─" * 40))
 
-
-def format_tool_call(function_call, verbose: bool) -> str:
-    bullet = dim("•")
-    tool_tag = cyan("[tool]")
-    tool_name = bold(cyan(function_call.name))
-
-    if verbose:
-        return f"{bullet} {tool_tag} {tool_name} {dim(str(function_call.args))}"
-
-    return f"{bullet} {tool_tag} {tool_name}"
+def format_tool_call(function_call, verbose: bool) -> Text:
+    text = Text("• ", style="bright_black")
+    text.append("[tool] ", style="bold cyan")
+    text.append(function_call.name or "", style="bold white")
+    if verbose and function_call.args:
+        text.append(f" {dict(function_call.args)}", style="bright_black")
+    return text
 
 
 def print_agent_update(text: str) -> None:
-    print(f"{dim('•')} {dim(text)}")
+    console.print(Text(f"• {text}", style="white"))
 
 
 def print_final_response(text: str) -> None:
-    print()
-    print(text)
-    print()
+    console.print()
+    console.print(text, highlight=False)
+    console.print()
 
 
 def print_verbose_stats(user_prompt: str, response) -> None:
-    print(dim(f"User prompt: {user_prompt}"))
-    print(dim(f"Prompt tokens: {response.usage_metadata.prompt_token_count}"))
-    print(dim(f"Response tokens: {response.usage_metadata.candidates_token_count}"))
+    console.print(f"User prompt: {user_prompt}", style="dim")
+    console.print(
+        f"Prompt tokens: {response.usage_metadata.prompt_token_count}",
+        style="dim",
+    )
+    console.print(
+        f"Response tokens: {response.usage_metadata.candidates_token_count}",
+        style="dim",
+    )
 
 
 def print_error(text: str) -> None:
-    print(red(text))
+    console.print(text, style="bold red")
+
+
+def _render_context_line(line) -> Text:
+    text = Text()
+    text.append(f"{'' if line.old_lineno is None else line.old_lineno:>4} ", style=GUTTER_STYLE)
+    text.append(f"{'' if line.new_lineno is None else line.new_lineno:>4} ", style=GUTTER_STYLE)
+    text.append("  ", style=CONTEXT_STYLE)
+    text.append(line.text, style=CONTEXT_STYLE)
+    return text
+
+
+def _render_hunk_line(line) -> Text:
+    return Text(line.text, style=HUNK_STYLE)
+
+
+def _render_styled_diff_line(
+    old_lineno: int | None,
+    new_lineno: int | None,
+    marker: str,
+    content: Text,
+) -> Text:
+    text = Text()
+    text.append(
+        f"{'' if old_lineno is None else old_lineno:>4} ",
+        style=GUTTER_STYLE,
+    )
+    text.append(
+        f"{'' if new_lineno is None else new_lineno:>4} ",
+        style=GUTTER_STYLE,
+    )
+
+    if marker == "-":
+        marker_style = REMOVED_LINE_STYLE
+    elif marker == "+":
+        marker_style = ADDED_LINE_STYLE
+    else:
+        marker_style = CONTEXT_STYLE
+
+    if marker in {"-", "+"}:
+        text.append(f"{marker} ", style=marker_style)
+    else:
+        text.append("  ", style=marker_style)
+
+    text.append_text(content)
+    return text
+
+
+def _plain_removed_text(text: str) -> Text:
+    return Text(text, style=REMOVED_LINE_STYLE)
+
+
+def _plain_added_text(text: str) -> Text:
+    return Text(text, style=ADDED_LINE_STYLE)
+
+
+def _highlight_changed_spans(old_text: str, new_text: str) -> tuple[Text, Text]:
+    matcher = SequenceMatcher(None, old_text, new_text)
+
+    old_rendered = Text()
+    new_rendered = Text()
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        old_chunk = old_text[i1:i2]
+        new_chunk = new_text[j1:j2]
+
+        if tag == "equal":
+            if old_chunk:
+                old_rendered.append(old_chunk, style=REMOVED_LINE_STYLE)
+            if new_chunk:
+                new_rendered.append(new_chunk, style=ADDED_LINE_STYLE)
+        else:
+            if old_chunk:
+                old_rendered.append(old_chunk, style=REMOVED_HIGHLIGHT_STYLE)
+            if new_chunk:
+                new_rendered.append(new_chunk, style=ADDED_HIGHLIGHT_STYLE)
+
+    return old_rendered, new_rendered
+
+
+def _render_change_block(block_lines: list) -> None:
+    removes: list = []
+    adds: list = []
+    phase = "remove"
+
+    for line in block_lines:
+        if line.kind == "remove" and phase == "remove":
+            removes.append(line)
+        elif line.kind == "add":
+            phase = "add"
+            adds.append(line)
+
+    for old_line, new_line in zip_longest(removes, adds):
+        if old_line and new_line:
+            old_text, new_text = _highlight_changed_spans(old_line.text, new_line.text)
+            console.print(
+                _render_styled_diff_line(
+                    old_line.old_lineno,
+                    None,
+                    "-",
+                    old_text,
+                )
+            )
+            console.print(
+                _render_styled_diff_line(
+                    None,
+                    new_line.new_lineno,
+                    "+",
+                    new_text,
+                )
+            )
+        elif old_line:
+            console.print(
+                _render_styled_diff_line(
+                    old_line.old_lineno,
+                    None,
+                    "-",
+                    _plain_removed_text(old_line.text),
+                )
+            )
+        elif new_line:
+            console.print(
+                _render_styled_diff_line(
+                    None,
+                    new_line.new_lineno,
+                    "+",
+                    _plain_added_text(new_line.text),
+                )
+            )
+
+
+def print_rich_diff(preview: str) -> None:
+    parsed = parse_unified_diff(preview)
+    lines = parsed.lines
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        if line.kind == "meta":
+            i += 1
+            continue
+
+        if line.kind == "hunk":
+            console.print(_render_hunk_line(line))
+            i += 1
+            continue
+
+        if line.kind == "context":
+            console.print(_render_context_line(line))
+            i += 1
+            continue
+
+        if line.kind in {"remove", "add"}:
+            block: list = []
+            while i < len(lines) and lines[i].kind in {"remove", "add"}:
+                block.append(lines[i])
+                i += 1
+            _render_change_block(block)
+            continue
+
+        i += 1

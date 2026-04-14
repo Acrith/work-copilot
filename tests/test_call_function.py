@@ -144,7 +144,7 @@ def test_valid_update_asks_approval(monkeypatch, tmp_path):
         approval_called = True
         return "y", None
 
-    def fake_print_write_preview(preview):
+    def fake_print_mutation_preview(function_name, file_path, preview):
         nonlocal preview_called
         preview_called = True
 
@@ -155,8 +155,8 @@ def test_valid_update_asks_approval(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         call_function_module,
-        "print_write_preview",
-        fake_print_write_preview,
+        "print_mutation_preview",
+        fake_print_mutation_preview,
     )
 
     function_call = create_function_call(
