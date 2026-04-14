@@ -1,4 +1,4 @@
-from previews import build_write_preview, parse_unified_diff, ParsedDiffLine
+from previews import ParsedDiffLine, build_write_preview, parse_unified_diff
 
 
 def create_file(path, content=""):
