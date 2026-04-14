@@ -1,7 +1,7 @@
 from difflib import SequenceMatcher
 from itertools import zip_longest
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
 from rich.tree import Tree
@@ -93,11 +93,23 @@ def print_mutation_preview(function_name: str, file_path: str, preview: str) -> 
         summary = build_preview_summary(function_name, file_path, preview)
         tree.add(Text(summary, style="dim"))
         console.print(tree)
-        print_rich_diff(preview)
+        console.print(
+            Panel(
+                render_rich_diff(preview),
+                border_style="bright_black",
+                padding=(0, 1),
+            )
+        )
     else:
         tree.add(Text("Preview", style="dim"))
         console.print(tree)
-        console.print(Panel(preview[:4000], border_style="bright_black"))
+        console.print(
+            Panel(
+                preview[:4000],
+                border_style="bright_black",
+                padding=(0, 1),
+            )
+        )
 
 
 def format_tool_call(function_call, verbose: bool) -> Text:
@@ -212,9 +224,10 @@ def _highlight_changed_spans(old_text: str, new_text: str) -> tuple[Text, Text]:
     return old_rendered, new_rendered
 
 
-def _render_change_block(block_lines: list) -> None:
-    removes: list = []
-    adds: list = []
+def _render_change_block(block_lines: list) -> list[Text]:
+    renderables = []
+    removes = []
+    adds = []
     phase = "remove"
 
     for line in block_lines:
@@ -227,24 +240,14 @@ def _render_change_block(block_lines: list) -> None:
     for old_line, new_line in zip_longest(removes, adds):
         if old_line and new_line:
             old_text, new_text = _highlight_changed_spans(old_line.text, new_line.text)
-            console.print(
-                _render_styled_diff_line(
-                    old_line.old_lineno,
-                    None,
-                    "-",
-                    old_text,
-                )
+            renderables.append(
+                _render_styled_diff_line(old_line.old_lineno, None, "-", old_text)
             )
-            console.print(
-                _render_styled_diff_line(
-                    None,
-                    new_line.new_lineno,
-                    "+",
-                    new_text,
-                )
+            renderables.append(
+                _render_styled_diff_line(None, new_line.new_lineno, "+", new_text)
             )
         elif old_line:
-            console.print(
+            renderables.append(
                 _render_styled_diff_line(
                     old_line.old_lineno,
                     None,
@@ -253,7 +256,7 @@ def _render_change_block(block_lines: list) -> None:
                 )
             )
         elif new_line:
-            console.print(
+            renderables.append(
                 _render_styled_diff_line(
                     None,
                     new_line.new_lineno,
@@ -262,11 +265,14 @@ def _render_change_block(block_lines: list) -> None:
                 )
             )
 
+    return renderables
 
-def print_rich_diff(preview: str) -> None:
+
+def render_rich_diff(preview: str):
     parsed = parse_unified_diff(preview)
     lines = parsed.lines
     i = 0
+    renderables = []
 
     while i < len(lines):
         line = lines[i]
@@ -276,21 +282,23 @@ def print_rich_diff(preview: str) -> None:
             continue
 
         if line.kind == "hunk":
-            console.print(_render_hunk_line(line))
+            renderables.append(_render_hunk_line(line))
             i += 1
             continue
 
         if line.kind == "context":
-            console.print(_render_context_line(line))
+            renderables.append(_render_context_line(line))
             i += 1
             continue
 
         if line.kind in {"remove", "add"}:
-            block: list = []
+            block = []
             while i < len(lines) and lines[i].kind in {"remove", "add"}:
                 block.append(lines[i])
                 i += 1
-            _render_change_block(block)
+            renderables.extend(_render_change_block(block))
             continue
 
         i += 1
+
+    return Group(*renderables)

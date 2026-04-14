@@ -1,4 +1,4 @@
-from previews import build_write_preview
+from previews import build_write_preview, parse_unified_diff, ParsedDiffLine
 
 
 def create_file(path, content=""):
@@ -86,3 +86,91 @@ def test_build_write_preview_read_error(tmp_path, monkeypatch):
     preview = build_write_preview(str(tmp_path), "unreadable_file.txt", "new content")
 
     assert "Could not read existing file for preview: Permission denied" in preview
+
+
+def test_parse_unified_diff_basic_replacement():
+    diff = """--- a.py (current)
++++ a.py (proposed)
+@@ -1,3 +1,3 @@
+ line1
+-line2
++line2 changed
+ line3"""
+
+    parsed_diff = parse_unified_diff(diff)
+    lines = parsed_diff.lines
+
+    assert len(lines) == 7
+    assert lines[0] == ParsedDiffLine(kind="meta", text="--- a.py (current)")
+    assert lines[1] == ParsedDiffLine(kind="meta", text="+++ a.py (proposed)")
+    assert lines[2] == ParsedDiffLine(kind="hunk", text="@@ -1,3 +1,3 @@")
+    assert lines[3] == ParsedDiffLine(kind="context", text="line1", old_lineno=1, new_lineno=1)
+    assert lines[4] == ParsedDiffLine(kind="remove", text="line2", old_lineno=2, new_lineno=None)
+    assert lines[5] == ParsedDiffLine(kind="add", text="line2 changed", old_lineno=None, new_lineno=2)
+    assert lines[6] == ParsedDiffLine(kind="context", text="line3", old_lineno=3, new_lineno=3)
+
+
+def test_parse_unified_diff_pure_add():
+    diff = """--- a.py (current)
++++ a.py (proposed)
+@@ -1,2 +1,3 @@
+ line1
++line_added
+ line2"""
+
+    parsed_diff = parse_unified_diff(diff)
+    lines = parsed_diff.lines
+
+    assert len(lines) == 6
+    assert lines[0] == ParsedDiffLine(kind="meta", text="--- a.py (current)")
+    assert lines[1] == ParsedDiffLine(kind="meta", text="+++ a.py (proposed)")
+    assert lines[2] == ParsedDiffLine(kind="hunk", text="@@ -1,2 +1,3 @@")
+    assert lines[3] == ParsedDiffLine(kind="context", text="line1", old_lineno=1, new_lineno=1)
+    assert lines[4] == ParsedDiffLine(kind="add", text="line_added", old_lineno=None, new_lineno=2)
+    assert lines[5] == ParsedDiffLine(kind="context", text="line2", old_lineno=2, new_lineno=3)
+
+
+def test_parse_unified_diff_pure_remove():
+    diff = """--- a.py (current)
++++ a.py (proposed)
+@@ -1,3 +1,2 @@
+ line1
+-line_removed
+ line2"""
+
+    parsed_diff = parse_unified_diff(diff)
+    lines = parsed_diff.lines
+
+    assert len(lines) == 6
+    assert lines[0] == ParsedDiffLine(kind="meta", text="--- a.py (current)")
+    assert lines[1] == ParsedDiffLine(kind="meta", text="+++ a.py (proposed)")
+    assert lines[2] == ParsedDiffLine(kind="hunk", text="@@ -1,3 +1,2 @@")
+    assert lines[3] == ParsedDiffLine(kind="context", text="line1", old_lineno=1, new_lineno=1)
+    assert lines[4] == ParsedDiffLine(kind="remove", text="line_removed", old_lineno=2, new_lineno=None)
+    assert lines[5] == ParsedDiffLine(kind="context", text="line2", old_lineno=3, new_lineno=2)
+
+
+def test_parse_unified_diff_multi_line_replace():
+    diff = """--- a.py (current)
++++ a.py (proposed)
+@@ -1,4 +1,4 @@
+ line1
+-line2_removed
+-line3_removed
++line2_added
++line3_added
+ line4"""
+
+    parsed_diff = parse_unified_diff(diff)
+    lines = parsed_diff.lines
+
+    assert len(lines) == 9
+    assert lines[0] == ParsedDiffLine(kind="meta", text="--- a.py (current)")
+    assert lines[1] == ParsedDiffLine(kind="meta", text="+++ a.py (proposed)")
+    assert lines[2] == ParsedDiffLine(kind="hunk", text="@@ -1,4 +1,4 @@")
+    assert lines[3] == ParsedDiffLine(kind="context", text="line1", old_lineno=1, new_lineno=1)
+    assert lines[4] == ParsedDiffLine(kind="remove", text="line2_removed", old_lineno=2, new_lineno=None)
+    assert lines[5] == ParsedDiffLine(kind="remove", text="line3_removed", old_lineno=3, new_lineno=None)
+    assert lines[6] == ParsedDiffLine(kind="add", text="line2_added", old_lineno=None, new_lineno=2)
+    assert lines[7] == ParsedDiffLine(kind="add", text="line3_added", old_lineno=None, new_lineno=3)
+    assert lines[8] == ParsedDiffLine(kind="context", text="line4", old_lineno=4, new_lineno=4)
