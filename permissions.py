@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from constants import PROTECTED_PATHS
+
 
 class PermissionMode(str, Enum):
     DEFAULT = "default"
@@ -41,12 +43,16 @@ EXEC_TOOLS = {
     "run_tests",
 }
 
-PROTECTED_PATHS = {
-    ".git",
-    ".env",
-    ".venv",
-    "__pycache__",
-    ".work_copilot.json",
+PATH_TOOLS = {
+    "get_file_content",
+    "get_files_info",
+    "search_in_files",
+    "find_file",
+    "git_diff_file",
+    "write_file",
+    "update",
+    "run_python_file",
+    "run_tests",
 }
 
 
@@ -147,7 +153,7 @@ def evaluate_request(ctx: PermissionContext, tool_name: str, args: dict[str, Any
 
     # Protected paths should always ask or deny
     if is_protected_path(target_path):
-        return Decision.ASK
+        return Decision.DENY
 
     # Mode baseline
     category = tool_category(tool_name)

@@ -48,22 +48,6 @@ def test_mode_baselines(mode, tool_name, args, expected):
 
 
 @pytest.mark.parametrize(
-    "mode, tool_name, args",
-    [
-        (PermissionMode.DEFAULT, "get_file_content", {"file_path": ".git/config"}),
-        (PermissionMode.DEFAULT, "write_file", {"file_path": ".env"}),
-        (PermissionMode.DEFAULT, "run_python_file", {"file_path": "__pycache__/x.pyc"}),
-        (PermissionMode.PLAN, "get_file_content", {"file_path": ".git/HEAD"}),
-        (PermissionMode.PLAN, "write_file", {"file_path": ".venv/script.py"}),
-        (PermissionMode.DEFAULT, "get_files_info", {"directory": ".git"}),
-    ],
-)
-def test_protected_paths_ask(mode, tool_name, args):
-    ctx = make_context(mode=mode)
-    assert evaluate_request(ctx, tool_name, args) == Decision.ASK
-
-
-@pytest.mark.parametrize(
     "rules, tool_name, args, expected",
     [
         (
@@ -131,3 +115,42 @@ def test_explicit_deny_beats_session_allow():
     ctx.session_allow_paths.add("denied.py")
 
     assert evaluate_request(ctx, "run_python_file", {"file_path": "denied.py"}) == Decision.DENY
+
+
+@pytest.mark.parametrize(
+    "mode, tool_name, args",
+    [
+        (PermissionMode.DEFAULT, "write_file", {"file_path": ".env"}),
+        (PermissionMode.PLAN, "write_file", {"file_path": ".venv/script.py"}),
+        (PermissionMode.PLAN, "write_file", {"file_path": ".git/config"}),
+        (PermissionMode.DONT_ASK, "write_file", {"file_path": ".env"}),
+    ],
+)
+def test_write_protected_paths_deny(mode, tool_name, args):
+    ctx = make_context(mode=mode)
+    assert evaluate_request(ctx, tool_name, args) == Decision.DENY
+
+
+@pytest.mark.parametrize(
+    "mode, tool_name, args",
+    [
+        (PermissionMode.DEFAULT, "update", {"file_path": ".env"}),
+        (PermissionMode.PLAN, "update", {"file_path": ".venv/script.py"}),
+        
+        (PermissionMode.DONT_ASK, "update", {"file_path": ".env"}),(PermissionMode.PLAN, "update", {"file_path": ".work_copilot.json"}),
+    ],
+)
+def test_update_protected_paths_deny(mode, tool_name, args):
+    ctx = make_context(mode=mode)
+    assert evaluate_request(ctx, tool_name, args) == Decision.DENY
+
+@pytest.mark.parametrize(
+    "mode, tool_name, args",
+    [
+        (PermissionMode.DEFAULT, "run_python_file", {"file_path": "__pycache__/x.pyc"}),
+        (PermissionMode.DONT_ASK, "run_python_file", {"file_path": ".venv/script.py"}),
+    ]
+)
+def test_run_py_protected_paths_deny(mode, tool_name, args):
+    ctx = make_context(mode=mode)
+    assert evaluate_request(ctx, tool_name, args) == Decision.DENY
