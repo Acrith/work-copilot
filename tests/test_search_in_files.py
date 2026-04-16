@@ -16,13 +16,17 @@ def setup_files(tmp_path):
     (tmp_path / "subdir" / "file3.txt").write_text("File in a subdirectory with query text.")
     # Create a file with no match
     (tmp_path / "nomatch.txt").write_text("This file has no matching content.")
-    # Create a skipped directory and file
+    # Create skipped directories and files
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("query text in git config")
     (tmp_path / "__pycache__").mkdir()
     (tmp_path / "__pycache__" / "cache.pyc").write_text("query text in pycache")
     (tmp_path / ".venv").mkdir()
     (tmp_path / ".venv" / "activate").write_text("query text in venv")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "some_module.js").write_text("query text in node_modules")
+    (tmp_path / ".pytest_cache").mkdir()
+    (tmp_path / ".pytest_cache" / "some_cache_file.txt").write_text("query text in pytest_cache")
     # Create an unreadable file (simulated by non-utf8 content)
     (tmp_path / "unreadable.txt").write_bytes(b"\x80\x81")
     # Create a file with a complex query
@@ -70,6 +74,8 @@ def test_skipped_directories(setup_files):
     assert ".git/config" not in result
     assert "__pycache__/cache.pyc" not in result
     assert ".venv/activate" not in result
+    assert "node_modules/some_module.js" not in result
+    assert ".pytest_cache/some_cache_file.txt" not in result
 
 
 def test_unreadable_or_non_utf8_files_skipped(setup_files):

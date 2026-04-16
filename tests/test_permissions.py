@@ -6,6 +6,10 @@ from permissions import (
     PermissionMode,
     PermissionRuleSet,
     evaluate_request,
+    extract_target_path,
+    is_protected_path,
+    is_sensitive_read_path,
+    normalize_relative_path,
 )
 
 
@@ -88,11 +92,25 @@ def test_session_allow_tool_overrides_mode_baseline():
     assert evaluate_request(ctx, "write_file", {"file_path": "x.txt"}) == Decision.ALLOW
 
 
-def test_session_allow_path_overrides_protected_path():
+def test_session_allow_path_overrides_default_ask_for_write_tool():
+    ctx = make_context(mode=PermissionMode.DEFAULT)
+    ctx.session_allow_paths.add("notes.txt")
+
+    assert evaluate_request(ctx, "write_file", {"file_path": "notes.txt"}) == Decision.ALLOW
+
+
+def test_session_allow_path_does_not_override_sensitive_read_path():
     ctx = make_context(mode=PermissionMode.DEFAULT)
     ctx.session_allow_paths.add(".env")
 
-    assert evaluate_request(ctx, "get_file_content", {"file_path": ".env"}) == Decision.ALLOW
+    assert evaluate_request(ctx, "get_file_content", {"file_path": ".env"}) == Decision.DENY
+
+
+def test_tool_allow_path_does_not_override_sensitive_read_path():
+    ctx = make_context(mode=PermissionMode.DEFAULT)
+    ctx.session_allow_tools.add("get_file_content")
+
+    assert evaluate_request(ctx, "get_file_content", {"file_path": ".env"}) == Decision.DENY
 
 
 def test_explicit_ask_beats_session_allow_tool():
@@ -136,8 +154,8 @@ def test_write_protected_paths_deny(mode, tool_name, args):
     [
         (PermissionMode.DEFAULT, "update", {"file_path": ".env"}),
         (PermissionMode.PLAN, "update", {"file_path": ".venv/script.py"}),
-        
-        (PermissionMode.DONT_ASK, "update", {"file_path": ".env"}),(PermissionMode.PLAN, "update", {"file_path": ".work_copilot.json"}),
+        (PermissionMode.PLAN, "update", {"file_path": ".work_copilot.json"}),
+        (PermissionMode.DONT_ASK, "update", {"file_path": ".env"}),
     ],
 )
 def test_update_protected_paths_deny(mode, tool_name, args):
@@ -154,3 +172,151 @@ def test_update_protected_paths_deny(mode, tool_name, args):
 def test_run_py_protected_paths_deny(mode, tool_name, args):
     ctx = make_context(mode=mode)
     assert evaluate_request(ctx, tool_name, args) == Decision.DENY
+
+
+@pytest.mark.parametrize(
+    "mode, tool_name, args",
+    [
+        (PermissionMode.DEFAULT, "get_file_content", {"file_path": ".env"}),
+        (PermissionMode.PLAN, "get_file_content", {"file_path": ".env"}),
+        (PermissionMode.DONT_ASK, "get_file_content", {"file_path": ".env"}),
+    ],
+)
+def test_sensitive_read_paths_deny(mode, tool_name, args):
+    ctx = make_context(mode=mode)
+    assert evaluate_request(ctx, tool_name, args) == Decision.DENY
+
+
+@pytest.mark.parametrize(
+    "mode, tool_name, args",
+    [
+        (PermissionMode.DEFAULT, "get_file_content", {"file_path": ".work_copilot.json"}),
+        (PermissionMode.PLAN, "get_file_content", {"file_path": ".git/config"}),
+        (PermissionMode.DEFAULT, "get_files_info", {"directory": ".git"}),
+    ],
+)
+def test_protected_but_readable_paths_allow(mode, tool_name, args):
+    ctx = make_context(mode=mode)
+    assert evaluate_request(ctx, tool_name, args) == Decision.ALLOW
+
+
+@pytest.mark.parametrize(
+    "tool_name, file_path",
+    [
+        ("write_file", ".env"),
+        ("update", ".env"),
+    ],
+)
+def test_explicit_allow_does_not_override_write_protected_paths(tool_name, file_path):
+    # Even with an explicit allow rule, writing to protected paths should be denied.
+    rules = PermissionRuleSet(allow=[f"{tool_name}:{file_path}"])
+    ctx = make_context(mode=PermissionMode.DONT_ASK, rules=rules) # DONT_ASK implies ALLOW for writes, but hard safety should override
+    assert evaluate_request(ctx, tool_name, {"file_path": file_path}) == Decision.DENY
+
+@pytest.mark.parametrize(
+    "tool_name, file_path",
+    [
+        ("get_file_content", ".env"),
+    ],
+)
+def test_explicit_allow_does_not_override_sensitive_read_paths(tool_name, file_path):
+    # Even with an explicit allow rule, reading sensitive paths should be denied.
+    rules = PermissionRuleSet(allow=[f"{tool_name}:{file_path}"])
+    ctx = make_context(mode=PermissionMode.DONT_ASK, rules=rules) # DONT_ASK implies ALLOW for reads, but hard safety should override
+    assert evaluate_request(ctx, tool_name, {"file_path": file_path}) == Decision.DENY
+
+@pytest.mark.parametrize(
+    "tool_name, file_path",
+    [
+        ("run_python_file", ".venv/script.py"),
+        ("run_python_file", "__pycache__/x.pyc"),
+    ],
+)
+def test_explicit_allow_does_not_override_exec_protected_paths(tool_name, file_path):
+    # Even with an explicit allow rule, executing in protected paths should be denied.
+    rules = PermissionRuleSet(allow=[f"{tool_name}:{file_path}"])
+    ctx = make_context(mode=PermissionMode.DONT_ASK, rules=rules) # DONT_ASK implies ALLOW for exec, but hard safety should override
+    assert evaluate_request(ctx, tool_name, {"file_path": file_path}) == Decision.DENY
+
+
+@pytest.mark.parametrize(
+    "tool_name, args, expected_path",
+    [
+        ("get_file_content", {"file_path": "some/file.txt"}, "some/file.txt"),
+        ("write_file", {"file_path": "another/path.md"}, "another/path.md"),
+        ("update", {"file_path": "./update_target.py"}, "update_target.py"),
+        ("run_python_file", {"file_path": "script.py"}, "script.py"),
+        ("git_diff_file", {"file_path": "diff_me.txt"}, "diff_me.txt"),
+        ("get_files_info", {"directory": "my/dir"}, "my/dir"),
+        ("get_files_info", {}, "."),  # Default directory is '.'
+        ("run_tests", {"test_path": "tests/unit/test_foo.py"}, "tests/unit/test_foo.py"),
+        ("git_status", {}, None),  # Non-path tool
+        ("search_in_files", {"query": "somethingf"}, None),  # query is not a path
+        ("get_file_content", {"file_path": None}, None),
+        ("write_file", {}, None), # No file_path provided
+        ("get_files_info", {"directory": None}, None), # Normalize returns None if path is None, extract returns None if normalize returns None.
+        ("run_tests", {}, None),    
+    ],
+)
+def test_extract_target_path(tool_name, args, expected_path):
+    assert extract_target_path(tool_name, args) == expected_path
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        (".git/config", True),
+        ("foo/.git/config", True),
+        (".venv/script.py", True),
+        ("bar/.venv/script.py", True),
+        ("__pycache__/x.pyc", True),
+        ("baz/__pycache__/x.pyc", True),
+        (".work_copilot.json", True),
+        ("qux/.work_copilot.json", True),
+        (".env", True),
+        ("quux/.env", True),
+        ("src/main.py", False),
+        ("README.md", False),
+        ("./.git/config", True),
+        (r".\.venv\script.py", True),
+        (r".\src\main.py", False),
+    ],
+)
+def test_is_protected_path(path, expected):
+    assert is_protected_path(path) == expected
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        (".env", True),
+        ("foo/.env", True),
+        (".work_copilot.json", False),
+        ("bar/.work_copilot.json", False),
+        ("src/main.py", False),
+        ("README.md", False),
+        ("./.env", True),
+        (r".\.env", True),
+        (r".\src\main.py", False),
+    ],
+)
+def test_is_sensitive_read_path(path, expected):
+    assert is_sensitive_read_path(path) == expected
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        ("file.txt", "file.txt"),
+        ("./file.txt", "file.txt"),
+        ("dir/subdir/file.txt", "dir/subdir/file.txt"),
+        ("dir/../file.txt", "file.txt"),
+        (r".\.venv\script.py", ".venv/script.py"),
+        (r".\.env", ".env"),
+        (r".\src\main.py", "src/main.py"),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_normalize_relative_path(path, expected):
+    assert normalize_relative_path(path) == expected

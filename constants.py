@@ -14,6 +14,10 @@ LARGE_GENERATED_DIRS = {
     "node_modules",
 }
 
+SENSITIVE_READ_PATHS = {
+    ".env",
+}
+
 SENSITIVE_FILES = {
     ".env",
     ".work_copilot.json",

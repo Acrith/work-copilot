@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from constants import PROTECTED_PATHS
+from constants import PROTECTED_PATHS, SENSITIVE_READ_PATHS
 
 
 class PermissionMode(str, Enum):
@@ -104,7 +104,12 @@ def tool_category(tool_name: str) -> str:
 def normalize_relative_path(path: str | None) -> str | None:
     if not path:
         return None
-    return os.path.normpath(path).replace("\\", "/")
+
+    normalized = os.path.normpath(path).replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+
+    return normalized
 
 
 def extract_target_path(tool_name: str, args: dict[str, Any]) -> str | None:
@@ -112,19 +117,29 @@ def extract_target_path(tool_name: str, args: dict[str, Any]) -> str | None:
         return normalize_relative_path(args.get("file_path"))
     if tool_name == "get_files_info":
         return normalize_relative_path(args.get("directory", "."))
+    if tool_name == "git_diff_file":
+        return normalize_relative_path(args.get("file_path"))
+    if tool_name == "run_tests":
+        return normalize_relative_path(args.get("test_path"))
     return None
 
 
 def is_protected_path(path: str | None) -> bool:
-    if not path:
+    normalized = normalize_relative_path(path)
+    if not normalized:
         return False
-
-    normalized = os.path.normpath(path).replace("\\", "/")
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
 
     parts = normalized.split("/")
     return any(part in PROTECTED_PATHS for part in parts if part)
+
+
+def is_sensitive_read_path(path: str | None) -> bool:
+    normalized = normalize_relative_path(path)
+    if not normalized:
+        return False
+
+    parts = normalized.split("/")
+    return any(part in SENSITIVE_READ_PATHS for part in parts if part)
 
 
 def matches_any(value: str, patterns: list[str]) -> bool:
@@ -134,8 +149,16 @@ def matches_any(value: str, patterns: list[str]) -> bool:
 def evaluate_request(ctx: PermissionContext, tool_name: str, args: dict[str, Any]) -> Decision:
     target_path = extract_target_path(tool_name, args)
     tool_key = tool_name if target_path is None else f"{tool_name}:{target_path}"
+    category = tool_category(tool_name)
 
-    # Explicit deny > ask > allow
+    # Hard safety rules should override everything, including explicit rules and session approvals.
+    if category == "read" and is_sensitive_read_path(target_path):
+        return Decision.DENY
+
+    if category in {"write", "exec"} and is_protected_path(target_path):
+        return Decision.DENY
+
+    # Explicit workspace rules
     if matches_any(tool_name, ctx.rules.deny) or matches_any(tool_key, ctx.rules.deny):
         return Decision.DENY
 
@@ -151,13 +174,7 @@ def evaluate_request(ctx: PermissionContext, tool_name: str, args: dict[str, Any
     if target_path and target_path in ctx.session_allow_paths:
         return Decision.ALLOW
 
-    # Protected paths should always ask or deny
-    if is_protected_path(target_path):
-        return Decision.DENY
-
     # Mode baseline
-    category = tool_category(tool_name)
-
     if ctx.mode == PermissionMode.PLAN:
         return Decision.ALLOW if category == "read" else Decision.DENY
 
