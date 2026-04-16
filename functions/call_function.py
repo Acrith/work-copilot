@@ -8,6 +8,7 @@ from functions.git_diff import git_diff, schema_git_diff
 from functions.git_diff_file import git_diff_file, schema_git_diff_file
 from functions.git_status import git_status, schema_git_status
 from functions.run_python_file import run_python_file, schema_run_python_file
+from functions.run_shell_command import run_shell_command, schema_run_shell_command
 from functions.run_tests import run_tests, schema_run_tests
 from functions.search_in_files import schema_search_in_files, search_in_files
 from functions.update_file import plan_update, schema_update_file, update_file
@@ -28,6 +29,7 @@ available_functions = types.Tool(
         schema_git_status,
         schema_git_diff_file,
         schema_git_diff,
+        schema_run_shell_command
     ],
 )
 
@@ -59,6 +61,7 @@ def call_function(function_call, working_directory, permission_context, verbose=
         "git_status": git_status,
         "git_diff_file": git_diff_file,
         "git_diff": git_diff,
+        "bash": run_shell_command
     }
 
     function_name = function_call.name or ""

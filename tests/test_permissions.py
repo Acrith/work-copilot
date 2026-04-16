@@ -320,3 +320,17 @@ def test_is_sensitive_read_path(path, expected):
 )
 def test_normalize_relative_path(path, expected):
     assert normalize_relative_path(path) == expected
+
+
+@pytest.mark.parametrize(
+    "mode, args, expected",
+    [
+        (PermissionMode.DEFAULT, {"command": "git status"}, Decision.ASK),
+        (PermissionMode.PLAN, {"command": "git status"}, Decision.DENY),
+        (PermissionMode.DONT_ASK, {"command": "git status"}, Decision.DENY),
+        (PermissionMode.DEFAULT, {"command": "git status", "cwd": ".git"}, Decision.DENY),
+    ],
+)
+def test_bash_permission_behavior(mode, args, expected):
+    ctx = make_context(mode=mode)
+    assert evaluate_request(ctx, "bash", args) == expected

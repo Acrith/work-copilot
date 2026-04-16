@@ -39,6 +39,7 @@ WRITE_TOOLS = {
 }
 
 EXEC_TOOLS = {
+    "bash",
     "run_python_file",
     "run_tests",
 }
@@ -53,6 +54,7 @@ PATH_TOOLS = {
     "update",
     "run_python_file",
     "run_tests",
+    "bash",
 }
 
 
@@ -121,6 +123,8 @@ def extract_target_path(tool_name: str, args: dict[str, Any]) -> str | None:
         return normalize_relative_path(args.get("file_path"))
     if tool_name == "run_tests":
         return normalize_relative_path(args.get("test_path"))
+    if tool_name == "bash":
+        return normalize_relative_path(args.get("cwd", "."))
     return None
 
 

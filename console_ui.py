@@ -25,6 +25,16 @@ def _tool_display_name(function_name: str) -> str:
     names = {
         "write_file": "Write",
         "update": "Update",
+        "bash": "Bash",
+        "git_status": "Git Status",
+        "git_diff": "Git Diff",
+        "git_diff_file": "Git Diff File",
+        "get_file_content": "Get File Content",
+        "get_files_info": "Get Files Info",
+        "run_tests": "Run Tests",
+        "run_python_file": "Run Python File",
+        "find_file": "Find File",
+        "search_in_files": "Search In Files",
     }
     return names.get(function_name, function_name.replace("_", " ").title())
 
@@ -56,10 +66,21 @@ def build_preview_summary(function_name: str, file_path: str, preview: str) -> s
 def approval_prompt(function_name: str, args: dict) -> tuple[str, str | None]:
     console.print()
     console.print("Permission required", style="bold yellow")
-    console.print(f"[bold]Tool:[/bold] [cyan]{function_name}[/cyan]")
+    console.print(f"[bold]Tool:[/bold] [cyan]{_tool_display_name(function_name)}[/cyan]")
 
     if function_name in {"write_file", "update"}:
         console.print(f"[bold]Path:[/bold] {args.get('file_path', '')}")
+
+    elif function_name == "bash":
+        command = args.get("command", "")
+        cwd = args.get("cwd") or "."
+        timeout = args.get("timeout_seconds")
+        timeout_display = timeout if timeout is not None else 30
+
+        console.print(f"[bold]Command:[/bold] {command}", highlight=False)
+        console.print(f"[bold]Cwd:[/bold] {cwd}", highlight=False)
+        console.print(f"[bold]Timeout:[/bold] {timeout_display}s", highlight=False)
+
     else:
         console.print(f"[bold]Args:[/bold] {args}", highlight=False)
 
@@ -113,9 +134,10 @@ def print_mutation_preview(function_name: str, file_path: str, preview: str) -> 
 
 
 def format_tool_call(function_call, verbose: bool) -> Text:
+    display_name = _tool_display_name(function_call.name or "")
     text = Text("• ", style="bright_black")
     text.append("[tool] ", style="bold cyan")
-    text.append(function_call.name or "", style="bold white")
+    text.append(display_name, style="bold white")
     if verbose and function_call.args:
         text.append(f" {dict(function_call.args)}", style="bright_black")
     return text
