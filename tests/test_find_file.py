@@ -18,6 +18,7 @@ def test_find_file_skips_ignored_dirs(tmp_path):
 
     assert result == "src/target.py"
 
+
 def test_find_file_is_case_insensitive(tmp_path):
     file_path = tmp_path / "Test_Hello_World.py"
     file_path.write_text("print('hello')", encoding="utf-8")
@@ -25,6 +26,7 @@ def test_find_file_is_case_insensitive(tmp_path):
     result = find_file(str(tmp_path), "test_hello")
 
     assert result == "Test_Hello_World.py"
+
 
 def test_find_file_skips_additional_ignored_dirs(tmp_path):
     visible = tmp_path / "src"

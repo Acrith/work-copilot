@@ -6,12 +6,8 @@ from functions.git_status import git_status
 
 def init_git_repo(repo_path: Path):
     subprocess.run(["git", "init"], cwd=repo_path, check=True)
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True
-    )
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "Initial commit"],
         cwd=repo_path,
@@ -38,9 +34,7 @@ def test_git_status_modified_tracked_file(tmp_path: Path):
     init_git_repo(tmp_path)
     (tmp_path / "test_file.txt").write_text("initial content")
     subprocess.run(["git", "add", "test_file.txt"], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "Add test_file"], cwd=tmp_path, check=True
-    )
+    subprocess.run(["git", "commit", "-m", "Add test_file"], cwd=tmp_path, check=True)
     (tmp_path / "test_file.txt").write_text("modified content")
     status = git_status(str(tmp_path))
     assert " M test_file.txt" in status

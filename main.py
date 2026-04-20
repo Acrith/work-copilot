@@ -3,66 +3,16 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from rich.console import Console
 
-from console_ui import (
-    format_tool_call,
-    print_agent_update,
-    print_error,
-    print_final_response,
-    print_verbose_stats,
-)
-from functions.call_function import available_functions, call_function
+from agent_runtime import run_agent
 from permissions import PermissionContext, PermissionMode, load_rules
-from prompts import system_prompt
+from providers.gemini import GeminiProvider
 
 MAX_ITERATIONS = 20
-console = Console()
-
-
-def extract_text_parts(response) -> list[str]:
-    texts = []
-
-    if not response.candidates:
-        return texts
-
-    for candidate in response.candidates:
-        content = getattr(candidate, "content", None)
-        if not content:
-            continue
-
-        parts = getattr(content, "parts", None) or []
-        for part in parts:
-            text = getattr(part, "text", None)
-            if not text:
-                continue
-
-            stripped = text.strip()
-            if stripped:
-                texts.append(stripped)
-
-    return texts
-
-
-def is_meaningful_update(text: str) -> bool:
-    stripped = text.strip()
-    if not stripped:
-        return False
-
-    if stripped.startswith("[tool]"):
-        return False
-
-    return True
 
 
 def main():
     load_dotenv()
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("No API key found!")
 
     parser = argparse.ArgumentParser(description="Chatbot")
     parser.add_argument("user_prompt", type=str, help="User prompt")
@@ -83,11 +33,16 @@ def main():
         default=PermissionMode.DEFAULT.value,
         help="Permission mode for tool execution",
     )
+
     args = parser.parse_args()
 
     workspace = os.path.abspath(args.workspace)
     if not os.path.isdir(workspace):
         raise ValueError(f"Workspace is not a directory: {args.workspace}")
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("No API key found!")
 
     permission_context = PermissionContext(
         mode=PermissionMode(args.permission_mode),
@@ -95,66 +50,23 @@ def main():
         rules=load_rules(workspace),
     )
 
-    client = genai.Client(api_key=api_key)
-    messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
+    provider = GeminiProvider(
+        api_key=api_key,
+        model="gemini-2.5-flash",
+    )
 
-    for _ in range(MAX_ITERATIONS):
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=messages,
-            config=types.GenerateContentConfig(
-                tools=[available_functions],
-                system_instruction=system_prompt,
-            ),
-        )
+    final_text = run_agent(
+        provider=provider,
+        user_prompt=args.user_prompt,
+        workspace=workspace,
+        permission_context=permission_context,
+        verbose=args.verbose,
+        verbose_functions=args.verbose_functions,
+        max_iterations=MAX_ITERATIONS,
+    )
 
-        if response.candidates:
-            for candidate in response.candidates:
-                messages.append(candidate.content)
-
-        if args.verbose:
-            print_verbose_stats(args.user_prompt, response)
-
-        text_parts = extract_text_parts(response)
-        function_results = []
-
-        if response.function_calls:
-            for text in text_parts:
-                if is_meaningful_update(text):
-                    print_agent_update(text)
-
-            for call in response.function_calls:
-                if call.name not in {"write_file", "update"}:
-                    console.print(format_tool_call(call, args.verbose_functions))
-
-                function_call_result = call_function(
-                    call,
-                    workspace,
-                    permission_context,
-                    args.verbose_functions,
-                )
-                if not function_call_result.parts:
-                    raise Exception("function_call_result has no parts")
-                if not function_call_result.parts[0].function_response:
-                    raise Exception("function_call_result has no function_response")
-                if not function_call_result.parts[0].function_response.response:
-                    raise Exception("function_call_result has no response")
-
-                function_results.append(function_call_result.parts[0])
-
-                if args.verbose:
-                    print(function_call_result.parts[0].function_response)
-
-            messages.append(types.Content(role="user", parts=function_results))
-            continue
-
-        final_text = "\n".join(text_parts).strip()
-        if final_text:
-            print_final_response(final_text)
-            return
-
-    print_error(f"Max iterations ({MAX_ITERATIONS}) reached.")
-    sys.exit(1)
+    if final_text is None:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
