@@ -6,7 +6,11 @@ from dotenv import load_dotenv
 
 from agent_runtime import run_agent
 from permissions import PermissionContext, PermissionMode, load_rules
-from providers.gemini import GeminiProvider
+from providers.factory import (
+    DEFAULT_PROVIDER,
+    create_provider,
+    get_default_model,
+)
 
 MAX_ITERATIONS = 20
 
@@ -33,6 +37,18 @@ def main():
         default=PermissionMode.DEFAULT.value,
         help="Permission mode for tool execution",
     )
+    parser.add_argument(
+        "--provider",
+        default=os.environ.get("WORK_COPILOT_PROVIDER", DEFAULT_PROVIDER),
+        choices=["gemini"],
+        help="Model provider to use",
+    )
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("WORK_COPILOT_MODEL"),
+        help="Model name to use. Defaults depend on provider.",
+    )
+    
 
     args = parser.parse_args()
 
@@ -40,19 +56,17 @@ def main():
     if not os.path.isdir(workspace):
         raise ValueError(f"Workspace is not a directory: {args.workspace}")
 
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("No API key found!")
-
     permission_context = PermissionContext(
         mode=PermissionMode(args.permission_mode),
         workspace=workspace,
         rules=load_rules(workspace),
     )
 
-    provider = GeminiProvider(
-        api_key=api_key,
-        model="gemini-2.5-flash",
+    model = args.model or get_default_model(args.provider)
+
+    provider = create_provider(
+        args.provider,
+        model=model,
     )
 
     final_text = run_agent(
