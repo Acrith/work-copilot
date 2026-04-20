@@ -70,7 +70,9 @@ def test_run_shell_command_nonzero_exit(tmp_path, monkeypatch):
 
 def test_run_shell_command_timeout(tmp_path, monkeypatch):
     def fake_run(argv, cwd, capture_output, text, timeout, check):
-        raise subprocess.TimeoutExpired(argv, timeout, output="partial out\n", stderr="partial err\n")
+        raise subprocess.TimeoutExpired(
+            argv, timeout, output="partial out\n", stderr="partial err\n"
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -107,7 +109,7 @@ def test_run_shell_command_denies_outside_workspace_cwd(tmp_path, monkeypatch):
 
     result = run_shell_command(str(tmp_path), "git status", cwd="../outside")
 
-    assert "Bash denied: cwd \"../outside\" is outside the workspace." in result
+    assert 'Bash denied: cwd "../outside" is outside the workspace.' in result
     assert called is False
 
 
@@ -126,7 +128,7 @@ def test_run_shell_command_denies_protected_cwd(tmp_path, monkeypatch):
 
     result = run_shell_command(str(tmp_path), "git status", cwd=".git")
 
-    assert "Bash denied: cwd \".git\" is a protected path." in result
+    assert 'Bash denied: cwd ".git" is a protected path.' in result
     assert called is False
 
 

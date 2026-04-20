@@ -95,8 +95,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
         spec=ToolSpec(
             name="get_file_content",
             description=(
-                "Reads file content in a specified file path relative to the "
-                "working directory"
+                "Reads file content in a specified file path relative to the working directory"
             ),
             parameters=object_schema(
                 {
@@ -121,9 +120,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
                     "file_path": string_property(
                         "File path to write to, relative to the working directory"
                     ),
-                    "content": string_property(
-                        "File content to write or overwrite into a file"
-                    ),
+                    "content": string_property("File content to write or overwrite into a file"),
                 },
                 required=["file_path", "content"],
             ),
@@ -161,9 +158,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
             parameters=object_schema(
                 {
-                    "query": string_property(
-                        "The exact text to search for in file contents."
-                    ),
+                    "query": string_property("The exact text to search for in file contents."),
                 },
                 required=["query"],
             ),
@@ -208,9 +203,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
             parameters=object_schema(
                 {
-                    "file_path": string_property(
-                        "File path relative to the working directory."
-                    ),
+                    "file_path": string_property("File path relative to the working directory."),
                     "old_text": string_property("Exact existing text to replace."),
                     "new_text": string_property("Replacement text."),
                 },
@@ -228,9 +221,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
             parameters=object_schema(
                 {
-                    "query": string_property(
-                        "The exact text to search for in filenames."
-                    ),
+                    "query": string_property("The exact text to search for in filenames."),
                 },
                 required=["query"],
             ),

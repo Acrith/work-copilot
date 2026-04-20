@@ -106,7 +106,9 @@ def test_parse_unified_diff_basic_replacement():
     assert lines[2] == ParsedDiffLine(kind="hunk", text="@@ -1,3 +1,3 @@")
     assert lines[3] == ParsedDiffLine(kind="context", text="line1", old_lineno=1, new_lineno=1)
     assert lines[4] == ParsedDiffLine(kind="remove", text="line2", old_lineno=2, new_lineno=None)
-    assert lines[5] == ParsedDiffLine(kind="add", text="line2 changed", old_lineno=None, new_lineno=2)
+    assert lines[5] == ParsedDiffLine(
+        kind="add", text="line2 changed", old_lineno=None, new_lineno=2
+    )
     assert lines[6] == ParsedDiffLine(kind="context", text="line3", old_lineno=3, new_lineno=3)
 
 
@@ -146,7 +148,9 @@ def test_parse_unified_diff_pure_remove():
     assert lines[1] == ParsedDiffLine(kind="meta", text="+++ a.py (proposed)")
     assert lines[2] == ParsedDiffLine(kind="hunk", text="@@ -1,3 +1,2 @@")
     assert lines[3] == ParsedDiffLine(kind="context", text="line1", old_lineno=1, new_lineno=1)
-    assert lines[4] == ParsedDiffLine(kind="remove", text="line_removed", old_lineno=2, new_lineno=None)
+    assert lines[4] == ParsedDiffLine(
+        kind="remove", text="line_removed", old_lineno=2, new_lineno=None
+    )
     assert lines[5] == ParsedDiffLine(kind="context", text="line2", old_lineno=3, new_lineno=2)
 
 
@@ -169,8 +173,12 @@ def test_parse_unified_diff_multi_line_replace():
     assert lines[1] == ParsedDiffLine(kind="meta", text="+++ a.py (proposed)")
     assert lines[2] == ParsedDiffLine(kind="hunk", text="@@ -1,4 +1,4 @@")
     assert lines[3] == ParsedDiffLine(kind="context", text="line1", old_lineno=1, new_lineno=1)
-    assert lines[4] == ParsedDiffLine(kind="remove", text="line2_removed", old_lineno=2, new_lineno=None)
-    assert lines[5] == ParsedDiffLine(kind="remove", text="line3_removed", old_lineno=3, new_lineno=None)
+    assert lines[4] == ParsedDiffLine(
+        kind="remove", text="line2_removed", old_lineno=2, new_lineno=None
+    )
+    assert lines[5] == ParsedDiffLine(
+        kind="remove", text="line3_removed", old_lineno=3, new_lineno=None
+    )
     assert lines[6] == ParsedDiffLine(kind="add", text="line2_added", old_lineno=None, new_lineno=2)
     assert lines[7] == ParsedDiffLine(kind="add", text="line3_added", old_lineno=None, new_lineno=3)
     assert lines[8] == ParsedDiffLine(kind="context", text="line4", old_lineno=4, new_lineno=4)

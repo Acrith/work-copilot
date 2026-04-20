@@ -28,8 +28,7 @@ def test_update_missing_target_text(tmp_path):
     )
 
     assert (
-        result
-        == 'Error: Target text not found in "sample.txt". '
+        result == 'Error: Target text not found in "sample.txt". '
         "Read the file first and retry with a more exact old_text."
     )
     assert file_path.read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"
@@ -47,8 +46,7 @@ def test_update_multiple_matches_fails(tmp_path):
     )
 
     assert (
-        result
-        == 'Error: Found 2 matches for old_text in "sample.txt". '
+        result == 'Error: Found 2 matches for old_text in "sample.txt". '
         "Provide a more specific old_text."
     )
     assert file_path.read_text(encoding="utf-8") == "beta\nalpha\nbeta\n"
@@ -99,8 +97,7 @@ def test_update_rejects_path_traversal(tmp_path):
     )
 
     assert (
-        result
-        == 'Error: Cannot update "../outside.txt" as it is outside the permitted '
+        result == 'Error: Cannot update "../outside.txt" as it is outside the permitted '
         "working directory"
     )
     assert outside_file.read_text(encoding="utf-8") == "secret"
@@ -128,7 +125,6 @@ def test_update_missing_file(tmp_path):
     )
 
     assert (
-        result
-        == 'Error: File not found: "missing.txt". '
+        result == 'Error: File not found: "missing.txt". '
         "Use find_file or get_files_info to locate the correct path."
     )

@@ -162,12 +162,13 @@ def test_update_protected_paths_deny(mode, tool_name, args):
     ctx = make_context(mode=mode)
     assert evaluate_request(ctx, tool_name, args) == Decision.DENY
 
+
 @pytest.mark.parametrize(
     "mode, tool_name, args",
     [
         (PermissionMode.DEFAULT, "run_python_file", {"file_path": "__pycache__/x.pyc"}),
         (PermissionMode.DONT_ASK, "run_python_file", {"file_path": ".venv/script.py"}),
-    ]
+    ],
 )
 def test_run_py_protected_paths_deny(mode, tool_name, args):
     ctx = make_context(mode=mode)
@@ -210,8 +211,11 @@ def test_protected_but_readable_paths_allow(mode, tool_name, args):
 def test_explicit_allow_does_not_override_write_protected_paths(tool_name, file_path):
     # Even with an explicit allow rule, writing to protected paths should be denied.
     rules = PermissionRuleSet(allow=[f"{tool_name}:{file_path}"])
-    ctx = make_context(mode=PermissionMode.DONT_ASK, rules=rules) # DONT_ASK implies ALLOW for writes, but hard safety should override
+    ctx = make_context(
+        mode=PermissionMode.DONT_ASK, rules=rules
+    )  # DONT_ASK implies ALLOW for writes, but hard safety should override
     assert evaluate_request(ctx, tool_name, {"file_path": file_path}) == Decision.DENY
+
 
 @pytest.mark.parametrize(
     "tool_name, file_path",
@@ -222,8 +226,11 @@ def test_explicit_allow_does_not_override_write_protected_paths(tool_name, file_
 def test_explicit_allow_does_not_override_sensitive_read_paths(tool_name, file_path):
     # Even with an explicit allow rule, reading sensitive paths should be denied.
     rules = PermissionRuleSet(allow=[f"{tool_name}:{file_path}"])
-    ctx = make_context(mode=PermissionMode.DONT_ASK, rules=rules) # DONT_ASK implies ALLOW for reads, but hard safety should override
+    ctx = make_context(
+        mode=PermissionMode.DONT_ASK, rules=rules
+    )  # DONT_ASK implies ALLOW for reads, but hard safety should override
     assert evaluate_request(ctx, tool_name, {"file_path": file_path}) == Decision.DENY
+
 
 @pytest.mark.parametrize(
     "tool_name, file_path",
@@ -235,7 +242,9 @@ def test_explicit_allow_does_not_override_sensitive_read_paths(tool_name, file_p
 def test_explicit_allow_does_not_override_exec_protected_paths(tool_name, file_path):
     # Even with an explicit allow rule, executing in protected paths should be denied.
     rules = PermissionRuleSet(allow=[f"{tool_name}:{file_path}"])
-    ctx = make_context(mode=PermissionMode.DONT_ASK, rules=rules) # DONT_ASK implies ALLOW for exec, but hard safety should override
+    ctx = make_context(
+        mode=PermissionMode.DONT_ASK, rules=rules
+    )  # DONT_ASK implies ALLOW for exec, but hard safety should override
     assert evaluate_request(ctx, tool_name, {"file_path": file_path}) == Decision.DENY
 
 
@@ -253,9 +262,13 @@ def test_explicit_allow_does_not_override_exec_protected_paths(tool_name, file_p
         ("git_status", {}, None),  # Non-path tool
         ("search_in_files", {"query": "somethingf"}, None),  # query is not a path
         ("get_file_content", {"file_path": None}, None),
-        ("write_file", {}, None), # No file_path provided
-        ("get_files_info", {"directory": None}, None), # Normalize returns None if path is None, extract returns None if normalize returns None.
-        ("run_tests", {}, None),    
+        ("write_file", {}, None),  # No file_path provided
+        (
+            "get_files_info",
+            {"directory": None},
+            None,
+        ),  # Normalize returns None if path is None, extract returns None if normalize returns None.
+        ("run_tests", {}, None),
     ],
 )
 def test_extract_target_path(tool_name, args, expected_path):

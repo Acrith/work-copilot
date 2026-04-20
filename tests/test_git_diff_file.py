@@ -71,8 +71,7 @@ def test_git_diff_file_rejects_path_traversal(tmp_path):
     result = git_diff_file(str(working_directory), "../outside.txt")
 
     assert (
-        result
-        == 'Error: Cannot inspect diff for "../outside.txt" as it is outside the '
+        result == 'Error: Cannot inspect diff for "../outside.txt" as it is outside the '
         "permitted working directory"
     )
 

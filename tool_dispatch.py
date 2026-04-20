@@ -48,8 +48,7 @@ def execute_tool_call(
             name=function_name,
             payload={
                 "error": (
-                    f"Permission denied for {function_name} "
-                    f"in mode={permission_context.mode.value}"
+                    f"Permission denied for {function_name} in mode={permission_context.mode.value}"
                 )
             },
         )

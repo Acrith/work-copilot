@@ -9,8 +9,7 @@ def plan_update(working_directory, file_path, old_text, new_text):
         return {
             "status": "error",
             "message": (
-                f'Cannot update "{file_path}" as it is outside the permitted '
-                "working directory"
+                f'Cannot update "{file_path}" as it is outside the permitted working directory'
             ),
         }
 
@@ -88,7 +87,7 @@ def update_file(working_directory, file_path, old_text, new_text):
     plan = plan_update(working_directory, file_path, old_text, new_text)
 
     if plan["status"] == "error":
-        return f'Error: {plan["message"]}'
+        return f"Error: {plan['message']}"
 
     if plan["status"] == "no_change":
         return plan["message"]

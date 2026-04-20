@@ -7,12 +7,14 @@ from functions.update_file import plan_update
 
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
+
 @dataclass
 class ParsedDiffLine:
     kind: str  # "context", "add", "remove", "meta", "hunk"
     text: str
     old_lineno: int | None = None
     new_lineno: int | None = None
+
 
 @dataclass
 class ParsedDiff:
@@ -64,7 +66,7 @@ def build_update_preview(
     plan = plan_update(working_directory, file_path, old_text, new_text)
 
     if plan["status"] == "error":
-        return f'Preview unavailable: {plan["message"]}'
+        return f"Preview unavailable: {plan['message']}"
 
     if plan["status"] == "no_change":
         return plan["message"]

@@ -262,12 +262,8 @@ def _render_change_block(block_lines: list) -> list[Text]:
     for old_line, new_line in zip_longest(removes, adds):
         if old_line and new_line:
             old_text, new_text = _highlight_changed_spans(old_line.text, new_line.text)
-            renderables.append(
-                _render_styled_diff_line(old_line.old_lineno, None, "-", old_text)
-            )
-            renderables.append(
-                _render_styled_diff_line(None, new_line.new_lineno, "+", new_text)
-            )
+            renderables.append(_render_styled_diff_line(old_line.old_lineno, None, "-", old_text))
+            renderables.append(_render_styled_diff_line(None, new_line.new_lineno, "+", new_text))
         elif old_line:
             renderables.append(
                 _render_styled_diff_line(

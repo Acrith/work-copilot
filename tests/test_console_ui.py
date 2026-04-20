@@ -1,10 +1,12 @@
 from rich.text import Text
 
+from agent_types import ToolCall
 from console_ui import (
     _highlight_changed_spans,
     _render_context_line,
     _render_hunk_line,
     _render_styled_diff_line,
+    format_tool_call,
 )
 from previews import ParsedDiffLine
 
@@ -77,3 +79,13 @@ def test_highlight_changed_spans_for_small_word_replacement():
     assert new_rendered.plain == "test_git_status_provides_clean_repo"
     assert len(old_rendered.spans) > 0
     assert len(new_rendered.spans) > 0
+
+
+def test_format_tool_call_accepts_neutral_tool_call():
+    rendered = format_tool_call(
+        ToolCall(name="bash", args={"command": "echo hello"}),
+        verbose=True,
+    )
+
+    assert "Bash" in rendered.plain
+    assert "echo hello" in rendered.plain
