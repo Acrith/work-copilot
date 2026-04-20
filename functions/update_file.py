@@ -1,7 +1,5 @@
 import os
 
-from google.genai import types
-
 
 def plan_update(working_directory, file_path, old_text, new_text):
     workspace = os.path.abspath(working_directory)
@@ -102,31 +100,3 @@ def update_file(working_directory, file_path, old_text, new_text):
         return f'Error: Could not write "{file_path}": {e}'
 
     return f'Successfully updated "{file_path}"'
-
-
-schema_update_file = types.FunctionDeclaration(
-    name="update",
-    description=(
-        "Replace one exact text block inside an existing file. "
-        "Fails if the file is missing, the target text is missing, or the "
-        "target text appears multiple times."
-    ),
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "file_path": types.Schema(
-                type=types.Type.STRING,
-                description="File path relative to the working directory.",
-            ),
-            "old_text": types.Schema(
-                type=types.Type.STRING,
-                description="Exact existing text to replace.",
-            ),
-            "new_text": types.Schema(
-                type=types.Type.STRING,
-                description="Replacement text.",
-            ),
-        },
-        required=["file_path", "old_text", "new_text"],
-    ),
-)

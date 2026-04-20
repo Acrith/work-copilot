@@ -1,7 +1,5 @@
 import subprocess
 
-from google.genai import types
-
 
 def git_diff(working_directory: str) -> str:
     try:
@@ -28,20 +26,3 @@ def git_diff(working_directory: str) -> str:
         return "Error: Git command not found. Is Git installed and in PATH?"
     except Exception as e:
         return f"Error: An unexpected error occurred: {e}"
-
-
-schema_git_diff = types.FunctionDeclaration(
-    name="git_diff",
-    description=(
-        "Inspect the local git repository inside the provided workspace and "
-        "return the current repository-wide git diff as a string. "
-        "If there is no diff, return 'No diff in repository.' "
-        "If the workspace is not a git repository, return an error string. "
-        "If git is not installed, return an error string."
-    ),
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={},
-        required=[],
-    ),
-)

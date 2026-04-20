@@ -2,8 +2,6 @@ import os
 import shutil
 import subprocess
 
-from google.genai import types
-
 
 def run_tests(
     working_directory: str,
@@ -54,30 +52,3 @@ def run_tests(
         return "Error: test run timed out after 60 seconds"
     except Exception as e:
         return f"Error: running tests: {e}"
-
-
-schema_run_tests = types.FunctionDeclaration(
-    name="run_tests",
-    description="Runs pytest in the workspace, optionally scoped to a specific test path or -k filter",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "test_path": types.Schema(
-                type=types.Type.STRING,
-                description="Optional path to a test file or test directory, relative to the working directory",
-            ),
-            "keyword": types.Schema(
-                type=types.Type.STRING,
-                description="Optional pytest -k expression to filter tests",
-            ),
-            "max_failures": types.Schema(
-                type=types.Type.INTEGER,
-                description="Optional pytest --maxfail value",
-            ),
-            "quiet": types.Schema(
-                type=types.Type.BOOLEAN,
-                description="Whether to pass -q to pytest",
-            ),
-        },
-    ),
-)

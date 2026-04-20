@@ -2,8 +2,6 @@ import os
 import shlex
 import subprocess
 
-from google.genai import types
-
 from permissions import is_protected_path
 from previews import normalize_tool_path
 
@@ -73,28 +71,3 @@ def run_shell_command(
         f"--- stdout ---\n{stdout or '(empty)'}\n"
         f"--- stderr ---\n{stderr or '(empty)'}"
     )
-
-schema_run_shell_command = types.FunctionDeclaration(
-    name="bash",
-    description="Executes a shell command.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "command": types.Schema(
-                type=types.Type.STRING,
-                description="The shell command to execute.",
-            ),
-            "cwd": types.Schema(
-                type=types.Type.STRING,
-                description="The current working directory for the command. Defaults to the workspace root.",
-                nullable=True,
-            ),
-            "timeout_seconds": types.Schema(
-                type=types.Type.INTEGER,
-                description="The maximum time in seconds to wait for the command to complete. Defaults to 30 seconds.",
-                nullable=True,
-            ),
-        },
-        required=["command"],
-    ),
-)

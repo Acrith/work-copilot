@@ -1,172 +1,85 @@
-from unittest.mock import MagicMock
-
-import pytest
 from google.genai import types
 
 import functions.call_function as call_function_module
+from agent_types import ToolResult
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
-
-
-def mock_dispatched_function(**kwargs):
-    return {"mock_result": "success", "args": kwargs}
-
-
-@pytest.fixture
-def mock_working_directory():
-    return "/tmp/test_dir"
-
-
-@pytest.fixture
-def permission_context(mock_working_directory):
-    return PermissionContext(
-        mode=PermissionMode.DEFAULT,
-        workspace=mock_working_directory,
-        rules=PermissionRuleSet(),
-    )
 
 
 def create_function_call(name, args=None):
     return types.FunctionCall(name=name, args=args or {})
 
 
-def test_dispatches_known_function_and_passes_working_directory(
-    monkeypatch, mock_working_directory, permission_context
-):
-    mocked = MagicMock(side_effect=mock_dispatched_function)
-    monkeypatch.setattr(call_function_module, "get_file_content", mocked)
-
-    function_call = create_function_call("get_file_content", {"file_path": "test.txt"})
-    response = call_function_module.call_function(
-        function_call, mock_working_directory, permission_context
-    )
-
-    assert response.parts[0].function_response.name == "get_file_content"
-
-    result = response.parts[0].function_response.response["result"]
-    assert result["mock_result"] == "success"
-    assert result["args"]["file_path"] == "test.txt"
-    assert result["args"]["working_directory"] == mock_working_directory
-
-    mocked.assert_called_once_with(
-        file_path="test.txt",
-        working_directory=mock_working_directory,
-    )
-
-
-def test_unknown_function_name_returns_error(mock_working_directory, permission_context):
-    function_call = create_function_call("non_existent_function")
-    response = call_function_module.call_function(
-        function_call, mock_working_directory, permission_context
-    )
-
-    assert response.parts[0].function_response.name == "non_existent_function"
-    assert response.parts[0].function_response.response["error"] == (
-        "Unknown function: non_existent_function"
-    )
-
-
-def test_missing_arguments_are_forwarded_as_is(
-    monkeypatch, mock_working_directory, permission_context
-):
-    mocked = MagicMock(side_effect=mock_dispatched_function)
-    monkeypatch.setattr(call_function_module, "get_file_content", mocked)
-
-    function_call = create_function_call("get_file_content", {})
-    response = call_function_module.call_function(
-        function_call, mock_working_directory, permission_context
-    )
-
-    result = response.parts[0].function_response.response["result"]
-    assert result["args"]["working_directory"] == mock_working_directory
-    assert "file_path" not in result["args"]
-
-    mocked.assert_called_once_with(
-        working_directory=mock_working_directory,
-    )
-
-def test_invalid_update_skips_approval(monkeypatch, mock_working_directory):
-    permission_context = PermissionContext(
+def make_permission_context(workspace: str):
+    return PermissionContext(
         mode=PermissionMode.DEFAULT,
-        workspace=mock_working_directory,
+        workspace=workspace,
         rules=PermissionRuleSet(),
     )
 
-    approval_called = False
 
-    def fake_approval_prompt(function_name, args):
-        nonlocal approval_called
-        approval_called = True
-        return "y"
+def test_call_function_converts_gemini_call_to_neutral_tool_call(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_execute_tool_call(tool_call, working_directory, permission_context, verbose=False):
+        captured["tool_call"] = tool_call
+        captured["working_directory"] = working_directory
+        captured["permission_context"] = permission_context
+        captured["verbose"] = verbose
+
+        return ToolResult(
+            name=tool_call.name,
+            payload={"result": {"ok": True}},
+        )
 
     monkeypatch.setattr(
         call_function_module,
-        "approval_prompt",
-        fake_approval_prompt,
+        "execute_tool_call",
+        fake_execute_tool_call,
     )
 
+    permission_context = make_permission_context(str(tmp_path))
     function_call = create_function_call(
-        "update",
-        {
-            "file_path": "missing.txt",
-            "old_text": "a",
-            "new_text": "b",
-        },
+        "get_file_content",
+        {"file_path": "sample.txt"},
     )
 
     response = call_function_module.call_function(
         function_call,
-        mock_working_directory,
+        str(tmp_path),
         permission_context,
+        verbose=True,
     )
 
-    assert approval_called is False
-    assert response.parts[0].function_response.name == "update"
-    assert response.parts[0].function_response.response["result"] == (
-        'Error: File not found: "missing.txt". '
-        "Use find_file or get_files_info to locate the correct path."
-    )
+    assert captured["tool_call"].name == "get_file_content"
+    assert captured["tool_call"].args == {"file_path": "sample.txt"}
+    assert captured["working_directory"] == str(tmp_path)
+    assert captured["permission_context"] is permission_context
+    assert captured["verbose"] is True
 
-def test_valid_update_asks_approval(monkeypatch, tmp_path):
-    file_path = tmp_path / "sample.txt"
-    file_path.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+    function_response = response.parts[0].function_response
+    assert function_response.name == "get_file_content"
+    assert function_response.response == {"result": {"ok": True}}
 
-    permission_context = PermissionContext(
-        mode=PermissionMode.DEFAULT,
-        workspace=str(tmp_path),
-        rules=PermissionRuleSet(),
-    )
 
-    approval_called = False
-    preview_called = False
+def test_call_function_handles_missing_args(monkeypatch, tmp_path):
+    captured = {}
 
-    def fake_approval_prompt(function_name, args):
-        nonlocal approval_called
-        approval_called = True
-        return "y", None
+    def fake_execute_tool_call(tool_call, working_directory, permission_context, verbose=False):
+        captured["tool_call"] = tool_call
 
-    def fake_print_mutation_preview(function_name, file_path, preview):
-        nonlocal preview_called
-        preview_called = True
+        return ToolResult(
+            name=tool_call.name,
+            payload={"result": "ok"},
+        )
 
     monkeypatch.setattr(
         call_function_module,
-        "approval_prompt",
-        fake_approval_prompt,
-    )
-    monkeypatch.setattr(
-        call_function_module,
-        "print_mutation_preview",
-        fake_print_mutation_preview,
+        "execute_tool_call",
+        fake_execute_tool_call,
     )
 
-    function_call = create_function_call(
-        "update",
-        {
-            "file_path": "sample.txt",
-            "old_text": "beta",
-            "new_text": "delta",
-        },
-    )
+    permission_context = make_permission_context(str(tmp_path))
+    function_call = create_function_call("get_files_info")
 
     response = call_function_module.call_function(
         function_call,
@@ -174,10 +87,31 @@ def test_valid_update_asks_approval(monkeypatch, tmp_path):
         permission_context,
     )
 
-    assert approval_called is True
-    assert preview_called is True
-    assert response.parts[0].function_response.name == "update"
-    assert response.parts[0].function_response.response["result"] == (
-        'Successfully updated "sample.txt"'
+    assert captured["tool_call"].name == "get_files_info"
+    assert captured["tool_call"].args == {}
+
+    function_response = response.parts[0].function_response
+    assert function_response.name == "get_files_info"
+    assert function_response.response == {"result": "ok"}
+
+
+def test_call_function_wraps_dispatch_error_as_gemini_tool_response(tmp_path):
+    permission_context = make_permission_context(str(tmp_path))
+    function_call = create_function_call("non_existent_function")
+
+    response = call_function_module.call_function(
+        function_call,
+        str(tmp_path),
+        permission_context,
     )
-    assert file_path.read_text(encoding="utf-8") == "alpha\ndelta\ngamma\n"
+
+    function_response = response.parts[0].function_response
+    assert function_response.name == "non_existent_function"
+    assert function_response.response == {
+        "error": "Unknown function: non_existent_function"
+    }
+
+
+def test_available_functions_is_gemini_tool():
+    assert isinstance(call_function_module.available_functions, types.Tool)
+    assert call_function_module.available_functions.function_declarations

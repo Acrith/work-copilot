@@ -1,7 +1,5 @@
 import subprocess
 
-from google.genai import types
-
 
 def git_status(working_directory: str) -> str:
     try:
@@ -28,17 +26,3 @@ def git_status(working_directory: str) -> str:
         return "Error: Git command not found. Is Git installed and in PATH?"
     except Exception as e:
         return f"Error: An unexpected error occurred: {e}"
-
-
-schema_git_status = types.FunctionDeclaration(
-    name="git_status",
-    description=(
-        "Inspect the git repository in the workspace and return a compact "
-        "human-readable summary of repository status."
-    ),
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={},
-        required=[],
-    ),
-)

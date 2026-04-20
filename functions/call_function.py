@@ -1,152 +1,92 @@
+from typing import Any
+
 from google.genai import types
 
-from console_ui import approval_prompt, print_mutation_preview
-from functions.find_file import find_file, schema_find_file
-from functions.get_file_content import get_file_content, schema_get_file_content
-from functions.get_files_info import get_files_info, schema_get_files_info
-from functions.git_diff import git_diff, schema_git_diff
-from functions.git_diff_file import git_diff_file, schema_git_diff_file
-from functions.git_status import git_status, schema_git_status
-from functions.run_python_file import run_python_file, schema_run_python_file
-from functions.run_shell_command import run_shell_command, schema_run_shell_command
-from functions.run_tests import run_tests, schema_run_tests
-from functions.search_in_files import schema_search_in_files, search_in_files
-from functions.update_file import plan_update, schema_update_file, update_file
-from functions.write_file import schema_write_file, write_file
-from permissions import Decision, evaluate_request, extract_target_path
-from previews import build_update_preview, build_write_preview
+from agent_types import ToolCall, ToolResult
+from tool_dispatch import execute_tool_call
+from tool_registry import get_tool_specs
+
+TYPE_MAP = {
+    "object": types.Type.OBJECT,
+    "string": types.Type.STRING,
+    "array": types.Type.ARRAY,
+    "integer": types.Type.INTEGER,
+    "boolean": types.Type.BOOLEAN,
+}
+
+
+def to_gemini_schema(schema: dict[str, Any]) -> types.Schema:
+    kwargs: dict[str, Any] = {}
+
+    schema_type = schema.get("type")
+    if schema_type:
+        kwargs["type"] = TYPE_MAP[schema_type]
+
+    description = schema.get("description")
+    if description:
+        kwargs["description"] = description
+
+    properties = schema.get("properties")
+    if properties is not None:
+        kwargs["properties"] = {
+            name: to_gemini_schema(value)
+            for name, value in properties.items()
+        }
+
+    required = schema.get("required")
+    if required is not None:
+        kwargs["required"] = required
+
+    items = schema.get("items")
+    if items is not None:
+        kwargs["items"] = to_gemini_schema(items)
+
+    nullable = schema.get("nullable")
+    if nullable is not None:
+        kwargs["nullable"] = nullable
+
+    return types.Schema(**kwargs)
+
+
+def to_gemini_function_declaration(spec):
+    return types.FunctionDeclaration(
+        name=spec.name,
+        description=spec.description,
+        parameters=to_gemini_schema(spec.parameters),
+    )
+
 
 available_functions = types.Tool(
     function_declarations=[
-        schema_get_files_info,
-        schema_get_file_content,
-        schema_write_file,
-        schema_run_python_file,
-        schema_search_in_files,
-        schema_run_tests,
-        schema_update_file,
-        schema_find_file,
-        schema_git_status,
-        schema_git_diff_file,
-        schema_git_diff,
-        schema_run_shell_command
+        to_gemini_function_declaration(spec)
+        for spec in get_tool_specs()
     ],
 )
 
 
-def make_tool_response(name: str, payload: dict):
+def make_tool_response(result: ToolResult):
     return types.Content(
         role="tool",
         parts=[
             types.Part.from_function_response(
-                name=name,
-                response=payload,
+                name=result.name,
+                response=result.payload,
             )
         ],
     )
 
 
 def call_function(function_call, working_directory, permission_context, verbose=False):
-
-    # Function map for tool calling and error handling
-    function_map = {
-        "get_file_content": get_file_content,
-        "get_files_info": get_files_info,
-        "write_file": write_file,
-        "run_python_file": run_python_file,
-        "search_in_files": search_in_files,
-        "run_tests": run_tests,
-        "update": update_file,
-        "find_file": find_file,
-        "git_status": git_status,
-        "git_diff_file": git_diff_file,
-        "git_diff": git_diff,
-        "bash": run_shell_command
-    }
-
-    function_name = function_call.name or ""
-    if function_name not in function_map:
-        return types.Content(
-            role="tool",
-            parts=[
-                types.Part.from_function_response(
-                    name=function_name,
-                    response={"error": f"Unknown function: {function_name}"},
-                )
-            ],
-        )
-    # ---
-
-    # Arg handling and function calling
-    args = dict(function_call.args) if function_call.args else {}
-    decision = evaluate_request(permission_context, function_name, args)
-
-    if function_name == "update":
-        update_plan = plan_update(
-            working_directory,
-            args.get("file_path", ""),
-            args.get("old_text", ""),
-            args.get("new_text", ""),
-        )
-        if update_plan["status"] != "ready":
-            decision = Decision.ALLOW
-
-    if decision == Decision.DENY:
-        return make_tool_response(
-            function_name,
-            {
-                "error": f"Permission denied for {function_name} in mode={permission_context.mode.value}"
-            },
-        )
-
-    if decision == Decision.ASK:
-        if function_name == "write_file":
-            preview = build_write_preview(
-                working_directory,
-                args.get("file_path", ""),
-                args.get("content", ""),
-            )
-            print_mutation_preview(function_name, args.get("file_path", ""), preview)
-
-        elif function_name == "update":
-            preview = build_update_preview(
-                working_directory,
-                args.get("file_path", ""),
-                args.get("old_text", ""),
-                args.get("new_text", ""),
-            )
-            print_mutation_preview(function_name, args.get("file_path", ""), preview)
-
-        answer, feedback = approval_prompt(function_name, args)
-
-        if answer == "n":
-            return make_tool_response(
-                function_name,
-                {"error": f"User denied {function_name}"},
-            )
-
-        if answer == "f":
-            return make_tool_response(
-                function_name,
-                {"error": f"User denied {function_name}: {feedback}"},
-            )
-
-        if answer == "s":
-            permission_context.session_allow_tools.add(function_name)
-        elif answer == "p":
-            target_path = extract_target_path(function_name, args)
-            if target_path:
-                permission_context.session_allow_paths.add(target_path)
-        elif answer != "y":
-            return make_tool_response(
-                function_name,
-                {"error": f"Unrecognized approval response. Denied {function_name}"},
-            )
-
-    args["working_directory"] = working_directory
-    function_result = function_map[function_name](**args)
-
-    return make_tool_response(
-        function_name,
-        {"result": function_result},
+    tool_call = ToolCall(
+        name=function_call.name or "",
+        args=dict(function_call.args) if function_call.args else {},
     )
+
+    result = execute_tool_call(
+        tool_call,
+        working_directory,
+        permission_context,
+        verbose=verbose,
+    )
+
+    return make_tool_response(result)

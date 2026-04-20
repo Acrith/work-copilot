@@ -1,8 +1,6 @@
 import os
 import subprocess
 
-from google.genai import types
-
 
 def git_diff_file(working_directory: str, file_path: str) -> str:
     workspace = os.path.abspath(working_directory)
@@ -51,22 +49,3 @@ def git_diff_file(working_directory: str, file_path: str) -> str:
 
     output = process.stdout.strip()
     return output if output else f'No diff for "{file_path}".'
-
-
-schema_git_diff_file = types.FunctionDeclaration(
-    name="git_diff_file",
-    description=(
-        "Show the current git diff for one file inside the workspace. "
-        "Returns a readable diff or a clear error."
-    ),
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "file_path": types.Schema(
-                type=types.Type.STRING,
-                description="Path to the file, relative to the working directory.",
-            ),
-        },
-        required=["file_path"],
-    ),
-)
