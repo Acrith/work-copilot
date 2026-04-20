@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from agent_types import ToolSpec
-
 from functions.find_file import find_file
 from functions.get_file_content import get_file_content
 from functions.get_files_info import get_files_info

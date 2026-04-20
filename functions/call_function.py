@@ -6,7 +6,6 @@ from agent_types import ToolCall, ToolResult
 from tool_dispatch import execute_tool_call
 from tool_registry import get_tool_specs
 
-
 TYPE_MAP = {
     "object": types.Type.OBJECT,
     "string": types.Type.STRING,
