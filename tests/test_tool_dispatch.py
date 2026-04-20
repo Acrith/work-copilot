@@ -52,3 +52,22 @@ def test_execute_denied_tool_returns_error(tmp_path):
     assert result.name == "bash"
     assert "error" in result.payload
     assert "Permission denied" in result.payload["error"]
+
+
+def test_execute_tool_preserves_call_id(tmp_path):
+    sample = tmp_path / "sample.txt"
+    sample.write_text("hello", encoding="utf-8")
+
+    result = execute_tool_call(
+        ToolCall(
+            name="get_file_content",
+            args={"file_path": "sample.txt"},
+            call_id="call_123",
+        ),
+        str(tmp_path),
+        make_context(str(tmp_path)),
+    )
+
+    assert result.name == "get_file_content"
+    assert result.call_id == "call_123"
+    assert result.payload == {"result": "hello"}

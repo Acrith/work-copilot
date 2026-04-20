@@ -26,6 +26,7 @@ def execute_tool_call(
         return ToolResult(
             name=function_name,
             payload={"error": f"Unknown function: {function_name}"},
+            call_id=tool_call.call_id,
         )
 
     decision = evaluate_request(permission_context, function_name, args)
@@ -51,6 +52,7 @@ def execute_tool_call(
                     f"Permission denied for {function_name} in mode={permission_context.mode.value}"
                 )
             },
+            call_id=tool_call.call_id,
         )
 
     if decision == Decision.ASK:
@@ -77,12 +79,14 @@ def execute_tool_call(
             return ToolResult(
                 name=function_name,
                 payload={"error": f"User denied {function_name}"},
+                call_id=tool_call.call_id,
             )
 
         if answer == "f":
             return ToolResult(
                 name=function_name,
                 payload={"error": f"User denied {function_name}: {feedback}"},
+                call_id=tool_call.call_id,
             )
 
         if answer == "s":
@@ -97,6 +101,7 @@ def execute_tool_call(
             return ToolResult(
                 name=function_name,
                 payload={"error": f"Unrecognized approval response. Denied {function_name}"},
+                call_id=tool_call.call_id,
             )
 
     call_args = dict(args)
@@ -108,14 +113,17 @@ def execute_tool_call(
         return ToolResult(
             name=function_name,
             payload={"error": f"Invalid arguments for {function_name}: {e}"},
+            call_id=tool_call.call_id,
         )
     except Exception as e:
         return ToolResult(
             name=function_name,
             payload={"error": f"Tool {function_name} failed: {e}"},
+            call_id=tool_call.call_id,
         )
 
     return ToolResult(
         name=function_name,
         payload={"result": result},
+        call_id=tool_call.call_id,
     )

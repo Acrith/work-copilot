@@ -15,12 +15,14 @@ class ToolSpec:
 class ToolCall:
     name: str
     args: dict[str, Any]
+    call_id: str | None = None
 
 
 @dataclass(frozen=True)
 class ToolResult:
     name: str
     payload: dict[str, Any]
+    call_id: str | None = None
 
 
 @dataclass(frozen=True)
