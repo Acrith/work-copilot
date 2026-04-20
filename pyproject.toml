@@ -16,6 +16,9 @@ dev = [
     "ruff>=0.15.10",
 ]
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
 [tool.ruff]
 line-length = 100
 target-version = "py313"

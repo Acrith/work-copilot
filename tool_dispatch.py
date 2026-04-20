@@ -1,0 +1,122 @@
+from agent_types import ToolCall, ToolResult
+from console_ui import approval_prompt, print_mutation_preview
+from functions.update_file import plan_update
+from permissions import (
+    Decision,
+    PermissionContext,
+    evaluate_request,
+    extract_target_path,
+)
+from previews import build_update_preview, build_write_preview
+from tool_registry import get_tool_definition
+
+
+def execute_tool_call(
+    tool_call: ToolCall,
+    working_directory: str,
+    permission_context: PermissionContext,
+    verbose: bool = False,
+) -> ToolResult:
+    function_name = tool_call.name
+    args = dict(tool_call.args or {})
+
+    try:
+        tool_definition = get_tool_definition(function_name)
+    except KeyError:
+        return ToolResult(
+            name=function_name,
+            payload={"error": f"Unknown function: {function_name}"},
+        )
+
+    decision = evaluate_request(permission_context, function_name, args)
+
+    if function_name == "update":
+        update_plan = plan_update(
+            working_directory,
+            args.get("file_path", ""),
+            args.get("old_text", ""),
+            args.get("new_text", ""),
+        )
+
+        # If update cannot be applied anyway, don't ask for approval.
+        # Let the tool return the useful validation error.
+        if update_plan["status"] != "ready":
+            decision = Decision.ALLOW
+
+    if decision == Decision.DENY:
+        return ToolResult(
+            name=function_name,
+            payload={
+                "error": (
+                    f"Permission denied for {function_name} "
+                    f"in mode={permission_context.mode.value}"
+                )
+            },
+        )
+
+    if decision == Decision.ASK:
+        if function_name == "write_file":
+            preview = build_write_preview(
+                working_directory,
+                args.get("file_path", ""),
+                args.get("content", ""),
+            )
+            print_mutation_preview(function_name, args.get("file_path", ""), preview)
+
+        elif function_name == "update":
+            preview = build_update_preview(
+                working_directory,
+                args.get("file_path", ""),
+                args.get("old_text", ""),
+                args.get("new_text", ""),
+            )
+            print_mutation_preview(function_name, args.get("file_path", ""), preview)
+
+        answer, feedback = approval_prompt(function_name, args)
+
+        if answer == "n":
+            return ToolResult(
+                name=function_name,
+                payload={"error": f"User denied {function_name}"},
+            )
+
+        if answer == "f":
+            return ToolResult(
+                name=function_name,
+                payload={"error": f"User denied {function_name}: {feedback}"},
+            )
+
+        if answer == "s":
+            permission_context.session_allow_tools.add(function_name)
+
+        elif answer == "p":
+            target_path = extract_target_path(function_name, args)
+            if target_path:
+                permission_context.session_allow_paths.add(target_path)
+
+        elif answer != "y":
+            return ToolResult(
+                name=function_name,
+                payload={"error": f"Unrecognized approval response. Denied {function_name}"},
+            )
+
+    call_args = dict(args)
+    call_args["working_directory"] = working_directory
+
+    try:
+        result = tool_definition.handler(**call_args)
+    except TypeError as e:
+        return ToolResult(
+            name=function_name,
+            payload={"error": f"Invalid arguments for {function_name}: {e}"},
+        )
+    except Exception as e:
+        return ToolResult(
+            name=function_name,
+            payload={"error": f"Tool {function_name} failed: {e}"},
+        )
+
+    return ToolResult(
+        name=function_name,
+        payload={"result": result},
+    )

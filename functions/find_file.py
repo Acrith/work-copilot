@@ -1,7 +1,5 @@
 import os
 
-from google.genai import types
-
 from constants import SKIP_DIRS
 
 
@@ -18,19 +16,3 @@ def find_file(working_directory, query):
                 matches.append(rel_path)
 
     return "\n".join(matches) if matches else "No matching filenames found"
-
-
-schema_find_file = types.FunctionDeclaration(
-    name="find_file",
-    description="Recursively search for filenames inside the working directory for a given text query and return the relative paths of matching files.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "query": types.Schema(
-                type=types.Type.STRING,
-                description="The exact text to search for in filenames.",
-            ),
-        },
-        required=["query"],
-    ),
-)
