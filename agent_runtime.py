@@ -48,15 +48,18 @@ def run_agent(
     verbose_functions: bool = False,
     max_iterations: int = 20,
 ) -> str | None:
+    # Add the user's first message to provider history.
     provider.add_user_message(user_prompt)
     tool_specs = get_tool_specs()
 
     for _ in range(max_iterations):
+        # Ask the model for the next turn.
         turn = provider.generate(system_prompt, tool_specs)
 
         if verbose:
             print_verbose_usage(user_prompt, turn.usage)
 
+        # If the model requested tools, execute them and send results back.
         if turn.tool_calls:
             for text in turn.text_parts:
                 if is_meaningful_update(text):
@@ -82,6 +85,7 @@ def run_agent(
             provider.add_tool_results(tool_results)
             continue
 
+        # Otherwise print the final answer and stop.
         final_text = "\n".join(turn.text_parts).strip()
         if final_text:
             print_final_response(final_text)

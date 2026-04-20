@@ -16,6 +16,7 @@ MAX_ITERATIONS = 20
 
 
 def main():
+    # Load .env so API keys can be read
     load_dotenv()
 
     parser = argparse.ArgumentParser(description="Chatbot")
@@ -56,6 +57,7 @@ def main():
     if not os.path.isdir(workspace):
         raise ValueError(f"Workspace is not a directory: {args.workspace}")
 
+    # Build the permission context used by tool_dispatch.
     permission_context = PermissionContext(
         mode=PermissionMode(args.permission_mode),
         workspace=workspace,
@@ -64,11 +66,13 @@ def main():
 
     model = args.model or get_default_model(args.provider)
 
+    # Pick the provider and model based on CLI/env settings.
     provider = create_provider(
         args.provider,
         model=model,
     )
 
+    # Start the agent loop.
     final_text = run_agent(
         provider=provider,
         user_prompt=args.user_prompt,
