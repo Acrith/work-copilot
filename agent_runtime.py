@@ -13,6 +13,17 @@ from permissions import PermissionContext
 from prompts import system_prompt
 from providers.base import Provider, ProviderError
 from run_logging import RunLogger
+from runtime_events import (
+    EventSink,
+    FinalResponseEvent,
+    MaxIterationsReachedEvent,
+    ModelTurnEvent,
+    ProviderErrorEvent,
+    RunStartedEvent,
+    RuntimeEvent,
+    ToolResultEvent,
+    event_payload,
+)
 from tool_dispatch import execute_tool_call
 from tool_registry import get_tool_specs
 
@@ -71,6 +82,20 @@ def save_run_log(run_logger: RunLogger | None) -> None:
     console.print(f"Run log: {path}", style="dim")
 
 
+def emit_runtime_event(
+    *,
+    event: RuntimeEvent,
+    event_sink: EventSink | None,
+    run_logger: RunLogger | None,
+) -> None:
+    if event_sink is not None:
+        event_sink.emit(event)
+
+    if run_logger is not None:
+        event_type, payload = event_payload(event)
+        run_logger.record(event_type, **payload)
+
+
 def run_agent(
     *,
     provider: Provider,
@@ -81,13 +106,19 @@ def run_agent(
     verbose_functions: bool = False,
     max_iterations: int = 20,
     run_logger: RunLogger | None = None,
+    event_sink: EventSink | None = None,
 ) -> str | None:
     # Add the user's first message to provider history.
     provider.add_user_message(user_prompt)
     tool_specs = get_tool_specs()
     usage_totals = UsageTotals()
-    if run_logger:
-        run_logger.record("run_started")
+
+    # Run logger | Start
+    emit_runtime_event(
+        event=RunStartedEvent(),
+        event_sink=event_sink,
+        run_logger=run_logger,
+    )
 
     for _ in range(max_iterations):
         # Ask the model for the next turn.
@@ -96,21 +127,29 @@ def run_agent(
         except ProviderError as e:
             print_error(f"Provider error: {e}")
 
-            if run_logger:
-                run_logger.record("provider_error", error=str(e))
+            # Run logger | ProviderError
+            emit_runtime_event(
+                event=ProviderErrorEvent(error=str(e)),
+                event_sink=event_sink,
+                run_logger=run_logger,
+            )
 
             print_usage_summary(usage_totals)
             save_run_log(run_logger)
             return None
 
         usage_totals.add(turn.usage)
-        if run_logger:
-            run_logger.record(
-                "model_turn",
+
+        # Run logger | Turn
+        emit_runtime_event(
+            event=ModelTurnEvent(
                 text_parts=turn.text_parts,
                 tool_calls=[asdict(tool_call) for tool_call in turn.tool_calls],
                 usage=asdict(turn.usage) if turn.usage else None,
-            )
+            ),
+            event_sink=event_sink,
+            run_logger=run_logger,
+        )
 
         if verbose:
             print_verbose_usage(turn.usage)
@@ -134,13 +173,17 @@ def run_agent(
                     verbose=verbose_functions,
                 )
                 tool_results.append(result)
-                if run_logger:
-                    run_logger.record(
-                        "tool_result",
+
+                # Run Logger | Tool Result
+                emit_runtime_event(
+                    event=ToolResultEvent(
                         name=result.name,
                         payload=result.payload,
                         call_id=result.call_id,
-                    )
+                    ),
+                    event_sink=event_sink,
+                    run_logger=run_logger,
+                )
 
                 if verbose:
                     console.print(result.payload, style="dim")
@@ -153,8 +196,12 @@ def run_agent(
         if final_text:
             print_final_response(final_text)
 
-            if run_logger:
-                run_logger.record("final_response", text=final_text)
+            # Run Logger | Final Response
+            emit_runtime_event(
+                event=FinalResponseEvent(text=final_text),
+                event_sink=event_sink,
+                run_logger=run_logger,
+            )
 
             print_usage_summary(usage_totals)
             save_run_log(run_logger)
@@ -162,11 +209,12 @@ def run_agent(
 
     print_error(f"Max iterations ({max_iterations}) reached.")
 
-    if run_logger:
-        run_logger.record(
-            "max_iterations_reached",
-            max_iterations=max_iterations,
-        )
+    # Run Logger | Max Iterations
+    emit_runtime_event(
+        event=MaxIterationsReachedEvent(max_iterations=max_iterations),
+        event_sink=event_sink,
+        run_logger=run_logger,
+    )
 
     print_usage_summary(usage_totals)
     save_run_log(run_logger)
