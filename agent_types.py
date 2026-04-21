@@ -30,6 +30,7 @@ class UsageStats:
     prompt_tokens: int | None = None
     response_tokens: int | None = None
 
+
 @dataclass
 class UsageTotals:
     prompt_tokens: int = 0

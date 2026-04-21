@@ -1,12 +1,13 @@
 # Work Copilot Architecture
 
-This document explains the current structure of Work Copilot after the provider abstraction refactor.
+This document explains the current structure of Work Copilot after the provider abstraction and OpenAI provider work.
 
 The goal of the architecture is to keep these concerns separated:
 
 - CLI/app startup
 - agent loop
 - model provider implementation
+- provider selection
 - tool definitions
 - permission checks
 - actual tool execution
@@ -36,21 +37,7 @@ User prompt
   -> tool_dispatch.py executes approved tool calls
   -> tool results are sent back to the provider
   -> model returns final answer
-```
-
-## Provider environment variables
-
-Gemini:
-
-```env
-GEMINI_API_KEY="..."
-OPENAI_API_KEY="..."
-```
-
-Provider/model defaults can be overridden with:
-```text
-WORK_COPILOT_PROVIDER="openai"
-WORK_COPILOT_MODEL="gpt-5.4-mini"
+  -> runtime prints usage summary
 ```
 
 ## File responsibilities
@@ -65,6 +52,7 @@ Responsibilities:
 - parse CLI arguments
 - validate workspace path
 - create permission context
+- resolve provider/model settings
 - create model provider through `providers/factory.py`
 - start the agent runtime
 
@@ -73,13 +61,19 @@ Responsibilities:
 Good:
 
 ```python
-provider = create_provider(args.provider, model=model)
+model = args.model or get_default_model(args.provider)
+
+provider = create_provider(
+    args.provider,
+    model=model,
+)
 
 final_text = run_agent(
     provider=provider,
     user_prompt=args.user_prompt,
     workspace=workspace,
     permission_context=permission_context,
+    max_iterations=args.max_iterations,
 )
 ```
 
@@ -88,6 +82,7 @@ Avoid:
 ```python
 from google import genai
 from google.genai import types
+from openai import OpenAI
 ```
 
 Provider SDK imports should live inside provider adapters.
@@ -105,15 +100,6 @@ Responsibilities:
 - read provider-specific API key environment variables
 - create and return the correct provider object
 
-Example:
-
-```python
-provider = create_provider(
-    "gemini",
-    model="gemini-2.5-flash",
-)
-```
-
 Currently supported providers:
 
 ```text
@@ -121,10 +107,28 @@ gemini
 openai
 ```
 
+Current defaults:
+
+```text
+Provider: gemini
+Gemini model: gemini-2.5-flash
+OpenAI model: gpt-5.4-mini
+```
+
+Gemini remains the default provider so OpenAI usage is explicit unless overridden.
+
+Example:
+
+```python
+provider = create_provider(
+    "openai",
+    model="gpt-5.4-mini",
+)
+```
+
 Later, this file can grow to support providers like:
 
 ```text
-openai
 local
 ```
 
@@ -144,6 +148,22 @@ add_tool_results(results)
 
 This lets `agent_runtime.py` talk to any provider without knowing the provider SDK details.
 
+This file also defines:
+
+```python
+ProviderError
+```
+
+`ProviderError` is used when a provider request fails, such as:
+
+- invalid API key
+- invalid model name
+- quota or billing issue
+- provider-side API failure
+- network/API request failure
+
+The runtime catches `ProviderError` and prints a clean error instead of showing a full SDK traceback.
+
 ---
 
 ### `providers/gemini.py`
@@ -157,11 +177,13 @@ Responsibilities:
 - convert neutral `ToolSpec` objects into Gemini function declarations
 - convert Gemini function calls into neutral `ToolCall` objects
 - convert neutral `ToolResult` objects into Gemini function responses
+- extract usage metadata
 - return neutral `ModelTurn` objects to the runtime
+- wrap Gemini SDK request failures in `ProviderError`
 
 Gemini SDK objects should stay inside this file.
 
-Good:
+Good here:
 
 ```python
 from google import genai
@@ -172,6 +194,44 @@ Bad outside this file:
 
 ```python
 from google.genai import types
+```
+
+---
+
+### `providers/openai.py`
+
+OpenAI-specific provider adapter.
+
+Responsibilities:
+
+- create the OpenAI client
+- store OpenAI input/message history
+- convert neutral `ToolSpec` objects into OpenAI function tools
+- convert OpenAI function calls into neutral `ToolCall` objects
+- preserve OpenAI `call_id` values for tool result submission
+- convert neutral `ToolResult` objects into OpenAI `function_call_output` items
+- extract usage metadata
+- return neutral `ModelTurn` objects to the runtime
+- wrap OpenAI SDK request failures in `ProviderError`
+
+OpenAI SDK objects should stay inside this file.
+
+Good here:
+
+```python
+from openai import OpenAI
+```
+
+Bad outside this file:
+
+```python
+from openai import OpenAI
+```
+
+OpenAI tool calling requires the original provider call ID to be returned with the tool result. This is why neutral tool calls/results support:
+
+```python
+call_id: str | None
 ```
 
 ---
@@ -187,9 +247,12 @@ Responsibilities:
 - print meaningful model progress updates
 - execute requested tool calls
 - send tool results back to the provider
+- accumulate token usage across turns
 - print the final response
+- print final usage summary
 - stop when the model gives a final answer
 - stop when max iterations are reached
+- catch `ProviderError` and return cleanly
 
 This file should not know whether the model is Gemini, OpenAI, or something local.
 
@@ -200,6 +263,8 @@ ModelTurn
 ToolCall
 ToolResult
 ToolSpec
+UsageStats
+UsageTotals
 ```
 
 ---
@@ -217,17 +282,31 @@ ToolSpec
 ToolCall
 ToolResult
 UsageStats
+UsageTotals
 ModelTurn
 ```
 
 These types prevent provider-specific objects from spreading through the app.
 
-For example, instead of passing a Gemini function call around the app, the Gemini provider converts it into:
+For example, instead of passing a Gemini or OpenAI function call around the app, the provider converts it into:
 
 ```python
 ToolCall(
     name="get_file_content",
     args={"file_path": "main.py"},
+    call_id=None,
+)
+```
+
+For OpenAI tool calls, `call_id` is populated because OpenAI requires it when returning tool results.
+
+Example:
+
+```python
+ToolCall(
+    name="get_file_content",
+    args={"file_path": "main.py"},
+    call_id="call_123",
 )
 ```
 
@@ -252,7 +331,7 @@ What arguments do they accept?
 Which Python function handles each tool?
 ```
 
-Example responsibilities:
+Example mappings:
 
 ```text
 get_file_content -> functions/get_file_content.py
@@ -276,6 +355,7 @@ Responsibilities:
 - ask for approval when needed
 - execute the actual tool handler
 - return a neutral `ToolResult`
+- preserve provider `call_id` values when returning tool results
 
 This is where a model-requested tool call becomes a real action.
 
@@ -287,6 +367,16 @@ ToolCall(name="bash", args={"command": "echo hello"})
   -> ask user for approval
   -> execute run_shell_command()
   -> return ToolResult(...)
+```
+
+For OpenAI, the returned `ToolResult` preserves the original call ID:
+
+```python
+ToolResult(
+    name="bash",
+    payload={"result": "..."},
+    call_id="call_123",
+)
 ```
 
 ---
@@ -394,6 +484,89 @@ This file should stay provider-neutral.
 
 ---
 
+## Provider environment variables
+
+Gemini:
+
+```env
+GEMINI_API_KEY="..."
+```
+
+OpenAI:
+
+```env
+OPENAI_API_KEY="..."
+```
+
+Provider/model defaults can be overridden with:
+
+```env
+WORK_COPILOT_PROVIDER="openai"
+WORK_COPILOT_MODEL="gpt-5.4-mini"
+```
+
+Current defaults:
+
+```text
+Provider: gemini
+Gemini model: gemini-2.5-flash
+OpenAI model: gpt-5.4-mini
+```
+
+## CLI options
+
+Common options:
+
+```bash
+--workspace .
+--provider gemini
+--provider openai
+--model gpt-5.4-mini
+--verbose
+--verbose-functions
+--max-iterations 20
+--permission-mode default
+```
+
+Example:
+
+```bash
+uv run main.py --workspace . --provider openai --model gpt-5.4-mini "Say hello and stop."
+```
+
+Cheap OpenAI smoke test:
+
+```bash
+uv run main.py --provider openai --model gpt-5.4-nano "Say hello and stop."
+```
+
+## Usage summary
+
+At the end of a run, the runtime prints token usage if the provider returned usage metadata.
+
+Example:
+
+```text
+Usage: input=1976 output=8 total=1984 tokens
+```
+
+With `--verbose`, per-turn usage is also printed.
+
+Example:
+
+```text
+Turn usage: input=1976 output=8 total=1984 tokens
+```
+
+Usage is tracked with:
+
+```python
+UsageStats
+UsageTotals
+```
+
+The runtime accumulates usage across all model turns in a run.
+
 ## Provider-neutral design rule
 
 Provider SDK objects should stay inside provider adapters.
@@ -411,6 +584,7 @@ Good boundary:
 
 ```text
 providers/gemini.py converts Gemini objects into ToolCall / ModelTurn
+providers/openai.py converts OpenAI objects into ToolCall / ModelTurn
 agent_runtime.py only sees ToolCall / ModelTurn
 ```
 
@@ -418,24 +592,26 @@ Bad boundary:
 
 ```text
 agent_runtime.py imports google.genai.types
+agent_runtime.py imports OpenAI
 tool_dispatch.py receives Gemini FunctionCall objects
-functions/*.py define Gemini schemas
+tool_dispatch.py receives OpenAI response objects
+functions/*.py define provider schemas
 ```
 
 ## Current provider flow
 
 ```text
 main.py
-  creates provider through providers/factory.py
+  parses CLI/env provider settings
 
 providers/factory.py
-  creates GeminiProvider
+  creates GeminiProvider or OpenAIProvider
 
 agent_runtime.py
   calls provider.generate(...)
 
-providers/gemini.py
-  talks to Gemini
+providers/<provider>.py
+  talks to the provider SDK
   returns ModelTurn
 
 agent_runtime.py
@@ -448,17 +624,20 @@ functions/*.py
   perform the actual filesystem/git/bash/test actions
 ```
 
-## Adding a new provider
+## Adding another provider
 
-To add a new provider later, for example OpenAI:
+To add another provider later, for example a local model provider:
 
-1. Create `providers/openai.py`
+1. Create `providers/local.py`
 2. Implement the provider protocol from `providers/base.py`
-3. Convert `ToolSpec` into the provider's tool/function schema
+3. Convert neutral `ToolSpec` into the provider's tool/function schema
 4. Convert provider tool calls into neutral `ToolCall`
 5. Convert neutral `ToolResult` into provider tool-result messages
-6. Add the provider to `providers/factory.py`
-7. Add tests
+6. Extract provider usage metadata into `UsageStats`
+7. Wrap provider request failures in `ProviderError`
+8. Add the provider to `providers/factory.py`
+9. Add tests
+10. Add CLI/docs examples
 
 The goal is that `agent_runtime.py`, `tool_dispatch.py`, and `functions/*.py` do not need major changes.
 
@@ -475,6 +654,14 @@ Expected output:
 ```text
 # no output
 ```
+
+OpenAI SDK imports should only appear in the OpenAI provider:
+
+```bash
+rg "from openai|import OpenAI" --glob "*.py" -g "!providers/openai.py"
+```
+
+Expected output may include tests, but production code should only import OpenAI from `providers/openai.py`.
 
 The old `call_function` shim should not exist anymore:
 
@@ -498,13 +685,17 @@ uv run ruff check .
 ## Mental model
 
 ```text
-main.py              = starts the app
-providers/factory.py = chooses provider
-agent_runtime.py     = runs the loop
-providers/gemini.py  = translates Gemini-specific stuff
-tool_registry.py     = lists available tools
-tool_dispatch.py     = safely executes requested tools
-functions/*.py       = actual tool implementations
-permissions.py       = safety rules
-console_ui.py        = terminal output
+main.py               = starts the app
+providers/factory.py  = chooses provider and default model
+agent_runtime.py      = runs the model/tool loop
+providers/gemini.py   = translates Gemini-specific stuff
+providers/openai.py   = translates OpenAI-specific stuff
+tool_registry.py      = lists available tools
+tool_dispatch.py      = safely executes requested tools
+functions/*.py        = actual tool implementations
+permissions.py        = safety rules
+console_ui.py         = terminal output
+previews.py           = write/update previews
+agent_types.py        = shared provider-neutral data types
+prompts.py            = system prompt
 ```

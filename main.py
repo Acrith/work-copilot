@@ -53,7 +53,6 @@ def main():
         default=20,
         help="Maximum number of model/tool loop iterations before stopping",
     )
-    
 
     args = parser.parse_args()
     if args.max_iterations < 1:
