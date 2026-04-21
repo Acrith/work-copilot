@@ -1,6 +1,6 @@
 import json
 
-from agent_runtime import format_usage_summary, run_agent
+from agent_runtime import build_usage_summary_event, run_agent
 from agent_types import ModelTurn, ToolCall, UsageStats, UsageTotals
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
 from providers.base import ProviderError
@@ -106,40 +106,26 @@ def test_run_agent_returns_none_after_max_iterations(tmp_path):
     assert final_text is None
 
 
-def test_format_usage_summary_when_usage_unavailable():
-    assert format_usage_summary(UsageTotals()) == "Usage: unavailable"
+def test_build_usage_summary_event_when_usage_unavailable():
+    event = build_usage_summary_event(UsageTotals())
+
+    assert event.type == "usage_summary"
+    assert event.prompt_tokens is None
+    assert event.response_tokens is None
+    assert event.total_tokens is None
 
 
-def test_format_usage_summary_with_totals():
+def test_build_usage_summary_event_with_totals():
     usage_totals = UsageTotals()
     usage_totals.add(UsageStats(prompt_tokens=10, response_tokens=5))
     usage_totals.add(UsageStats(prompt_tokens=3, response_tokens=2))
 
-    assert format_usage_summary(usage_totals) == "Usage: input=13 output=7 total=20 tokens"
+    event = build_usage_summary_event(usage_totals)
 
-
-def test_usage_totals_adds_available_counts():
-    totals = UsageTotals()
-
-    totals.add(UsageStats(prompt_tokens=10, response_tokens=5))
-    totals.add(UsageStats(prompt_tokens=3, response_tokens=2))
-
-    assert totals.prompt_tokens == 13
-    assert totals.response_tokens == 7
-    assert totals.total_tokens == 20
-    assert totals.has_usage is True
-
-
-def test_usage_totals_ignores_missing_usage():
-    totals = UsageTotals()
-
-    totals.add(None)
-    totals.add(UsageStats(prompt_tokens=None, response_tokens=None))
-
-    assert totals.prompt_tokens == 0
-    assert totals.response_tokens == 0
-    assert totals.total_tokens == 0
-    assert totals.has_usage is False
+    assert event.type == "usage_summary"
+    assert event.prompt_tokens == 13
+    assert event.response_tokens == 7
+    assert event.total_tokens == 20
 
 
 def test_run_agent_returns_none_on_provider_error(tmp_path):
@@ -197,6 +183,7 @@ def test_run_agent_writes_run_log(tmp_path):
     assert "model_turn" in event_types
     assert "tool_result" in event_types
     assert "final_response" in event_types
+    assert "usage_summary" in event_types
 
 
 def test_run_agent_emits_runtime_events(tmp_path):
@@ -225,4 +212,5 @@ def test_run_agent_emits_runtime_events(tmp_path):
         "tool_result",
         "model_turn",
         "final_response",
+        "usage_summary",
     ]

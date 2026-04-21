@@ -119,6 +119,25 @@ max_iterations_reached
 
 ---
 
+### `terminal_event_sink.py`
+
+Terminal renderer for runtime events.
+
+Responsibilities:
+
+- consume runtime events
+- render model progress updates
+- render tool calls
+- render final responses
+- render provider errors
+- render max-iteration messages
+- render usage summaries
+- show verbose turn/tool details when requested
+
+This keeps terminal rendering separate from the provider-neutral runtime loop.
+
+---
+
 ### `providers/factory.py`
 
 Provider creation and default model resolution.
@@ -715,18 +734,19 @@ uv run ruff check .
 ## Mental model
 
 ```text
-main.py               = starts the app
-runtime_events.py     = structured events emitted by the runtime
-providers/factory.py  = chooses provider and default model
-agent_runtime.py      = runs the model/tool loop
-providers/gemini.py   = translates Gemini-specific stuff
-providers/openai.py   = translates OpenAI-specific stuff
-tool_registry.py      = lists available tools
-tool_dispatch.py      = safely executes requested tools
-functions/*.py        = actual tool implementations
-permissions.py        = safety rules
-console_ui.py         = terminal output
-previews.py           = write/update previews
-agent_types.py        = shared provider-neutral data types
-prompts.py            = system prompt
+main.py                = starts the app
+runtime_events.py      = structured events emitted by the runtime
+terminal_event_sink.py = renders runtime events to terminal
+providers/factory.py   = chooses provider and default model
+agent_runtime.py       = runs the model/tool loop
+providers/gemini.py    = translates Gemini-specific stuff
+providers/openai.py    = translates OpenAI-specific stuff
+tool_registry.py       = lists available tools
+tool_dispatch.py       = safely executes requested tools
+functions/*.py         = actual tool implementations
+permissions.py         = safety rules
+console_ui.py          = terminal output
+previews.py            = write/update previews
+agent_types.py         = shared provider-neutral data types
+prompts.py             = system prompt
 ```
