@@ -4,6 +4,7 @@ from google import genai
 from google.genai import types
 
 from agent_types import ModelTurn, ToolCall, ToolResult, ToolSpec, UsageStats
+from providers.base import ProviderError
 
 TYPE_MAP = {
     "object": types.Type.OBJECT,
@@ -122,14 +123,17 @@ class GeminiProvider:
         )
 
     def generate(self, system_prompt: str, tools: list[ToolSpec]) -> ModelTurn:
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=self.messages,
-            config=types.GenerateContentConfig(
-                tools=[to_gemini_tool(tools)],
-                system_instruction=system_prompt,
-            ),
-        )
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=self.messages,
+                config=types.GenerateContentConfig(
+                    tools=[to_gemini_tool(tools)],
+                    system_instruction=system_prompt,
+                ),
+            )
+        except Exception as e:
+            raise ProviderError(f"Gemini request failed: {e}") from e
 
         if response.candidates:
             for candidate in response.candidates:

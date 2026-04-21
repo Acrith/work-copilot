@@ -9,7 +9,7 @@ from console_ui import (
 )
 from permissions import PermissionContext
 from prompts import system_prompt
-from providers.base import Provider
+from providers.base import Provider, ProviderError
 from tool_dispatch import execute_tool_call
 from tool_registry import get_tool_specs
 
@@ -77,7 +77,12 @@ def run_agent(
 
     for _ in range(max_iterations):
         # Ask the model for the next turn.
-        turn = provider.generate(system_prompt, tool_specs)
+        try:
+            turn = provider.generate(system_prompt, tool_specs)
+        except ProviderError as e:
+            print_error(f"Provider error: {e}")
+            print_usage_summary(usage_totals)
+            return None
         usage_totals.add(turn.usage)
 
         if verbose:

@@ -5,6 +5,7 @@ from typing import Any
 from openai import OpenAI
 
 from agent_types import ModelTurn, ToolCall, ToolResult, ToolSpec, UsageStats
+from providers.base import ProviderError
 
 
 def extract_usage(response) -> UsageStats | None:
@@ -69,13 +70,16 @@ class OpenAIProvider:
     def generate(self, system_prompt: str, tools: list[ToolSpec]) -> ModelTurn:
         openai_tools = [to_openai_tool(spec) for spec in tools]
 
-        response = self.client.responses.create(
-            model=self.model,
-            instructions=system_prompt,
-            input=deepcopy(self.input_items),
-            tools=openai_tools,
-            store=False,
-        )
+        try:            
+            response = self.client.responses.create(
+                model=self.model,
+                instructions=system_prompt,
+                input=deepcopy(self.input_items),
+                tools=openai_tools,
+                store=False,
+            )
+        except Exception as e:
+            raise ProviderError(f"OpenAI request failed: {e}") from e
 
         # Preserve model output for future turns. OpenAI docs show this pattern
         # especially for function calls/reasoning items.
