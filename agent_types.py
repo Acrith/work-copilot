@@ -30,6 +30,29 @@ class UsageStats:
     prompt_tokens: int | None = None
     response_tokens: int | None = None
 
+@dataclass
+class UsageTotals:
+    prompt_tokens: int = 0
+    response_tokens: int = 0
+
+    def add(self, usage: UsageStats | None) -> None:
+        if usage is None:
+            return
+
+        if usage.prompt_tokens is not None:
+            self.prompt_tokens += usage.prompt_tokens
+
+        if usage.response_tokens is not None:
+            self.response_tokens += usage.response_tokens
+
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.response_tokens
+
+    @property
+    def has_usage(self) -> bool:
+        return self.prompt_tokens > 0 or self.response_tokens > 0
+
 
 @dataclass(frozen=True)
 class ModelTurn:
