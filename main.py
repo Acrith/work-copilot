@@ -41,7 +41,7 @@ def main():
     parser.add_argument(
         "--provider",
         default=os.environ.get("WORK_COPILOT_PROVIDER", DEFAULT_PROVIDER),
-        choices=["gemini"],
+        choices=["gemini", "openai"],
         help="Model provider to use",
     )
     parser.add_argument(

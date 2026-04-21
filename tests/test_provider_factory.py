@@ -2,19 +2,25 @@ import pytest
 
 from providers.factory import (
     DEFAULT_GEMINI_MODEL,
+    DEFAULT_OPENAI_MODEL,
     create_provider,
     get_default_model,
 )
 from providers.gemini import GeminiProvider
+from providers.openai import OpenAIProvider
 
 
 def test_get_default_model_for_gemini():
     assert get_default_model("gemini") == DEFAULT_GEMINI_MODEL
 
 
+def test_get_default_model_for_openai():
+    assert get_default_model("openai") == DEFAULT_OPENAI_MODEL
+
+
 def test_get_default_model_rejects_unknown_provider():
     with pytest.raises(ValueError, match="Unsupported provider"):
-        get_default_model("openai")
+        get_default_model("unknown")
 
 
 def test_create_provider_creates_gemini_provider():
@@ -45,10 +51,38 @@ def test_create_provider_requires_gemini_api_key(monkeypatch):
         create_provider("gemini")
 
 
+def test_create_provider_creates_openai_provider():
+    provider = create_provider(
+        "openai",
+        model="test-model",
+        api_key="test-key",
+    )
+
+    assert isinstance(provider, OpenAIProvider)
+    assert provider.model == "test-model"
+
+
+def test_create_provider_uses_default_openai_model():
+    provider = create_provider(
+        "openai",
+        api_key="test-key",
+    )
+
+    assert isinstance(provider, OpenAIProvider)
+    assert provider.model == DEFAULT_OPENAI_MODEL
+
+
+def test_create_provider_requires_openai_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        create_provider("openai")
+
+
 def test_create_provider_rejects_unknown_provider():
     with pytest.raises(ValueError, match="Unsupported provider"):
         create_provider(
-            "openai",
+            "unknown",
             model="test-model",
             api_key="test-key",
         )
