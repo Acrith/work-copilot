@@ -5,6 +5,7 @@ from agent_types import ModelTurn, ToolCall, UsageStats, UsageTotals
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
 from providers.base import ProviderError
 from run_logging import RunLogger
+from runtime_events import ListEventSink
 
 
 class FakeProvider:
@@ -196,3 +197,32 @@ def test_run_agent_writes_run_log(tmp_path):
     assert "model_turn" in event_types
     assert "tool_result" in event_types
     assert "final_response" in event_types
+
+
+def test_run_agent_emits_runtime_events(tmp_path):
+    sample = tmp_path / "sample.txt"
+    sample.write_text("hello", encoding="utf-8")
+
+    provider = FakeProvider()
+    event_sink = ListEventSink()
+
+    final_text = run_agent(
+        provider=provider,
+        user_prompt="Read sample.txt",
+        workspace=str(tmp_path),
+        permission_context=make_context(str(tmp_path)),
+        max_iterations=5,
+        event_sink=event_sink,
+    )
+
+    assert final_text == "The file contains hello."
+
+    event_types = [event.type for event in event_sink.events]
+
+    assert event_types == [
+        "run_started",
+        "model_turn",
+        "tool_result",
+        "model_turn",
+        "final_response",
+    ]

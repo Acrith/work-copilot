@@ -89,6 +89,36 @@ Provider SDK imports should live inside provider adapters.
 
 ---
 
+### `runtime_events.py`
+
+Provider-neutral runtime event definitions.
+
+Responsibilities:
+
+- define structured events emitted by the agent runtime
+- define the `EventSink` protocol
+- provide helpers for converting runtime events into log payloads
+
+Runtime events are used to decouple the agent loop from consumers such as:
+
+- JSON run logging
+- terminal rendering
+- future interactive CLI
+- future Textual/TUI frontend
+
+Current event examples:
+
+```text
+run_started
+model_turn
+tool_result
+final_response
+provider_error
+max_iterations_reached
+```
+
+---
+
 ### `providers/factory.py`
 
 Provider creation and default model resolution.
@@ -686,6 +716,7 @@ uv run ruff check .
 
 ```text
 main.py               = starts the app
+runtime_events.py     = structured events emitted by the runtime
 providers/factory.py  = chooses provider and default model
 agent_runtime.py      = runs the model/tool loop
 providers/gemini.py   = translates Gemini-specific stuff
