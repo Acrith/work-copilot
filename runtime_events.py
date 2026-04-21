@@ -43,6 +43,14 @@ class MaxIterationsReachedEvent:
     type: str = field(default="max_iterations_reached", init=False)
 
 
+@dataclass(frozen=True)
+class UsageSummaryEvent:
+    prompt_tokens: int | None
+    response_tokens: int | None
+    total_tokens: int | None
+    type: str = field(default="usage_summary", init=False)
+
+
 RuntimeEvent: TypeAlias = (
     RunStartedEvent
     | ModelTurnEvent
@@ -50,6 +58,7 @@ RuntimeEvent: TypeAlias = (
     | FinalResponseEvent
     | ProviderErrorEvent
     | MaxIterationsReachedEvent
+    | UsageSummaryEvent
 )
 
 
