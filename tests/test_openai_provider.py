@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent_types import ToolResult, ToolSpec
+from providers.base import ProviderError
 from providers.openai import (
     OpenAIProvider,
     extract_tool_calls,
@@ -237,3 +238,24 @@ def test_openai_provider_add_tool_results_requires_call_id():
                 )
             ]
         )
+
+
+class RaisingResponses:
+    def create(self, **kwargs):
+        raise RuntimeError("api broke")
+
+
+class RaisingClient:
+    def __init__(self):
+        self.responses = RaisingResponses()
+
+
+def test_openai_provider_wraps_request_errors():
+    provider = OpenAIProvider(
+        api_key="test-key",
+        model="test-model",
+    )
+    provider.client = RaisingClient()
+
+    with pytest.raises(ProviderError, match="OpenAI request failed"):
+        provider.generate("system prompt", [])

@@ -3,6 +3,10 @@ from typing import Protocol
 from agent_types import ModelTurn, ToolResult, ToolSpec
 
 
+class ProviderError(RuntimeError):
+    """Raised when a model provider request fails."""
+
+
 class Provider(Protocol):
     def add_user_message(self, text: str) -> None:
         """Add a user message to the provider conversation history."""

@@ -1,6 +1,7 @@
 from agent_runtime import format_usage_summary, run_agent
 from agent_types import ModelTurn, ToolCall, UsageStats, UsageTotals
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
+from providers.base import ProviderError
 
 
 class FakeProvider:
@@ -138,3 +139,25 @@ def test_usage_totals_ignores_missing_usage():
     assert totals.response_tokens == 0
     assert totals.total_tokens == 0
     assert totals.has_usage is False
+
+
+def test_run_agent_returns_none_on_provider_error(tmp_path):
+    class FailingProvider:
+        def add_user_message(self, text: str) -> None:
+            pass
+
+        def generate(self, system_prompt: str, tools):
+            raise ProviderError("test provider exploded")
+
+        def add_tool_results(self, results) -> None:
+            pass
+
+    final_text = run_agent(
+        provider=FailingProvider(),
+        user_prompt="hello",
+        workspace=str(tmp_path),
+        permission_context=make_context(str(tmp_path)),
+        max_iterations=5,
+    )
+
+    assert final_text is None
