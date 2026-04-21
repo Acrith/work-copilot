@@ -70,7 +70,7 @@ class OpenAIProvider:
     def generate(self, system_prompt: str, tools: list[ToolSpec]) -> ModelTurn:
         openai_tools = [to_openai_tool(spec) for spec in tools]
 
-        try:            
+        try:
             response = self.client.responses.create(
                 model=self.model,
                 instructions=system_prompt,
@@ -97,9 +97,7 @@ class OpenAIProvider:
     def add_tool_results(self, results: list[ToolResult]) -> None:
         for result in results:
             if not result.call_id:
-                raise ValueError(
-                    f"Missing call_id for OpenAI tool result: {result.name}"
-                )
+                raise ValueError(f"Missing call_id for OpenAI tool result: {result.name}")
 
             self.input_items.append(
                 {

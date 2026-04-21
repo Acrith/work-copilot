@@ -111,10 +111,7 @@ def test_format_usage_summary_with_totals():
     usage_totals.add(UsageStats(prompt_tokens=10, response_tokens=5))
     usage_totals.add(UsageStats(prompt_tokens=3, response_tokens=2))
 
-    assert (
-        format_usage_summary(usage_totals)
-        == "Usage: input=13 output=7 total=20 tokens"
-    )
+    assert format_usage_summary(usage_totals) == "Usage: input=13 output=7 total=20 tokens"
 
 
 def test_usage_totals_adds_available_counts():
