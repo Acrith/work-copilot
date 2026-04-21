@@ -159,6 +159,20 @@ Run logging is opt-in because logs may contain prompts, file paths, tool outputs
 
 ---
 
+### `approval.py`
+
+Approval decision types.
+
+Responsibilities:
+
+- define approval actions
+- define approval response objects
+- parse raw user approval input into typed approval actions
+
+This keeps approval decisions separate from terminal rendering and tool execution.
+
+---
+
 ### `providers/factory.py`
 
 Provider creation and default model resolution.
@@ -759,6 +773,7 @@ main.py                = starts the app
 runtime_events.py      = structured events emitted by the runtime
 terminal_event_sink.py = renders runtime events to terminal
 run_logging.py         = JSON logging and run-log event sink
+approval.py            = typed approval decisions
 providers/factory.py   = chooses provider and default model
 agent_runtime.py       = runs the model/tool loop
 providers/gemini.py    = translates Gemini-specific stuff

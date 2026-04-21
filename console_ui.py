@@ -6,6 +6,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.tree import Tree
 
+from approval import ApprovalAction, ApprovalResponse, parse_approval_action
 from previews import is_unified_diff_preview, parse_unified_diff, summarize_diff
 
 console = Console(color_system="truecolor")
@@ -63,7 +64,7 @@ def build_preview_summary(function_name: str, file_path: str, preview: str) -> s
     )
 
 
-def approval_prompt(function_name: str, args: dict) -> tuple[str, str | None]:
+def approval_prompt(function_name: str, args: dict) -> ApprovalResponse:
     console.print()
     console.print("Permission required", style="bold yellow")
     console.print(f"[bold]Tool:[/bold] [cyan]{_tool_display_name(function_name)}[/cyan]")
@@ -97,13 +98,23 @@ def approval_prompt(function_name: str, args: dict) -> tuple[str, str | None]:
     options.append(" allow path for session")
     console.print(options)
 
-    answer = console.input("> ").strip().lower()
+    while True:
+        answer = console.input("> ")
+        action = parse_approval_action(answer)
 
-    if answer == "f":
-        feedback = console.input("Reason: ").strip()
-        return "f", feedback or "No reason provided."
+        if action is not None:
+            break
 
-    return answer, None
+        console.print(
+            "Invalid choice. Enter y, n, f, s, or p.",
+            style="yellow",
+        )
+
+    if action == ApprovalAction.DENY_WITH_FEEDBACK:
+        feedback = input("Feedback: ")
+        return ApprovalResponse(action=action, feedback=feedback)
+
+    return ApprovalResponse(action=action)
 
 
 def print_mutation_preview(function_name: str, file_path: str, preview: str) -> None:
