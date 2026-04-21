@@ -38,6 +38,21 @@ User prompt
   -> model returns final answer
 ```
 
+## Provider environment variables
+
+Gemini:
+
+```env
+GEMINI_API_KEY="..."
+OPENAI_API_KEY="..."
+```
+
+Provider/model defaults can be overridden with:
+```text
+WORK_COPILOT_PROVIDER="openai"
+WORK_COPILOT_MODEL="gpt-5.4-mini"
+```
+
 ## File responsibilities
 
 ### `main.py`
@@ -103,6 +118,7 @@ Currently supported providers:
 
 ```text
 gemini
+openai
 ```
 
 Later, this file can grow to support providers like:
