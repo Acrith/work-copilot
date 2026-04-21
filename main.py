@@ -12,8 +12,6 @@ from providers.factory import (
     get_default_model,
 )
 
-MAX_ITERATIONS = 20
-
 
 def main():
     # Load .env so API keys can be read
@@ -49,9 +47,17 @@ def main():
         default=os.environ.get("WORK_COPILOT_MODEL"),
         help="Model name to use. Defaults depend on provider.",
     )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=20,
+        help="Maximum number of model/tool loop iterations before stopping",
+    )
     
 
     args = parser.parse_args()
+    if args.max_iterations < 1:
+        raise ValueError("--max-iterations must be at least 1")
 
     workspace = os.path.abspath(args.workspace)
     if not os.path.isdir(workspace):
@@ -80,7 +86,7 @@ def main():
         permission_context=permission_context,
         verbose=args.verbose,
         verbose_functions=args.verbose_functions,
-        max_iterations=MAX_ITERATIONS,
+        max_iterations=args.max_iterations,
     )
 
     if final_text is None:

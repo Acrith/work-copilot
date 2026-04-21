@@ -1,6 +1,6 @@
 from rich.console import Console
 
-from agent_types import UsageStats
+from agent_types import UsageStats, UsageTotals
 from console_ui import (
     format_tool_call,
     print_agent_update,
@@ -27,15 +27,37 @@ def is_meaningful_update(text: str) -> bool:
     return True
 
 
-def print_verbose_usage(user_prompt: str, usage: UsageStats | None) -> None:
-    console.print(f"User prompt: {user_prompt}", style="dim")
-
+def print_verbose_usage(usage: UsageStats | None) -> None:
     if not usage:
-        console.print("Token usage unavailable", style="dim")
+        console.print("Turn usage: unavailable", style="dim")
         return
 
-    console.print(f"Prompt tokens: {usage.prompt_tokens}", style="dim")
-    console.print(f"Response tokens: {usage.response_tokens}", style="dim")
+    total = (usage.prompt_tokens or 0) + (usage.response_tokens or 0)
+    console.print(
+        (
+            "Turn usage: "
+            f"input={usage.prompt_tokens} "
+            f"output={usage.response_tokens} "
+            f"total={total} tokens"
+        ),
+        style="dim",
+    )
+
+
+def format_usage_summary(usage_totals: UsageTotals) -> str:
+    if not usage_totals.has_usage:
+        return "Usage: unavailable"
+
+    return (
+        "Usage: "
+        f"input={usage_totals.prompt_tokens} "
+        f"output={usage_totals.response_tokens} "
+        f"total={usage_totals.total_tokens} tokens"
+    )
+
+
+def print_usage_summary(usage_totals: UsageTotals) -> None:
+    console.print(format_usage_summary(usage_totals), style="dim")
 
 
 def run_agent(
@@ -51,13 +73,15 @@ def run_agent(
     # Add the user's first message to provider history.
     provider.add_user_message(user_prompt)
     tool_specs = get_tool_specs()
+    usage_totals = UsageTotals()
 
     for _ in range(max_iterations):
         # Ask the model for the next turn.
         turn = provider.generate(system_prompt, tool_specs)
+        usage_totals.add(turn.usage)
 
         if verbose:
-            print_verbose_usage(user_prompt, turn.usage)
+            print_verbose_usage(turn.usage)
 
         # If the model requested tools, execute them and send results back.
         if turn.tool_calls:
@@ -89,7 +113,9 @@ def run_agent(
         final_text = "\n".join(turn.text_parts).strip()
         if final_text:
             print_final_response(final_text)
+            print_usage_summary(usage_totals)
             return final_text
 
     print_error(f"Max iterations ({max_iterations}) reached.")
+    print_usage_summary(usage_totals)
     return None

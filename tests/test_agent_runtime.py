@@ -1,5 +1,5 @@
-from agent_runtime import run_agent
-from agent_types import ModelTurn, ToolCall
+from agent_runtime import format_usage_summary, run_agent
+from agent_types import ModelTurn, ToolCall, UsageStats, UsageTotals
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
 
 
@@ -99,3 +99,42 @@ def test_run_agent_returns_none_after_max_iterations(tmp_path):
     )
 
     assert final_text is None
+
+
+def test_format_usage_summary_when_usage_unavailable():
+    assert format_usage_summary(UsageTotals()) == "Usage: unavailable"
+
+
+def test_format_usage_summary_with_totals():
+    usage_totals = UsageTotals()
+    usage_totals.add(UsageStats(prompt_tokens=10, response_tokens=5))
+    usage_totals.add(UsageStats(prompt_tokens=3, response_tokens=2))
+
+    assert (
+        format_usage_summary(usage_totals)
+        == "Usage: input=13 output=7 total=20 tokens"
+    )
+
+
+def test_usage_totals_adds_available_counts():
+    totals = UsageTotals()
+
+    totals.add(UsageStats(prompt_tokens=10, response_tokens=5))
+    totals.add(UsageStats(prompt_tokens=3, response_tokens=2))
+
+    assert totals.prompt_tokens == 13
+    assert totals.response_tokens == 7
+    assert totals.total_tokens == 20
+    assert totals.has_usage is True
+
+
+def test_usage_totals_ignores_missing_usage():
+    totals = UsageTotals()
+
+    totals.add(None)
+    totals.add(UsageStats(prompt_tokens=None, response_tokens=None))
+
+    assert totals.prompt_tokens == 0
+    assert totals.response_tokens == 0
+    assert totals.total_tokens == 0
+    assert totals.has_usage is False
