@@ -11,6 +11,7 @@ from providers.factory import (
     create_provider,
     get_default_model,
 )
+from run_logging import RunLogger
 
 
 def main():
@@ -53,6 +54,17 @@ def main():
         default=20,
         help="Maximum number of model/tool loop iterations before stopping",
     )
+    parser.add_argument(
+        "--log-run",
+        action="store_true",
+        help="Save this run to a JSON log file",
+    )
+
+    parser.add_argument(
+        "--log-dir",
+        default=".work_copilot/runs",
+        help="Directory for run logs when --log-run is enabled",
+    )
 
     args = parser.parse_args()
     if args.max_iterations < 1:
@@ -71,6 +83,21 @@ def main():
 
     model = args.model or get_default_model(args.provider)
 
+    # Create logger if --log-run
+    run_logger = None
+    if args.log_run:
+        run_logger = RunLogger(
+            log_dir=args.log_dir,
+            metadata={
+                "provider": args.provider,
+                "model": model,
+                "workspace": workspace,
+                "permission_mode": args.permission_mode,
+                "max_iterations": args.max_iterations,
+                "user_prompt": args.user_prompt,
+            },
+        )
+
     # Pick the provider and model based on CLI/env settings.
     provider = create_provider(
         args.provider,
@@ -86,6 +113,7 @@ def main():
         verbose=args.verbose,
         verbose_functions=args.verbose_functions,
         max_iterations=args.max_iterations,
+        run_logger=run_logger,
     )
 
     if final_text is None:

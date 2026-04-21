@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from rich.console import Console
 
 from agent_types import UsageStats, UsageTotals
@@ -10,6 +12,7 @@ from console_ui import (
 from permissions import PermissionContext
 from prompts import system_prompt
 from providers.base import Provider, ProviderError
+from run_logging import RunLogger
 from tool_dispatch import execute_tool_call
 from tool_registry import get_tool_specs
 
@@ -60,6 +63,14 @@ def print_usage_summary(usage_totals: UsageTotals) -> None:
     console.print(format_usage_summary(usage_totals), style="dim")
 
 
+def save_run_log(run_logger: RunLogger | None) -> None:
+    if run_logger is None:
+        return
+
+    path = run_logger.save()
+    console.print(f"Run log: {path}", style="dim")
+
+
 def run_agent(
     *,
     provider: Provider,
@@ -69,11 +80,14 @@ def run_agent(
     verbose: bool = False,
     verbose_functions: bool = False,
     max_iterations: int = 20,
+    run_logger: RunLogger | None = None,
 ) -> str | None:
     # Add the user's first message to provider history.
     provider.add_user_message(user_prompt)
     tool_specs = get_tool_specs()
     usage_totals = UsageTotals()
+    if run_logger:
+        run_logger.record("run_started")
 
     for _ in range(max_iterations):
         # Ask the model for the next turn.
@@ -81,9 +95,22 @@ def run_agent(
             turn = provider.generate(system_prompt, tool_specs)
         except ProviderError as e:
             print_error(f"Provider error: {e}")
+
+            if run_logger:
+                run_logger.record("provider_error", error=str(e))
+
             print_usage_summary(usage_totals)
+            save_run_log(run_logger)
             return None
+
         usage_totals.add(turn.usage)
+        if run_logger:
+            run_logger.record(
+                "model_turn",
+                text_parts=turn.text_parts,
+                tool_calls=[asdict(tool_call) for tool_call in turn.tool_calls],
+                usage=asdict(turn.usage) if turn.usage else None,
+            )
 
         if verbose:
             print_verbose_usage(turn.usage)
@@ -107,6 +134,13 @@ def run_agent(
                     verbose=verbose_functions,
                 )
                 tool_results.append(result)
+                if run_logger:
+                    run_logger.record(
+                        "tool_result",
+                        name=result.name,
+                        payload=result.payload,
+                        call_id=result.call_id,
+                    )
 
                 if verbose:
                     console.print(result.payload, style="dim")
@@ -118,9 +152,22 @@ def run_agent(
         final_text = "\n".join(turn.text_parts).strip()
         if final_text:
             print_final_response(final_text)
+
+            if run_logger:
+                run_logger.record("final_response", text=final_text)
+
             print_usage_summary(usage_totals)
+            save_run_log(run_logger)
             return final_text
 
     print_error(f"Max iterations ({max_iterations}) reached.")
+
+    if run_logger:
+        run_logger.record(
+            "max_iterations_reached",
+            max_iterations=max_iterations,
+        )
+
     print_usage_summary(usage_totals)
+    save_run_log(run_logger)
     return None

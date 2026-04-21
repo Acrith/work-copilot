@@ -1,7 +1,10 @@
+import json
+
 from agent_runtime import format_usage_summary, run_agent
 from agent_types import ModelTurn, ToolCall, UsageStats, UsageTotals
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
 from providers.base import ProviderError
+from run_logging import RunLogger
 
 
 class FakeProvider:
@@ -158,3 +161,38 @@ def test_run_agent_returns_none_on_provider_error(tmp_path):
     )
 
     assert final_text is None
+
+
+def test_run_agent_writes_run_log(tmp_path):
+    sample = tmp_path / "sample.txt"
+    sample.write_text("hello", encoding="utf-8")
+
+    provider = FakeProvider()
+    logger = RunLogger(
+        log_dir=tmp_path / "logs",
+        metadata={
+            "provider": "fake",
+            "model": "fake-model",
+        },
+    )
+
+    final_text = run_agent(
+        provider=provider,
+        user_prompt="Read sample.txt",
+        workspace=str(tmp_path),
+        permission_context=make_context(str(tmp_path)),
+        max_iterations=5,
+        run_logger=logger,
+    )
+
+    assert final_text == "The file contains hello."
+    assert logger.saved_path is not None
+    assert logger.saved_path.exists()
+
+    payload = json.loads(logger.saved_path.read_text(encoding="utf-8"))
+    event_types = [event["type"] for event in payload["events"]]
+
+    assert "run_started" in event_types
+    assert "model_turn" in event_types
+    assert "tool_result" in event_types
+    assert "final_response" in event_types
