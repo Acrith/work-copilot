@@ -106,6 +106,12 @@ Runtime events are used to decouple the agent loop from consumers such as:
 - future interactive CLI
 - future Textual/TUI frontend
 
+Runtime events can currently be consumed by:
+
+- `TerminalEventSink`
+- `RunLogEventSink`
+- test/custom event sinks
+
 Current event examples:
 
 ```text
@@ -135,6 +141,21 @@ Responsibilities:
 - show verbose turn/tool details when requested
 
 This keeps terminal rendering separate from the provider-neutral runtime loop.
+
+---
+
+### `run_logging.py`
+
+JSON run logging.
+
+Responsibilities:
+
+- store run metadata
+- record runtime events
+- save run logs to JSON
+- provide `RunLogEventSink` so logging can consume runtime events like any other event sink
+
+Run logging is opt-in because logs may contain prompts, file paths, tool outputs, and code snippets.
 
 ---
 
@@ -737,6 +758,7 @@ uv run ruff check .
 main.py                = starts the app
 runtime_events.py      = structured events emitted by the runtime
 terminal_event_sink.py = renders runtime events to terminal
+run_logging.py         = JSON logging and run-log event sink
 providers/factory.py   = chooses provider and default model
 agent_runtime.py       = runs the model/tool loop
 providers/gemini.py    = translates Gemini-specific stuff

@@ -6,7 +6,7 @@ from agent_types import UsageTotals
 from permissions import PermissionContext
 from prompts import system_prompt
 from providers.base import Provider, ProviderError
-from run_logging import RunLogger
+from run_logging import RunLogEventSink, RunLogger
 from runtime_events import (
     EventSink,
     FinalResponseEvent,
@@ -17,7 +17,6 @@ from runtime_events import (
     RuntimeEvent,
     ToolResultEvent,
     UsageSummaryEvent,
-    event_payload,
 )
 from terminal_event_sink import TerminalEventSink
 from tool_dispatch import execute_tool_call
@@ -41,29 +40,20 @@ def build_usage_summary_event(usage_totals: UsageTotals) -> UsageSummaryEvent:
     )
 
 
-def save_run_log(run_logger: RunLogger | None) -> None:
-    if run_logger is None:
+def save_run_log(run_log_sink: RunLogEventSink | None) -> None:
+    if run_log_sink is None:
         return
 
-    path = run_logger.save()
+    path = run_log_sink.save()
     console.print(f"Run log: {path}", style="dim")
 
 
 def emit_runtime_event(
-    *,
     event: RuntimeEvent,
-    terminal_sink: EventSink,
-    event_sink: EventSink | None,
-    run_logger: RunLogger | None,
+    event_sinks: list[EventSink],
 ) -> None:
-    terminal_sink.emit(event)
-
-    if event_sink is not None:
-        event_sink.emit(event)
-
-    if run_logger is not None:
-        event_type, payload = event_payload(event)
-        run_logger.record(event_type, **payload)
+    for sink in event_sinks:
+        sink.emit(event)
 
 
 def run_agent(
@@ -89,12 +79,20 @@ def run_agent(
         verbose_functions=verbose_functions,
     )
 
+    run_log_sink = RunLogEventSink(run_logger) if run_logger else None
+
+    event_sinks: list[EventSink] = [terminal_sink]
+
+    if run_log_sink is not None:
+        event_sinks.append(run_log_sink)
+
+    if event_sink is not None:
+        event_sinks.append(event_sink)
+
     # Run logger | Start
     emit_runtime_event(
-        event=RunStartedEvent(),
-        terminal_sink=terminal_sink,
-        event_sink=event_sink,
-        run_logger=run_logger,
+        RunStartedEvent(),
+        event_sinks,
     )
 
     for _ in range(max_iterations):
@@ -104,32 +102,26 @@ def run_agent(
         except ProviderError as e:
             # Run logger | ProviderError
             emit_runtime_event(
-                event=ProviderErrorEvent(error=str(e)),
-                terminal_sink=terminal_sink,
-                event_sink=event_sink,
-                run_logger=run_logger,
+                ProviderErrorEvent(error=str(e)),
+                event_sinks,
             )
             emit_runtime_event(
-                event=build_usage_summary_event(usage_totals),
-                terminal_sink=terminal_sink,
-                event_sink=event_sink,
-                run_logger=run_logger,
+                build_usage_summary_event(usage_totals),
+                event_sinks,
             )
-            save_run_log(run_logger)
+            save_run_log(run_log_sink)
             return None
 
         usage_totals.add(turn.usage)
 
         # Run logger | Turn
         emit_runtime_event(
-            event=ModelTurnEvent(
+            ModelTurnEvent(
                 text_parts=turn.text_parts,
                 tool_calls=[asdict(tool_call) for tool_call in turn.tool_calls],
                 usage=asdict(turn.usage) if turn.usage else None,
             ),
-            terminal_sink=terminal_sink,
-            event_sink=event_sink,
-            run_logger=run_logger,
+            event_sinks,
         )
 
         # If the model requested tools, execute them and send results back.
@@ -147,14 +139,12 @@ def run_agent(
 
                 # Run Logger | Tool Result
                 emit_runtime_event(
-                    event=ToolResultEvent(
+                    ToolResultEvent(
                         name=result.name,
                         payload=result.payload,
                         call_id=result.call_id,
                     ),
-                    terminal_sink=terminal_sink,
-                    event_sink=event_sink,
-                    run_logger=run_logger,
+                    event_sinks,
                 )
 
             provider.add_tool_results(tool_results)
@@ -165,33 +155,25 @@ def run_agent(
         if final_text:
             # Run Logger | Final Response
             emit_runtime_event(
-                event=FinalResponseEvent(text=final_text),
-                terminal_sink=terminal_sink,
-                event_sink=event_sink,
-                run_logger=run_logger,
+                FinalResponseEvent(text=final_text),
+                event_sinks,
             )
             emit_runtime_event(
-                event=build_usage_summary_event(usage_totals),
-                terminal_sink=terminal_sink,
-                event_sink=event_sink,
-                run_logger=run_logger,
+                build_usage_summary_event(usage_totals),
+                event_sinks,
             )
 
-            save_run_log(run_logger)
+            save_run_log(run_log_sink)
             return final_text
 
     # Run Logger | Max Iterations
     emit_runtime_event(
-        event=MaxIterationsReachedEvent(max_iterations=max_iterations),
-        terminal_sink=terminal_sink,
-        event_sink=event_sink,
-        run_logger=run_logger,
+        MaxIterationsReachedEvent(max_iterations=max_iterations),
+        event_sinks,
     )
     emit_runtime_event(
-        event=build_usage_summary_event(usage_totals),
-        terminal_sink=terminal_sink,
-        event_sink=event_sink,
-        run_logger=run_logger,
+        build_usage_summary_event(usage_totals),
+        event_sinks,
     )
-    save_run_log(run_logger)
+    save_run_log(run_log_sink)
     return None
