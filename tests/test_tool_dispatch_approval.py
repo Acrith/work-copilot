@@ -4,6 +4,7 @@ import pytest
 
 import tool_dispatch as tool_dispatch_module
 from agent_types import ToolCall, ToolSpec
+from approval import ApprovalAction, ApprovalResponse
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
 from tool_registry import ToolDefinition
 
@@ -45,7 +46,7 @@ def test_write_file_ask_yes_shows_preview_and_executes(
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
     mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value=("y", None))
+    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.ALLOW_ONCE))
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -99,7 +100,7 @@ def test_write_file_ask_no_returns_error_and_does_not_execute(
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
     mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value=("n", None))
+    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.DENY))
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -143,7 +144,7 @@ def test_session_allow_tool_skips_second_prompt_for_write_file(
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
     mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value=("s", None))
+    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.ALLOW_TOOL_SESSION))
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -186,7 +187,12 @@ def test_session_allow_path_applies_only_to_same_exec_path(
     permission_context,
 ):
     mocked_run = MagicMock(return_value={"ok": True})
-    mocked_prompt = MagicMock(side_effect=[("p", None), ("y", None)])
+    mocked_prompt = MagicMock(
+        side_effect=[
+            ApprovalResponse(ApprovalAction.ALLOW_PATH_SESSION),
+            ApprovalResponse(ApprovalAction.ALLOW_ONCE),
+        ]
+    )
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -235,7 +241,7 @@ def test_invalid_update_skips_approval(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    mocked_prompt = MagicMock(return_value=("y", None))
+    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.ALLOW_ONCE))
     monkeypatch.setattr(tool_dispatch_module, "approval_prompt", mocked_prompt)
 
     result = tool_dispatch_module.execute_tool_call(
@@ -269,7 +275,7 @@ def test_valid_update_asks_approval(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    mocked_prompt = MagicMock(return_value=("y", None))
+    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.ALLOW_ONCE))
     mocked_print_preview = MagicMock()
 
     monkeypatch.setattr(tool_dispatch_module, "approval_prompt", mocked_prompt)
@@ -308,7 +314,7 @@ def test_update_denied_without_feedback(monkeypatch, tmp_path):
     monkeypatch.setattr(
         tool_dispatch_module,
         "approval_prompt",
-        lambda function_name, args: ("n", None),
+        lambda function_name, args: ApprovalResponse(ApprovalAction.DENY),
     )
 
     result = tool_dispatch_module.execute_tool_call(
@@ -342,9 +348,9 @@ def test_update_denied_with_feedback(monkeypatch, tmp_path):
     monkeypatch.setattr(
         tool_dispatch_module,
         "approval_prompt",
-        lambda function_name, args: (
-            "f",
-            "wrong file, create a new dedicated test file instead",
+        lambda function_name, args: ApprovalResponse(
+            ApprovalAction.DENY_WITH_FEEDBACK,
+            feedback="wrong file, create a new dedicated test file instead",
         ),
     )
 
@@ -362,7 +368,9 @@ def test_update_denied_with_feedback(monkeypatch, tmp_path):
     )
 
     assert result.name == "update"
-    assert result.payload["error"] == (
-        "User denied update: wrong file, create a new dedicated test file instead"
-    )
+    assert result.payload == {
+        "error": "User denied update",
+        "denied_by_user": True,
+        "feedback": "wrong file, create a new dedicated test file instead",
+    }
     assert file_path.read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"

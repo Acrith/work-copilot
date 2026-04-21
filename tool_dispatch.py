@@ -1,4 +1,5 @@
 from agent_types import ToolCall, ToolResult
+from approval import ApprovalAction
 from console_ui import approval_prompt, print_mutation_preview
 from functions.update_file import plan_update
 from permissions import (
@@ -73,36 +74,40 @@ def execute_tool_call(
             )
             print_mutation_preview(function_name, args.get("file_path", ""), preview)
 
-        answer, feedback = approval_prompt(function_name, args)
+        approval = approval_prompt(function_name, args)
 
-        if answer == "n":
+        if approval.action == ApprovalAction.DENY:
             return ToolResult(
                 name=function_name,
-                payload={"error": f"User denied {function_name}"},
+                payload={
+                    "error": f"User denied {function_name}",
+                    "denied_by_user": True,
+                },
                 call_id=tool_call.call_id,
             )
 
-        if answer == "f":
+        if approval.action == ApprovalAction.DENY_WITH_FEEDBACK:
+            payload = {
+                "error": f"User denied {function_name}",
+                "denied_by_user": True,
+            }
+
+            if approval.feedback:
+                payload["feedback"] = approval.feedback
+
             return ToolResult(
                 name=function_name,
-                payload={"error": f"User denied {function_name}: {feedback}"},
+                payload=payload,
                 call_id=tool_call.call_id,
             )
 
-        if answer == "s":
+        if approval.action == ApprovalAction.ALLOW_TOOL_SESSION:
             permission_context.session_allow_tools.add(function_name)
 
-        elif answer == "p":
+        elif approval.action == ApprovalAction.ALLOW_PATH_SESSION:
             target_path = extract_target_path(function_name, args)
             if target_path:
                 permission_context.session_allow_paths.add(target_path)
-
-        elif answer != "y":
-            return ToolResult(
-                name=function_name,
-                payload={"error": f"Unrecognized approval response. Denied {function_name}"},
-                call_id=tool_call.call_id,
-            )
 
     call_args = dict(args)
     call_args["working_directory"] = working_directory
