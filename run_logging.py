@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from runtime_events import EventSink, RuntimeEvent, event_payload
+
 
 class RunLogger:
     def __init__(self, log_dir: str | Path, metadata: dict[str, Any]) -> None:
@@ -47,3 +49,15 @@ class RunLogger:
 
         self.saved_path = path
         return path
+
+
+class RunLogEventSink(EventSink):
+    def __init__(self, run_logger: RunLogger) -> None:
+        self.run_logger = run_logger
+
+    def emit(self, event: RuntimeEvent) -> None:
+        event_type, payload = event_payload(event)
+        self.run_logger.record(event_type, **payload)
+
+    def save(self) -> Path:
+        return self.run_logger.save()
