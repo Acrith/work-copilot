@@ -11,3 +11,4 @@ wheels/
 
 # Other files
 .env
+.work_copilot/runs/
