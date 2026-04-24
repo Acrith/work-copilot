@@ -5,6 +5,7 @@ import sys
 from dotenv import load_dotenv
 
 from agent_runtime import run_agent
+from interactive_cli import run_interactive_session
 from permissions import PermissionContext, PermissionMode, load_rules
 from providers.factory import (
     DEFAULT_PROVIDER,
@@ -19,7 +20,7 @@ def main():
     load_dotenv()
 
     parser = argparse.ArgumentParser(description="Chatbot")
-    parser.add_argument("user_prompt", type=str, help="User prompt")
+    parser.add_argument("user_prompt", nargs="?", help="User prompt")
     parser.add_argument(
         "--workspace",
         default=".",
@@ -65,10 +66,21 @@ def main():
         default=".work_copilot/runs",
         help="Directory for run logs when --log-run is enabled",
     )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Start an interactive REPL session",
+    )
 
     args = parser.parse_args()
     if args.max_iterations < 1:
         raise ValueError("--max-iterations must be at least 1")
+
+    if args.interactive and args.user_prompt:
+        parser.error("Use either --interactive or a one-shot user_prompt, not both")
+
+    if not args.interactive and not args.user_prompt:
+        parser.error("user_prompt is required unless --interactive is used")
 
     workspace = os.path.abspath(args.workspace)
     if not os.path.isdir(workspace):
@@ -82,6 +94,29 @@ def main():
     )
 
     model = args.model or get_default_model(args.provider)
+
+    def provider_factory():
+        return create_provider(
+            args.provider,
+            model=model,
+        )
+
+
+    if args.interactive:
+        exit_code = run_interactive_session(
+            provider_factory=provider_factory,
+            provider_name=args.provider,
+            model=model,
+            workspace=workspace,
+            permission_context=permission_context,
+            permission_mode=args.permission_mode,
+            verbose=args.verbose,
+            verbose_functions=args.verbose_functions,
+            max_iterations=args.max_iterations,
+            log_run=args.log_run,
+            log_dir=args.log_dir,
+        )
+        sys.exit(exit_code)
 
     # Create logger if --log-run
     run_logger = None
@@ -99,10 +134,7 @@ def main():
         )
 
     # Pick the provider and model based on CLI/env settings.
-    provider = create_provider(
-        args.provider,
-        model=model,
-    )
+    provider = provider_factory()
 
     # Start the agent loop.
     final_text = run_agent(
