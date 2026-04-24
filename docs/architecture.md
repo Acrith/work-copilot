@@ -161,15 +161,32 @@ Run logging is opt-in because logs may contain prompts, file paths, tool outputs
 
 ### `approval.py`
 
-Approval decision types.
+Approval decision types and interfaces.
 
 Responsibilities:
 
 - define approval actions
 - define approval response objects
-- parse raw user approval input into typed approval actions
+- define approval request objects
+- define the `ApprovalHandler` protocol
+- parse raw approval input into typed approval actions
 
 This keeps approval decisions separate from terminal rendering and tool execution.
+
+---
+
+### `terminal_approval.py`
+
+Terminal approval frontend.
+
+Responsibilities:
+
+- consume `ApprovalRequest`
+- render previews when available
+- prompt the user in the terminal
+- return typed `ApprovalResponse`
+
+This keeps terminal approval behavior separate from tool dispatch logic.
 
 ---
 
@@ -435,8 +452,8 @@ Responsibilities:
 
 - receive neutral `ToolCall` objects
 - evaluate permission rules
-- show write/update previews
-- ask for approval when needed
+- build write/update previews when needed
+- request approval through an `ApprovalHandler`
 - execute the actual tool handler
 - return a neutral `ToolResult`
 - preserve provider `call_id` values when returning tool results
@@ -448,7 +465,7 @@ Example flow:
 ```text
 ToolCall(name="bash", args={"command": "echo hello"})
   -> evaluate permission
-  -> ask user for approval
+  -> request approval through ApprovalHandler
   -> execute run_shell_command()
   -> return ToolResult(...)
 ```
@@ -773,7 +790,8 @@ main.py                = starts the app
 runtime_events.py      = structured events emitted by the runtime
 terminal_event_sink.py = renders runtime events to terminal
 run_logging.py         = JSON logging and run-log event sink
-approval.py            = typed approval decisions
+approval.py            = typed approval requests and responses
+terminal_approval.py   = terminal approval frontend
 providers/factory.py   = chooses provider and default model
 agent_runtime.py       = runs the model/tool loop
 providers/gemini.py    = translates Gemini-specific stuff

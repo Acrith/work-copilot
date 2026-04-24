@@ -59,9 +59,7 @@ def test_write_file_ask_yes_shows_preview_and_executes(
 ):
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
-    approval_handler = FakeApprovalHandler(
-        [ApprovalResponse(ApprovalAction.ALLOW_ONCE)]
-    )
+    approval_handler = FakeApprovalHandler([ApprovalResponse(ApprovalAction.ALLOW_ONCE)])
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -109,9 +107,7 @@ def test_write_file_ask_no_returns_error_and_does_not_execute(
 ):
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
-    approval_handler = FakeApprovalHandler(
-        [ApprovalResponse(ApprovalAction.DENY)]
-    )
+    approval_handler = FakeApprovalHandler([ApprovalResponse(ApprovalAction.DENY)])
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -157,9 +153,7 @@ def test_session_allow_tool_skips_second_prompt_for_write_file(
 ):
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
-    approval_handler = FakeApprovalHandler(
-        [ApprovalResponse(ApprovalAction.ALLOW_TOOL_SESSION)]
-    )
+    approval_handler = FakeApprovalHandler([ApprovalResponse(ApprovalAction.ALLOW_TOOL_SESSION)])
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -258,9 +252,7 @@ def test_invalid_update_skips_approval(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    approval_handler = FakeApprovalHandler(
-        [ApprovalResponse(ApprovalAction.ALLOW_ONCE)]
-    )
+    approval_handler = FakeApprovalHandler([ApprovalResponse(ApprovalAction.ALLOW_ONCE)])
 
     result = tool_dispatch_module.execute_tool_call(
         ToolCall(
@@ -294,9 +286,7 @@ def test_valid_update_asks_approval(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    approval_handler = FakeApprovalHandler(
-        [ApprovalResponse(ApprovalAction.ALLOW_ONCE)]
-    )
+    approval_handler = FakeApprovalHandler([ApprovalResponse(ApprovalAction.ALLOW_ONCE)])
 
     result = tool_dispatch_module.execute_tool_call(
         ToolCall(
@@ -333,9 +323,7 @@ def test_update_denied_without_feedback(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    approval_handler = FakeApprovalHandler(
-        [ApprovalResponse(ApprovalAction.DENY)]
-    )
+    approval_handler = FakeApprovalHandler([ApprovalResponse(ApprovalAction.DENY)])
 
     result = tool_dispatch_module.execute_tool_call(
         ToolCall(
@@ -412,6 +400,4 @@ def test_execute_ask_tool_without_approval_handler_returns_error(tmp_path):
         ),
     )
 
-    assert result.payload == {
-        "error": "No approval handler configured for bash"
-    }
+    assert result.payload == {"error": "No approval handler configured for bash"}

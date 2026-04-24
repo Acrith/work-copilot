@@ -50,8 +50,7 @@ def execute_tool_call(
             name=function_name,
             payload={
                 "error": (
-                    f"Permission denied for {function_name} "
-                    f"in mode={permission_context.mode.value}"
+                    f"Permission denied for {function_name} in mode={permission_context.mode.value}"
                 )
             },
             call_id=tool_call.call_id,
@@ -61,9 +60,7 @@ def execute_tool_call(
         if approval_handler is None:
             return ToolResult(
                 name=function_name,
-                payload={
-                    "error": f"No approval handler configured for {function_name}"
-                },
+                payload={"error": f"No approval handler configured for {function_name}"},
                 call_id=tool_call.call_id,
             )
 
