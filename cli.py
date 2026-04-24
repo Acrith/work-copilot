@@ -3,6 +3,8 @@
 import argparse
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
 
 from dotenv import load_dotenv
 from rich.console import Console
@@ -15,6 +17,45 @@ from providers.factory import DEFAULT_PROVIDER, create_provider, get_default_mod
 from run_logging import RunLogger
 
 console = Console()
+CliMode = Literal["one-shot", "interactive"]
+
+
+@dataclass(frozen=True)
+class CliConfig:
+    mode: CliMode
+    provider_name: str
+    model: str
+    workspace: str
+    permission_mode: str
+    verbose: bool
+    verbose_functions: bool
+    max_iterations: int
+    log_run: bool
+    log_dir: str
+    show_config: bool
+    user_prompt: str | None
+
+
+def build_cli_config(args: argparse.Namespace) -> CliConfig:
+    workspace = resolve_workspace(args.workspace)
+    model = args.model or get_default_model(args.provider)
+    mode: CliMode = "interactive" if args.interactive else "one-shot"
+
+    return CliConfig(
+        mode=mode,
+        provider_name=args.provider,
+        model=model,
+        workspace=workspace,
+        permission_mode=args.permission_mode,
+        verbose=args.verbose,
+        verbose_functions=args.verbose_functions,
+        max_iterations=args.max_iterations,
+        log_run=args.log_run,
+        log_dir=args.log_dir,
+        show_config=args.show_config,
+        user_prompt=args.user_prompt,
+    )
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Work Copilot")
@@ -116,91 +157,58 @@ def resolve_workspace(workspace_arg: str) -> str:
     return workspace
 
 
-def build_permission_context(
-    *,
-    workspace: str,
-    permission_mode: str,
-) -> PermissionContext:
+def build_permission_context(config: CliConfig) -> PermissionContext:
     return PermissionContext(
-        mode=PermissionMode(permission_mode),
-        workspace=workspace,
-        rules=load_rules(workspace),
+        mode=PermissionMode(config.permission_mode),
+        workspace=config.workspace,
+        rules=load_rules(config.workspace),
     )
 
 
-def build_provider_factory(
-    *,
-    provider_name: str,
-    model: str,
-) -> Callable[[], Provider]:
+def build_provider_factory(config: CliConfig) -> Callable[[], Provider]:
     def provider_factory() -> Provider:
-        return create_provider(provider_name, model=model)
+        return create_provider(config.provider_name, model=config.model)
 
     return provider_factory
 
 
-def build_one_shot_run_logger(
-    *,
-    enabled: bool,
-    log_dir: str,
-    provider_name: str,
-    model: str,
-    workspace: str,
-    permission_mode: str,
-    max_iterations: int,
-    user_prompt: str,
-) -> RunLogger | None:
-    if not enabled:
+def build_one_shot_run_logger(config: CliConfig) -> RunLogger | None:
+    if not config.log_run:
         return None
 
     return RunLogger(
-        log_dir=log_dir,
+        log_dir=config.log_dir,
         metadata={
-            "mode": "one-shot",
-            "provider": provider_name,
-            "model": model,
-            "workspace": workspace,
-            "permission_mode": permission_mode,
-            "max_iterations": max_iterations,
-            "user_prompt": user_prompt,
+            "mode": config.mode,
+            "provider": config.provider_name,
+            "model": config.model,
+            "workspace": config.workspace,
+            "permission_mode": config.permission_mode,
+            "max_iterations": config.max_iterations,
+            "user_prompt": config.user_prompt,
         },
     )
 
 
 def run_one_shot(
     *,
+    config: CliConfig,
     provider_factory: Callable[[], Provider],
-    provider_name: str,
-    model: str,
-    workspace: str,
     permission_context: PermissionContext,
-    permission_mode: str,
-    verbose: bool,
-    verbose_functions: bool,
-    max_iterations: int,
-    log_run: bool,
-    log_dir: str,
-    user_prompt: str,
 ) -> int:
-    run_logger = build_one_shot_run_logger(
-        enabled=log_run,
-        log_dir=log_dir,
-        provider_name=provider_name,
-        model=model,
-        workspace=workspace,
-        permission_mode=permission_mode,
-        max_iterations=max_iterations,
-        user_prompt=user_prompt,
-    )
+    if config.user_prompt is None:
+        raise ValueError("user_prompt is required for one-shot mode")
+
+    run_logger = build_one_shot_run_logger(config)
 
     final_text = run_agent(
         provider=provider_factory(),
-        user_prompt=user_prompt,
-        workspace=workspace,
+        user_prompt=config.user_prompt,
+        workspace=config.workspace,
         permission_context=permission_context,
-        verbose=verbose,
-        verbose_functions=verbose_functions,
-        max_iterations=max_iterations,
+        verbose=config.verbose,
+        verbose_functions=config.verbose_functions,
+        max_iterations=config.max_iterations,
         run_logger=run_logger,
     )
 
@@ -210,88 +218,50 @@ def run_one_shot(
     return 0
 
 
-def print_resolved_config(
-    *,
-    mode: str,
-    provider_name: str,
-    model: str,
-    workspace: str,
-    permission_mode: str,
-    max_iterations: int,
-    log_run: bool,
-    log_dir: str,
-) -> None:
-    logging_status = "enabled" if log_run else "disabled"
+def print_resolved_config(config: CliConfig) -> None:
+    logging_status = "enabled" if config.log_run else "disabled"
 
     console.print("\nResolved Work Copilot config\n", style="bold")
-    console.print(f"Mode:            {mode}", style="dim")
-    console.print(f"Provider:        {provider_name}", style="dim")
-    console.print(f"Model:           {model}", style="dim")
-    console.print(f"Workspace:       {workspace}", style="dim")
-    console.print(f"Permission mode: {permission_mode}", style="dim")
-    console.print(f"Max iterations:  {max_iterations}", style="dim")
+    console.print(f"Mode:            {config.mode}", style="dim")
+    console.print(f"Provider:        {config.provider_name}", style="dim")
+    console.print(f"Model:           {config.model}", style="dim")
+    console.print(f"Workspace:       {config.workspace}", style="dim")
+    console.print(f"Permission mode: {config.permission_mode}", style="dim")
+    console.print(f"Max iterations:  {config.max_iterations}", style="dim")
     console.print(f"Logging:         {logging_status}", style="dim")
-    console.print(f"Log dir:         {log_dir}", style="dim")
+    console.print(f"Log dir:         {config.log_dir}", style="dim")
 
 
 def run_cli(argv: list[str] | None = None) -> int:
     load_dotenv()
 
     args = parse_args(argv)
+    config = build_cli_config(args)
 
-    workspace = resolve_workspace(args.workspace)
-    model = args.model or get_default_model(args.provider)
-    mode = "interactive" if args.interactive else "one-shot"
-
-    if args.show_config:
-        print_resolved_config(
-            mode=mode,
-            provider_name=args.provider,
-            model=model,
-            workspace=workspace,
-            permission_mode=args.permission_mode,
-            max_iterations=args.max_iterations,
-            log_run=args.log_run,
-            log_dir=args.log_dir,
-        )
+    if config.show_config:
+        print_resolved_config(config)
         return 0
 
-    permission_context = build_permission_context(
-        workspace=workspace,
-        permission_mode=args.permission_mode,
-    )
+    permission_context = build_permission_context(config)
+    provider_factory = build_provider_factory(config)
 
-    provider_factory = build_provider_factory(
-        provider_name=args.provider,
-        model=model,
-    )
-
-    if args.interactive:
+    if config.mode == "interactive":
         return run_interactive_session(
             provider_factory=provider_factory,
-            provider_name=args.provider,
-            model=model,
-            workspace=workspace,
+            provider_name=config.provider_name,
+            model=config.model,
+            workspace=config.workspace,
             permission_context=permission_context,
-            permission_mode=args.permission_mode,
-            verbose=args.verbose,
-            verbose_functions=args.verbose_functions,
-            max_iterations=args.max_iterations,
-            log_run=args.log_run,
-            log_dir=args.log_dir,
+            permission_mode=config.permission_mode,
+            verbose=config.verbose,
+            verbose_functions=config.verbose_functions,
+            max_iterations=config.max_iterations,
+            log_run=config.log_run,
+            log_dir=config.log_dir,
         )
 
     return run_one_shot(
+        config=config,
         provider_factory=provider_factory,
-        provider_name=args.provider,
-        model=model,
-        workspace=workspace,
         permission_context=permission_context,
-        permission_mode=args.permission_mode,
-        verbose=args.verbose,
-        verbose_functions=args.verbose_functions,
-        max_iterations=args.max_iterations,
-        log_run=args.log_run,
-        log_dir=args.log_dir,
-        user_prompt=args.user_prompt,
     )
