@@ -5,6 +5,7 @@ import os
 from collections.abc import Callable
 
 from dotenv import load_dotenv
+from rich.console import Console
 
 from agent_runtime import run_agent
 from interactive_cli import run_interactive_session
@@ -13,6 +14,7 @@ from providers.base import Provider
 from providers.factory import DEFAULT_PROVIDER, create_provider, get_default_model
 from run_logging import RunLogger
 
+console = Console()
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Work Copilot")
@@ -78,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory for run logs when --log-run is enabled",
     )
 
+    parser.add_argument(
+        "--show-config",
+        action="store_true",
+        help="Print resolved configuration and exit",
+    )
+
     return parser
 
 
@@ -95,8 +103,8 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
     if args.interactive and args.user_prompt:
         parser.error("Use either --interactive or a one-shot user_prompt, not both")
 
-    if not args.interactive and not args.user_prompt:
-        parser.error("user_prompt is required unless --interactive is used")
+    if not args.interactive and not args.show_config and not args.user_prompt:
+        parser.error("user_prompt is required unless --interactive or --show-config is used")
 
 
 def resolve_workspace(workspace_arg: str) -> str:
@@ -202,6 +210,30 @@ def run_one_shot(
     return 0
 
 
+def print_resolved_config(
+    *,
+    mode: str,
+    provider_name: str,
+    model: str,
+    workspace: str,
+    permission_mode: str,
+    max_iterations: int,
+    log_run: bool,
+    log_dir: str,
+) -> None:
+    logging_status = "enabled" if log_run else "disabled"
+
+    console.print("\nResolved Work Copilot config\n", style="bold")
+    console.print(f"Mode:            {mode}", style="dim")
+    console.print(f"Provider:        {provider_name}", style="dim")
+    console.print(f"Model:           {model}", style="dim")
+    console.print(f"Workspace:       {workspace}", style="dim")
+    console.print(f"Permission mode: {permission_mode}", style="dim")
+    console.print(f"Max iterations:  {max_iterations}", style="dim")
+    console.print(f"Logging:         {logging_status}", style="dim")
+    console.print(f"Log dir:         {log_dir}", style="dim")
+
+
 def run_cli(argv: list[str] | None = None) -> int:
     load_dotenv()
 
@@ -209,6 +241,20 @@ def run_cli(argv: list[str] | None = None) -> int:
 
     workspace = resolve_workspace(args.workspace)
     model = args.model or get_default_model(args.provider)
+    mode = "interactive" if args.interactive else "one-shot"
+
+    if args.show_config:
+        print_resolved_config(
+            mode=mode,
+            provider_name=args.provider,
+            model=model,
+            workspace=workspace,
+            permission_mode=args.permission_mode,
+            max_iterations=args.max_iterations,
+            log_run=args.log_run,
+            log_dir=args.log_dir,
+        )
+        return 0
 
     permission_context = build_permission_context(
         workspace=workspace,
