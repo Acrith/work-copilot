@@ -33,3 +33,11 @@ def test_parse_interactive_command_ignores_command_arguments():
 
 def test_parse_interactive_command_handles_unknown_command():
     assert parse_interactive_command("/wat") == "unknown"
+
+
+def test_parse_interactive_command_handles_status():
+    assert parse_interactive_command("/status") == "status"
+
+
+def test_parse_interactive_command_handles_status_case_insensitive():
+    assert parse_interactive_command("/STATUS") == "status"

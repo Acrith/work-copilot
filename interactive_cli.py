@@ -12,7 +12,7 @@ from permissions import PermissionContext
 from providers.base import Provider
 from run_logging import RunLogger
 
-InteractiveCommand = Literal["exit", "clear", "help", "unknown"]
+InteractiveCommand = Literal["exit", "clear", "help", "status", "unknown"]
 
 console = Console()
 
@@ -33,6 +33,9 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand | None:
 
     if command == "/help":
         return "help"
+    
+    if command == "/status":
+        return "status"
 
     return "unknown"
 
@@ -40,11 +43,43 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand | None:
 def print_interactive_help() -> None:
     console.print(
         "\nCommands:\n"
-        "  /help   Show this help\n"
-        "  /clear  Reset provider/session state\n"
-        "  /exit   Exit interactive mode\n",
+        "  /help    Show this help\n"
+        "  /status  Show current session settings\n"
+        "  /clear   Reset provider/session state\n"
+        "  /exit    Exit interactive mode\n",
         style="dim",
     )
+
+
+def print_interactive_status(
+    *,
+    provider_name: str,
+    model: str,
+    workspace: str,
+    permission_mode: str,
+    max_iterations: int,
+    log_run: bool,
+    log_dir: str,
+    interactive_session_id: str,
+    context_index: int,
+    turn_index: int,
+) -> None:
+    logging_status = "enabled" if log_run else "disabled"
+
+    console.print("\nInteractive session status", style="bold")
+    console.print(f"  Provider:        {provider_name}", style="dim")
+    console.print(f"  Model:           {model}", style="dim")
+    console.print(f"  Workspace:       {workspace}", style="dim")
+    console.print(f"  Permission mode: {permission_mode}", style="dim")
+    console.print(f"  Max iterations:  {max_iterations}", style="dim")
+    console.print(f"  Logging:         {logging_status}", style="dim")
+
+    if log_run:
+        console.print(f"  Log dir:         {log_dir}", style="dim")
+
+    console.print(f"  Session id:      {interactive_session_id}", style="dim")
+    console.print(f"  Context index:   {context_index}", style="dim")
+    console.print(f"  Turn index:      {turn_index}", style="dim")
 
 
 def build_interactive_run_logger(
@@ -133,6 +168,21 @@ def run_interactive_session(
 
         if command == "help":
             print_interactive_help()
+            continue
+
+        if command == "status":
+            print_interactive_status(
+                provider_name=provider_name,
+                model=model,
+                workspace=workspace,
+                permission_mode=permission_mode,
+                max_iterations=max_iterations,
+                log_run=log_run,
+                log_dir=log_dir,
+                interactive_session_id=interactive_session_id,
+                context_index=context_index,
+                turn_index=turn_index,
+            )
             continue
 
         if command == "clear":
