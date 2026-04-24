@@ -11,6 +11,47 @@ dependencies = [
     "rich>=14.1.0",
 ]
 
+[project.scripts]
+work-copilot = "main:main"
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+    "agent_runtime",
+    "agent_types",
+    "approval",
+    "cli",
+    "console_ui",
+    "constants",
+    "interactive_cli",
+    "main",
+    "permissions",
+    "previews",
+    "prompts",
+    "run_logging",
+    "runtime_events",
+    "terminal_approval",
+    "terminal_event_sink",
+    "tool_dispatch",
+    "tool_registry",
+]
+
+[tool.setuptools.packages.find]
+include = [
+    "functions",
+    "functions.*",
+    "providers",
+    "providers.*",
+    "calculator",
+    "calculator.*",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
