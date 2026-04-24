@@ -4,7 +4,11 @@ import pytest
 
 import tool_dispatch as tool_dispatch_module
 from agent_types import ToolCall, ToolSpec
-from approval import ApprovalAction, ApprovalResponse
+from approval import (
+    ApprovalAction,
+    ApprovalRequest,
+    ApprovalResponse,
+)
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
 from tool_registry import ToolDefinition
 
@@ -38,6 +42,16 @@ def make_definition(name, handler):
     )
 
 
+class FakeApprovalHandler:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.requests: list[ApprovalRequest] = []
+
+    def request_approval(self, request: ApprovalRequest) -> ApprovalResponse:
+        self.requests.append(request)
+        return self.responses.pop(0)
+
+
 def test_write_file_ask_yes_shows_preview_and_executes(
     monkeypatch,
     mock_working_directory,
@@ -45,8 +59,9 @@ def test_write_file_ask_yes_shows_preview_and_executes(
 ):
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
-    mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.ALLOW_ONCE))
+    approval_handler = FakeApprovalHandler(
+        [ApprovalResponse(ApprovalAction.ALLOW_ONCE)]
+    )
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -54,8 +69,6 @@ def test_write_file_ask_yes_shows_preview_and_executes(
         lambda name: make_definition(name, mocked_write),
     )
     monkeypatch.setattr(tool_dispatch_module, "build_write_preview", mocked_preview)
-    monkeypatch.setattr(tool_dispatch_module, "print_mutation_preview", mocked_print_preview)
-    monkeypatch.setattr(tool_dispatch_module, "approval_prompt", mocked_prompt)
 
     result = tool_dispatch_module.execute_tool_call(
         ToolCall(
@@ -64,6 +77,7 @@ def test_write_file_ask_yes_shows_preview_and_executes(
         ),
         mock_working_directory,
         permission_context,
+        approval_handler=approval_handler,
     )
 
     assert result.payload["result"] == {"ok": True}
@@ -73,17 +87,13 @@ def test_write_file_ask_yes_shows_preview_and_executes(
         "notes.txt",
         "hello",
     )
-    mocked_print_preview.assert_called_once_with(
-        "write_file",
-        "notes.txt",
-        "PREVIEW TEXT",
-    )
-    mocked_prompt.assert_called_once()
 
-    tool_name, prompt_args = mocked_prompt.call_args.args
-    assert tool_name == "write_file"
-    assert prompt_args["file_path"] == "notes.txt"
-    assert prompt_args["content"] == "hello"
+    assert len(approval_handler.requests) == 1
+    request = approval_handler.requests[0]
+    assert request.function_name == "write_file"
+    assert request.args == {"file_path": "notes.txt", "content": "hello"}
+    assert request.preview_path == "notes.txt"
+    assert request.preview == "PREVIEW TEXT"
 
     mocked_write.assert_called_once_with(
         file_path="notes.txt",
@@ -99,8 +109,9 @@ def test_write_file_ask_no_returns_error_and_does_not_execute(
 ):
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
-    mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.DENY))
+    approval_handler = FakeApprovalHandler(
+        [ApprovalResponse(ApprovalAction.DENY)]
+    )
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -108,8 +119,6 @@ def test_write_file_ask_no_returns_error_and_does_not_execute(
         lambda name: make_definition(name, mocked_write),
     )
     monkeypatch.setattr(tool_dispatch_module, "build_write_preview", mocked_preview)
-    monkeypatch.setattr(tool_dispatch_module, "print_mutation_preview", mocked_print_preview)
-    monkeypatch.setattr(tool_dispatch_module, "approval_prompt", mocked_prompt)
 
     result = tool_dispatch_module.execute_tool_call(
         ToolCall(
@@ -118,21 +127,26 @@ def test_write_file_ask_no_returns_error_and_does_not_execute(
         ),
         mock_working_directory,
         permission_context,
+        approval_handler=approval_handler,
     )
 
-    assert result.payload["error"] == "User denied write_file"
+    assert result.payload == {
+        "error": "User denied write_file",
+        "denied_by_user": True,
+    }
 
     mocked_preview.assert_called_once_with(
         mock_working_directory,
         "notes.txt",
         "hello",
     )
-    mocked_print_preview.assert_called_once_with(
-        "write_file",
-        "notes.txt",
-        "PREVIEW TEXT",
-    )
-    mocked_prompt.assert_called_once()
+
+    assert len(approval_handler.requests) == 1
+    request = approval_handler.requests[0]
+    assert request.function_name == "write_file"
+    assert request.preview_path == "notes.txt"
+    assert request.preview == "PREVIEW TEXT"
+
     mocked_write.assert_not_called()
 
 
@@ -143,8 +157,9 @@ def test_session_allow_tool_skips_second_prompt_for_write_file(
 ):
     mocked_write = MagicMock(return_value={"ok": True})
     mocked_preview = MagicMock(return_value="PREVIEW TEXT")
-    mocked_print_preview = MagicMock()
-    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.ALLOW_TOOL_SESSION))
+    approval_handler = FakeApprovalHandler(
+        [ApprovalResponse(ApprovalAction.ALLOW_TOOL_SESSION)]
+    )
 
     monkeypatch.setattr(
         tool_dispatch_module,
@@ -152,8 +167,6 @@ def test_session_allow_tool_skips_second_prompt_for_write_file(
         lambda name: make_definition(name, mocked_write),
     )
     monkeypatch.setattr(tool_dispatch_module, "build_write_preview", mocked_preview)
-    monkeypatch.setattr(tool_dispatch_module, "print_mutation_preview", mocked_print_preview)
-    monkeypatch.setattr(tool_dispatch_module, "approval_prompt", mocked_prompt)
 
     first_result = tool_dispatch_module.execute_tool_call(
         ToolCall(
@@ -162,6 +175,7 @@ def test_session_allow_tool_skips_second_prompt_for_write_file(
         ),
         mock_working_directory,
         permission_context,
+        approval_handler=approval_handler,
     )
 
     second_result = tool_dispatch_module.execute_tool_call(
@@ -171,13 +185,14 @@ def test_session_allow_tool_skips_second_prompt_for_write_file(
         ),
         mock_working_directory,
         permission_context,
+        approval_handler=approval_handler,
     )
 
     assert first_result.payload["result"] == {"ok": True}
     assert second_result.payload["result"] == {"ok": True}
     assert "write_file" in permission_context.session_allow_tools
-    assert mocked_prompt.call_count == 1
-    assert mocked_print_preview.call_count == 1
+    assert len(approval_handler.requests) == 1
+    assert mocked_preview.call_count == 1
     assert mocked_write.call_count == 2
 
 
@@ -187,8 +202,8 @@ def test_session_allow_path_applies_only_to_same_exec_path(
     permission_context,
 ):
     mocked_run = MagicMock(return_value={"ok": True})
-    mocked_prompt = MagicMock(
-        side_effect=[
+    approval_handler = FakeApprovalHandler(
+        [
             ApprovalResponse(ApprovalAction.ALLOW_PATH_SESSION),
             ApprovalResponse(ApprovalAction.ALLOW_ONCE),
         ]
@@ -199,29 +214,31 @@ def test_session_allow_path_applies_only_to_same_exec_path(
         "get_tool_definition",
         lambda name: make_definition(name, mocked_run),
     )
-    monkeypatch.setattr(tool_dispatch_module, "approval_prompt", mocked_prompt)
 
     first_result = tool_dispatch_module.execute_tool_call(
         ToolCall(name="run_python_file", args={"file_path": "script.py"}),
         mock_working_directory,
         permission_context,
+        approval_handler=approval_handler,
     )
     second_result = tool_dispatch_module.execute_tool_call(
         ToolCall(name="run_python_file", args={"file_path": "script.py"}),
         mock_working_directory,
         permission_context,
+        approval_handler=approval_handler,
     )
     third_result = tool_dispatch_module.execute_tool_call(
         ToolCall(name="run_python_file", args={"file_path": "other.py"}),
         mock_working_directory,
         permission_context,
+        approval_handler=approval_handler,
     )
 
     assert first_result.payload["result"] == {"ok": True}
     assert second_result.payload["result"] == {"ok": True}
     assert third_result.payload["result"] == {"ok": True}
     assert "script.py" in permission_context.session_allow_paths
-    assert mocked_prompt.call_count == 2
+    assert len(approval_handler.requests) == 2
 
     mocked_run.assert_any_call(
         file_path="script.py",
@@ -241,8 +258,9 @@ def test_invalid_update_skips_approval(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.ALLOW_ONCE))
-    monkeypatch.setattr(tool_dispatch_module, "approval_prompt", mocked_prompt)
+    approval_handler = FakeApprovalHandler(
+        [ApprovalResponse(ApprovalAction.ALLOW_ONCE)]
+    )
 
     result = tool_dispatch_module.execute_tool_call(
         ToolCall(
@@ -255,9 +273,10 @@ def test_invalid_update_skips_approval(monkeypatch, tmp_path):
         ),
         str(tmp_path),
         permission_context,
+        approval_handler=approval_handler,
     )
 
-    mocked_prompt.assert_not_called()
+    assert len(approval_handler.requests) == 0
     assert result.name == "update"
     assert result.payload["result"] == (
         'Error: File not found: "missing.txt". '
@@ -275,11 +294,9 @@ def test_valid_update_asks_approval(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    mocked_prompt = MagicMock(return_value=ApprovalResponse(ApprovalAction.ALLOW_ONCE))
-    mocked_print_preview = MagicMock()
-
-    monkeypatch.setattr(tool_dispatch_module, "approval_prompt", mocked_prompt)
-    monkeypatch.setattr(tool_dispatch_module, "print_mutation_preview", mocked_print_preview)
+    approval_handler = FakeApprovalHandler(
+        [ApprovalResponse(ApprovalAction.ALLOW_ONCE)]
+    )
 
     result = tool_dispatch_module.execute_tool_call(
         ToolCall(
@@ -292,13 +309,18 @@ def test_valid_update_asks_approval(monkeypatch, tmp_path):
         ),
         str(tmp_path),
         permission_context,
+        approval_handler=approval_handler,
     )
 
     assert result.name == "update"
     assert result.payload["result"] == 'Successfully updated "sample.txt"'
     assert file_path.read_text(encoding="utf-8") == "alpha\ndelta\ngamma\n"
-    mocked_prompt.assert_called_once()
-    mocked_print_preview.assert_called_once()
+
+    assert len(approval_handler.requests) == 1
+    request = approval_handler.requests[0]
+    assert request.function_name == "update"
+    assert request.preview_path == "sample.txt"
+    assert request.preview is not None
 
 
 def test_update_denied_without_feedback(monkeypatch, tmp_path):
@@ -311,10 +333,8 @@ def test_update_denied_without_feedback(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    monkeypatch.setattr(
-        tool_dispatch_module,
-        "approval_prompt",
-        lambda function_name, args: ApprovalResponse(ApprovalAction.DENY),
+    approval_handler = FakeApprovalHandler(
+        [ApprovalResponse(ApprovalAction.DENY)]
     )
 
     result = tool_dispatch_module.execute_tool_call(
@@ -328,10 +348,14 @@ def test_update_denied_without_feedback(monkeypatch, tmp_path):
         ),
         str(tmp_path),
         permission_context,
+        approval_handler=approval_handler,
     )
 
     assert result.name == "update"
-    assert result.payload["error"] == "User denied update"
+    assert result.payload == {
+        "error": "User denied update",
+        "denied_by_user": True,
+    }
     assert file_path.read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"
 
 
@@ -345,13 +369,13 @@ def test_update_denied_with_feedback(monkeypatch, tmp_path):
         rules=PermissionRuleSet(),
     )
 
-    monkeypatch.setattr(
-        tool_dispatch_module,
-        "approval_prompt",
-        lambda function_name, args: ApprovalResponse(
-            ApprovalAction.DENY_WITH_FEEDBACK,
-            feedback="wrong file, create a new dedicated test file instead",
-        ),
+    approval_handler = FakeApprovalHandler(
+        [
+            ApprovalResponse(
+                ApprovalAction.DENY_WITH_FEEDBACK,
+                feedback="wrong file, create a new dedicated test file instead",
+            )
+        ]
     )
 
     result = tool_dispatch_module.execute_tool_call(
@@ -365,6 +389,7 @@ def test_update_denied_with_feedback(monkeypatch, tmp_path):
         ),
         str(tmp_path),
         permission_context,
+        approval_handler=approval_handler,
     )
 
     assert result.name == "update"
@@ -374,3 +399,19 @@ def test_update_denied_with_feedback(monkeypatch, tmp_path):
         "feedback": "wrong file, create a new dedicated test file instead",
     }
     assert file_path.read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"
+
+
+def test_execute_ask_tool_without_approval_handler_returns_error(tmp_path):
+    result = tool_dispatch_module.execute_tool_call(
+        ToolCall(name="bash", args={"command": "echo hello"}),
+        str(tmp_path),
+        PermissionContext(
+            mode=PermissionMode.DEFAULT,
+            workspace=str(tmp_path),
+            rules=PermissionRuleSet(),
+        ),
+    )
+
+    assert result.payload == {
+        "error": "No approval handler configured for bash"
+    }

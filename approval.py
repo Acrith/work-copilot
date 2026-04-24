@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Protocol
 
 
 class ApprovalAction(str, Enum):
@@ -23,3 +24,16 @@ def parse_approval_action(value: str) -> ApprovalAction | None:
         return ApprovalAction(normalized)
     except ValueError:
         return None
+
+
+@dataclass(frozen=True)
+class ApprovalRequest:
+    function_name: str
+    args: dict[str, Any]
+    preview_path: str | None = None
+    preview: str | None = None
+
+
+class ApprovalHandler(Protocol):
+    def request_approval(self, request: ApprovalRequest) -> ApprovalResponse:
+        """Ask the user whether a tool call should be approved."""
