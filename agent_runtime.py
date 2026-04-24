@@ -3,6 +3,7 @@ from dataclasses import asdict
 from rich.console import Console
 
 from agent_types import UsageTotals
+from approval import ApprovalHandler
 from permissions import PermissionContext
 from prompts import system_prompt
 from providers.base import Provider, ProviderError
@@ -18,6 +19,7 @@ from runtime_events import (
     ToolResultEvent,
     UsageSummaryEvent,
 )
+from terminal_approval import TerminalApprovalHandler
 from terminal_event_sink import TerminalEventSink
 from tool_dispatch import execute_tool_call
 from tool_registry import get_tool_specs
@@ -67,6 +69,7 @@ def run_agent(
     max_iterations: int = 20,
     run_logger: RunLogger | None = None,
     event_sink: EventSink | None = None,
+    approval_handler: ApprovalHandler | None = None,
 ) -> str | None:
     # Add the user's first message to provider history.
     provider.add_user_message(user_prompt)
@@ -78,6 +81,8 @@ def run_agent(
         verbose=verbose,
         verbose_functions=verbose_functions,
     )
+
+    resolved_approval_handler = approval_handler or TerminalApprovalHandler()
 
     run_log_sink = RunLogEventSink(run_logger) if run_logger else None
 
@@ -133,6 +138,7 @@ def run_agent(
                     tool_call,
                     workspace,
                     permission_context,
+                    approval_handler=resolved_approval_handler,
                     verbose=verbose_functions,
                 )
                 tool_results.append(result)

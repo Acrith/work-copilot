@@ -1,6 +1,5 @@
 from agent_types import ToolCall, ToolResult
-from approval import ApprovalAction
-from console_ui import approval_prompt, print_mutation_preview
+from approval import ApprovalAction, ApprovalHandler, ApprovalRequest
 from functions.update_file import plan_update
 from permissions import (
     Decision,
@@ -16,6 +15,7 @@ def execute_tool_call(
     tool_call: ToolCall,
     working_directory: str,
     permission_context: PermissionContext,
+    approval_handler: ApprovalHandler | None = None,
     verbose: bool = False,
 ) -> ToolResult:
     function_name = tool_call.name
@@ -50,31 +50,51 @@ def execute_tool_call(
             name=function_name,
             payload={
                 "error": (
-                    f"Permission denied for {function_name} in mode={permission_context.mode.value}"
+                    f"Permission denied for {function_name} "
+                    f"in mode={permission_context.mode.value}"
                 )
             },
             call_id=tool_call.call_id,
         )
 
     if decision == Decision.ASK:
+        if approval_handler is None:
+            return ToolResult(
+                name=function_name,
+                payload={
+                    "error": f"No approval handler configured for {function_name}"
+                },
+                call_id=tool_call.call_id,
+            )
+
+        preview = None
+        preview_path = None
+
         if function_name == "write_file":
+            preview_path = args.get("file_path", "")
             preview = build_write_preview(
                 working_directory,
-                args.get("file_path", ""),
+                preview_path,
                 args.get("content", ""),
             )
-            print_mutation_preview(function_name, args.get("file_path", ""), preview)
 
         elif function_name == "update":
+            preview_path = args.get("file_path", "")
             preview = build_update_preview(
                 working_directory,
-                args.get("file_path", ""),
+                preview_path,
                 args.get("old_text", ""),
                 args.get("new_text", ""),
             )
-            print_mutation_preview(function_name, args.get("file_path", ""), preview)
 
-        approval = approval_prompt(function_name, args)
+        approval = approval_handler.request_approval(
+            ApprovalRequest(
+                function_name=function_name,
+                args=args,
+                preview_path=preview_path,
+                preview=preview,
+            )
+        )
 
         if approval.action == ApprovalAction.DENY:
             return ToolResult(
