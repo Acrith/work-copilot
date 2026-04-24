@@ -19,7 +19,7 @@ def test_parser_accepts_interactive_mode_without_prompt():
     assert args.user_prompt is None
 
 
-def test_parse_args_rejects_missing_prompt_without_interactive():
+def test_parse_args_rejects_missing_prompt_without_interactive_or_show_config():
     with pytest.raises(SystemExit):
         parse_args([])
 
@@ -44,3 +44,17 @@ def test_parse_args_accepts_workspace():
     args = parse_args(["--workspace", "/tmp", "List files"])
 
     assert args.workspace == "/tmp"
+
+
+def test_parse_args_accepts_show_config_without_prompt():
+    args = parse_args(["--show-config"])
+
+    assert args.show_config is True
+    assert args.user_prompt is None
+
+
+def test_parse_args_accepts_show_config_with_interactive():
+    args = parse_args(["--interactive", "--show-config"])
+
+    assert args.interactive is True
+    assert args.show_config is True
