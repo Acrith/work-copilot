@@ -1,6 +1,106 @@
 # textual_preview.py
 
+import re
+from dataclasses import dataclass
+from typing import Literal
+
 from rich.text import Text
+
+DiffLineKind = Literal[
+    "file_header",
+    "hunk",
+    "added",
+    "removed",
+    "context",
+    "metadata",
+]
+
+
+@dataclass(frozen=True)
+class DiffLine:
+    kind: DiffLineKind
+    text: str
+    old_line_no: int | None = None
+    new_line_no: int | None = None
+
+
+HUNK_HEADER_RE = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
+    r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"
+)
+
+
+def parse_hunk_header(line: str) -> tuple[int, int] | None:
+    match = HUNK_HEADER_RE.match(line)
+
+    if match is None:
+        return None
+
+    return int(match.group("old_start")), int(match.group("new_start"))
+
+
+def parse_unified_diff(preview: str) -> list[DiffLine]:
+    rows: list[DiffLine] = []
+    old_line_no: int | None = None
+    new_line_no: int | None = None
+
+    for line in preview.splitlines():
+        hunk_start = parse_hunk_header(line)
+
+        if hunk_start is not None:
+            old_line_no, new_line_no = hunk_start
+            rows.append(DiffLine(kind="hunk", text=line))
+            continue
+
+        if line.startswith("---") or line.startswith("+++"):
+            rows.append(DiffLine(kind="file_header", text=line))
+            continue
+
+        if line.startswith("New file:") or line.startswith("Updated file:"):
+            rows.append(DiffLine(kind="metadata", text=line))
+            continue
+
+        if line.startswith("+"):
+            rows.append(
+                DiffLine(
+                    kind="added",
+                    text=line,
+                    old_line_no=None,
+                    new_line_no=new_line_no,
+                )
+            )
+            if new_line_no is not None:
+                new_line_no += 1
+            continue
+
+        if line.startswith("-"):
+            rows.append(
+                DiffLine(
+                    kind="removed",
+                    text=line,
+                    old_line_no=old_line_no,
+                    new_line_no=None,
+                )
+            )
+            if old_line_no is not None:
+                old_line_no += 1
+            continue
+
+        rows.append(
+            DiffLine(
+                kind="context",
+                text=line,
+                old_line_no=old_line_no,
+                new_line_no=new_line_no,
+            )
+        )
+
+        if old_line_no is not None:
+            old_line_no += 1
+        if new_line_no is not None:
+            new_line_no += 1
+
+    return rows
 
 
 def format_preview_line(line: str) -> Text | str:
