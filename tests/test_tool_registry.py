@@ -1,4 +1,5 @@
 from agent_types import ToolSpec
+from tool_categories import ToolCategory
 from tool_registry import get_tool_definition, get_tool_specs
 
 
@@ -33,3 +34,11 @@ def test_get_tool_definition_returns_handler():
 
     assert definition.spec.name == "get_file_content"
     assert callable(definition.handler)
+
+
+def test_servicedesk_status_is_connector_read_tool():
+    definition = get_tool_definition("servicedesk_status")
+
+    assert definition.category == ToolCategory.CONNECTOR_READ
+    assert definition.connector == "servicedeskplus"
+    assert definition.resource_type == "connector_status"

@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any
 
 from constants import PROTECTED_PATHS, SENSITIVE_READ_PATHS
+from tool_categories import ToolCategory
 
 
 class PermissionMode(str, Enum):
@@ -22,39 +23,20 @@ class Decision(str, Enum):
     ASK = "ask"
     DENY = "deny"
 
-
-READ_TOOLS = {
-    "get_files_info",
-    "get_file_content",
-    "search_in_files",
-    "find_file",
-    "git_status",
-    "git_diff_file",
-    "git_diff",
+READ_CATEGORIES = {
+    ToolCategory.READ,
+    ToolCategory.CONNECTOR_READ,
 }
 
-WRITE_TOOLS = {
-    "write_file",
-    "update",
+LOCAL_WRITE_OR_EXEC_CATEGORIES = {
+    ToolCategory.WRITE,
+    ToolCategory.EXEC,
 }
 
-EXEC_TOOLS = {
-    "bash",
-    "run_python_file",
-    "run_tests",
-}
-
-PATH_TOOLS = {
-    "get_file_content",
-    "get_files_info",
-    "search_in_files",
-    "find_file",
-    "git_diff_file",
-    "write_file",
-    "update",
-    "run_python_file",
-    "run_tests",
-    "bash",
+ACCEPT_EDITS_ALLOWED_CATEGORIES = {
+    ToolCategory.READ,
+    ToolCategory.WRITE,
+    ToolCategory.CONNECTOR_READ,
 }
 
 
@@ -93,14 +75,18 @@ def load_rules(workspace: str) -> PermissionRuleSet:
     )
 
 
+def get_tool_category(tool_name: str) -> ToolCategory | None:
+    from tool_registry import get_tool_definition
+
+    try:
+        return get_tool_definition(tool_name).category
+    except KeyError:
+        return None
+
+
 def tool_category(tool_name: str) -> str:
-    if tool_name in READ_TOOLS:
-        return "read"
-    if tool_name in WRITE_TOOLS:
-        return "write"
-    if tool_name in EXEC_TOOLS:
-        return "exec"
-    return "unknown"
+    category = get_tool_category(tool_name)
+    return category.value if category else "unknown"
 
 
 def normalize_relative_path(path: str | None) -> str | None:
@@ -153,16 +139,24 @@ def matches_any(value: str, patterns: list[str]) -> bool:
 def evaluate_request(ctx: PermissionContext, tool_name: str, args: dict[str, Any]) -> Decision:
     target_path = extract_target_path(tool_name, args)
     tool_key = tool_name if target_path is None else f"{tool_name}:{target_path}"
-    category = tool_category(tool_name)
+    category = get_tool_category(tool_name)
+
+    # Unknown tools should never be silently allowed.
+    if category is None:
+        return Decision.DENY
+
+    # Connector writes are not supported yet. Deny before explicit rules or session approvals.
+    if category == ToolCategory.CONNECTOR_WRITE:
+        return Decision.DENY
 
     # Hard safety rules should override everything, including explicit rules and session approvals.
-    if category == "read" and is_sensitive_read_path(target_path):
+    if category == ToolCategory.READ and is_sensitive_read_path(target_path):
         return Decision.DENY
 
-    if category in {"write", "exec"} and is_protected_path(target_path):
+    if category in LOCAL_WRITE_OR_EXEC_CATEGORIES and is_protected_path(target_path):
         return Decision.DENY
 
-    # Explicit workspace rules
+    # Explicit workspace rules.
     if matches_any(tool_name, ctx.rules.deny) or matches_any(tool_key, ctx.rules.deny):
         return Decision.DENY
 
@@ -172,25 +166,24 @@ def evaluate_request(ctx: PermissionContext, tool_name: str, args: dict[str, Any
     if matches_any(tool_name, ctx.rules.allow) or matches_any(tool_key, ctx.rules.allow):
         return Decision.ALLOW
 
-    # Session-level approvals
+    # Session-level approvals.
     if tool_name in ctx.session_allow_tools:
         return Decision.ALLOW
+
     if target_path and target_path in ctx.session_allow_paths:
         return Decision.ALLOW
 
-    # Mode baseline
+    # Mode baseline.
     if ctx.mode == PermissionMode.PLAN:
-        return Decision.ALLOW if category == "read" else Decision.DENY
+        return Decision.ALLOW if category in READ_CATEGORIES else Decision.DENY
 
     if ctx.mode == PermissionMode.DEFAULT:
-        return Decision.ALLOW if category == "read" else Decision.ASK
+        return Decision.ALLOW if category in READ_CATEGORIES else Decision.ASK
 
     if ctx.mode == PermissionMode.ACCEPT_EDITS:
-        if category in {"read", "write"}:
-            return Decision.ALLOW
-        return Decision.ASK
+        return Decision.ALLOW if category in ACCEPT_EDITS_ALLOWED_CATEGORIES else Decision.ASK
 
     if ctx.mode == PermissionMode.DONT_ASK:
-        return Decision.ALLOW if category == "read" else Decision.DENY
+        return Decision.ALLOW if category in READ_CATEGORIES else Decision.DENY
 
     return Decision.ASK
