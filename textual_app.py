@@ -13,9 +13,11 @@ from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from approval import ApprovalRequest, ApprovalResponse
 from interactive_commands import (
-    format_interactive_help,
+    build_interactive_help_renderable,
+    build_servicedesk_triage_prompt,
     format_interactive_status,
     parse_interactive_command,
+    parse_triage_limit,
 )
 from interactive_session import (
     InteractiveSessionConfig,
@@ -325,7 +327,7 @@ class WorkCopilotTextualApp(App):
 
         if command == "help":
             self._log_blank()
-            self._log_command_lines(format_interactive_help())
+            self._log(build_interactive_help_renderable())
             return
 
         if command == "status":
@@ -343,6 +345,18 @@ class WorkCopilotTextualApp(App):
             self._refresh_sidebar()
             self._log_blank()
             self._log("Session cleared.")
+            return
+
+        if command == "triage_servicedesk":
+            limit = parse_triage_limit(user_prompt)
+            triage_prompt = build_servicedesk_triage_prompt(limit)
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Running ServiceDesk triage for up to {limit} requests."
+            )
+            self._set_running(True)
+            self._run_model_turn_worker(triage_prompt)
             return
 
         if command == "unknown":
