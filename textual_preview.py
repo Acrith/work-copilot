@@ -24,6 +24,14 @@ class DiffLine:
     new_line_no: int | None = None
 
 
+@dataclass(frozen=True)
+class DiffSummary:
+    additions: int
+    removals: int
+
+
+STRUCTURED_DIFF_KINDS = {"added", "removed", "context"}
+
 HUNK_HEADER_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
     r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"
@@ -63,6 +71,10 @@ def parse_unified_diff(preview: str) -> list[DiffLine]:
             continue
 
         if line.startswith("Updated file:"):
+            rows.append(DiffLine(kind="metadata", text=line))
+            continue
+
+        if line.startswith("Deleted file:"):
             rows.append(DiffLine(kind="metadata", text=line))
             continue
 
@@ -109,6 +121,13 @@ def parse_unified_diff(preview: str) -> list[DiffLine]:
     return rows
 
 
+def summarize_diff_rows(rows: list[DiffLine]) -> DiffSummary:
+    additions = sum(1 for row in rows if row.kind == "added")
+    removals = sum(1 for row in rows if row.kind == "removed")
+
+    return DiffSummary(additions=additions, removals=removals)
+
+
 def format_preview_line(line: str) -> Text | str:
     if line.startswith("@@"):
         return Text(line, style="bold #79c0ff")
@@ -138,6 +157,21 @@ def format_line_number(value: int | None) -> str:
     return f"{value:>4}"
 
 
+def format_diff_column_header() -> Text:
+    return Text(f"{'old':>4} {'new':>4}  content", style="bold #8b949e")
+
+
+def format_diff_file_header(path: str, summary: DiffSummary) -> Text:
+    text = Text()
+    text.append("▸ ", style="#8b949e")
+    text.append(path, style="bold #c9d1d9")
+    text.append(" ")
+    text.append(f"(+{summary.additions}", style="bold #7ee787")
+    text.append(", ")
+    text.append(f"-{summary.removals})", style="bold #ff7b72")
+    return text
+
+
 def format_diff_row(row: DiffLine) -> Text | str:
     if row.kind == "metadata":
         return Text(row.text, style="bold #f2cc60")
@@ -163,10 +197,24 @@ def format_diff_row(row: DiffLine) -> Text | str:
     return row.text
 
 
+def format_diff_rows(rows: list[DiffLine]) -> list[Text | str]:
+    rendered: list[Text | str] = []
+    wrote_column_header = False
+
+    for row in rows:
+        if row.kind in STRUCTURED_DIFF_KINDS and not wrote_column_header:
+            rendered.append(format_diff_column_header())
+            wrote_column_header = True
+
+        rendered.append(format_diff_row(row))
+
+    return rendered
+
+
 def format_preview_rows(preview: str) -> list[Text | str]:
     rows = parse_unified_diff(preview)
 
     if not rows:
         return []
 
-    return [format_diff_row(row) for row in rows]
+    return format_diff_rows(rows)
