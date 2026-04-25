@@ -136,6 +136,7 @@ class WorkCopilotTextualApp(App):
         self.pending_approval_request: ApprovalRequest | None = None
         self.pending_approval_response: ApprovalResponse | None = None
         self.pending_approval_event: Event | None = None
+        self.is_collecting_approval_feedback = False
 
 
     def _set_running(self, is_running: bool) -> None:
@@ -218,7 +219,7 @@ class WorkCopilotTextualApp(App):
 
         prompt = self.query_one("#prompt-input", Input)
         prompt.disabled = False
-        prompt.placeholder = "Approval required: y = allow once, n = deny"
+        prompt.placeholder = "Approval required: y = allow once, n = deny, f = deny with feedback"
         prompt.focus()
 
         self.sub_title = "Approval required"
@@ -250,6 +251,7 @@ class WorkCopilotTextualApp(App):
                 "[bold #88c0d0]Actions[/]",
                 "[#a3be8c]y[/] allow once",
                 "[#bf616a]n[/] deny",
+                "[#ebcb8b]f[/] deny with feedback",
             ]
         )
 
@@ -261,10 +263,11 @@ class WorkCopilotTextualApp(App):
             return
 
         self.pending_approval_response = response
+        self.is_collecting_approval_feedback = False
 
         panel = self.query_one("#approval-panel", Static)
-        panel.add_class("hidden")
         panel.update("")
+        panel.add_class("hidden")
 
         self.pending_approval_event.set()
 
@@ -329,6 +332,22 @@ class WorkCopilotTextualApp(App):
             return
 
         if self.pending_approval_event is not None:
+            if self.is_collecting_approval_feedback:
+                feedback = user_prompt.strip()
+
+                if not feedback:
+                    self._log_system_message("Feedback cannot be empty. Type feedback or n to deny.")
+                    return
+
+                self._complete_textual_approval(
+                    ApprovalResponse(
+                        action=ApprovalAction.DENY_WITH_FEEDBACK,
+                        feedback=feedback,
+                    )
+                )
+                self._log_system_message("Approval denied with feedback.")
+                return
+
             normalized = user_prompt.lower()
 
             if normalized == "y":
@@ -345,7 +364,16 @@ class WorkCopilotTextualApp(App):
                 self._log_system_message("Approval denied.")
                 return
 
-            self._log_system_message("Approval pending. Press y to allow once or n to deny.")
+            if normalized == "f":
+                self.is_collecting_approval_feedback = True
+                prompt = self.query_one("#prompt-input", Input)
+                prompt.placeholder = "Type denial feedback and press Enter"
+                self._log_system_message("Type denial feedback and press Enter.")
+                return
+
+            self._log_system_message(
+                "Approval pending. Press y to allow once, n to deny, or f to deny with feedback."
+            )
             return
         
         if self.is_agent_running:
