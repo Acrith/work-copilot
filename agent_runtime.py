@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import asdict
 
 from rich.console import Console
@@ -52,7 +53,7 @@ def save_run_log(run_log_sink: RunLogEventSink | None) -> None:
 
 def emit_runtime_event(
     event: RuntimeEvent,
-    event_sinks: list[EventSink],
+    event_sinks: Sequence[EventSink],
 ) -> None:
     for sink in event_sinks:
         sink.emit(event)
@@ -68,7 +69,7 @@ def run_agent(
     verbose_functions: bool = False,
     max_iterations: int = 20,
     run_logger: RunLogger | None = None,
-    event_sink: EventSink | None = None,
+    extra_event_sinks: Sequence[EventSink] | None = None,
     approval_handler: ApprovalHandler | None = None,
 ) -> str | None:
     # Add the user's first message to provider history.
@@ -91,8 +92,8 @@ def run_agent(
     if run_log_sink is not None:
         event_sinks.append(run_log_sink)
 
-    if event_sink is not None:
-        event_sinks.append(event_sink)
+    if extra_event_sinks is not None:
+        event_sinks.extend(extra_event_sinks)
 
     # Run logger | Start
     emit_runtime_event(
