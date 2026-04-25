@@ -233,3 +233,33 @@ def test_emit_runtime_event_sends_event_to_all_sinks():
 
     assert first.events == [event]
     assert second.events == [event]
+
+
+def test_run_agent_can_disable_terminal_output(tmp_path, monkeypatch):
+    created_terminal_sinks = []
+
+    class FakeTerminalSink:
+        def __init__(self, *, verbose, verbose_functions):
+            created_terminal_sinks.append((verbose, verbose_functions))
+
+        def emit(self, event):
+            pass
+
+    monkeypatch.setattr(
+        "agent_runtime.TerminalEventSink",
+        FakeTerminalSink,
+    )
+
+    provider = FakeProvider()
+
+    final_text = run_agent(
+        provider=provider,
+        user_prompt="Say hello",
+        workspace=str(tmp_path),
+        permission_context=make_context(str(tmp_path)),
+        max_iterations=5,
+        terminal_output=False,
+    )
+
+    assert final_text is not None
+    assert created_terminal_sinks == []

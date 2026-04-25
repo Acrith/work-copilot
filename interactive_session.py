@@ -120,6 +120,7 @@ def run_interactive_model_turn(
     permission_context: PermissionContext,
     user_prompt: str,
     extra_event_sinks: Sequence[EventSink] | None = None,
+    terminal_output: bool = True,
 ) -> str | None:
     state.turn_index += 1
 
@@ -139,4 +140,5 @@ def run_interactive_model_turn(
         max_iterations=config.max_iterations,
         run_logger=run_logger,
         extra_event_sinks=extra_event_sinks,
+        terminal_output=terminal_output,
     )

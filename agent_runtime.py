@@ -43,12 +43,18 @@ def build_usage_summary_event(usage_totals: UsageTotals) -> UsageSummaryEvent:
     )
 
 
-def save_run_log(run_log_sink: RunLogEventSink | None) -> None:
+def save_run_log(
+    run_log_sink: RunLogEventSink | None,
+    *,
+    announce: bool = True,
+) -> None:
     if run_log_sink is None:
         return
 
     path = run_log_sink.save()
-    console.print(f"Run log: {path}", style="dim")
+
+    if announce:
+        console.print(f"Run log: {path}", style="dim")
 
 
 def emit_runtime_event(
@@ -71,6 +77,7 @@ def run_agent(
     run_logger: RunLogger | None = None,
     extra_event_sinks: Sequence[EventSink] | None = None,
     approval_handler: ApprovalHandler | None = None,
+    terminal_output: bool = True,
 ) -> str | None:
     # Add the user's first message to provider history.
     provider.add_user_message(user_prompt)
@@ -78,16 +85,19 @@ def run_agent(
     usage_totals = UsageTotals()
 
     # Event Rendering
-    terminal_sink = TerminalEventSink(
-        verbose=verbose,
-        verbose_functions=verbose_functions,
-    )
-
     resolved_approval_handler = approval_handler or TerminalApprovalHandler()
 
     run_log_sink = RunLogEventSink(run_logger) if run_logger else None
 
-    event_sinks: list[EventSink] = [terminal_sink]
+    event_sinks: list[EventSink] = []
+
+    if terminal_output:
+        event_sinks.append(
+            TerminalEventSink(
+                verbose=verbose,
+                verbose_functions=verbose_functions,
+            )
+        )
 
     if run_log_sink is not None:
         event_sinks.append(run_log_sink)
