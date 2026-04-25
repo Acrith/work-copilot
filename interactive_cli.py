@@ -4,7 +4,11 @@ from collections.abc import Callable
 
 from rich.console import Console
 
-from interactive_commands import parse_interactive_command
+from interactive_commands import (
+    format_interactive_help,
+    format_interactive_status,
+    parse_interactive_command,
+)
 from interactive_session import (
     InteractiveSessionConfig,
     InteractiveSessionState,
@@ -21,14 +25,9 @@ console = Console()
 
 
 def print_interactive_help() -> None:
-    console.print(
-        "\nCommands:\n"
-        "  /help    Show this help\n"
-        "  /status  Show current session settings\n"
-        "  /clear   Reset provider/session state\n"
-        "  /exit    Exit interactive mode\n",
-        style="dim",
-    )
+    console.print()
+    for line in format_interactive_help():
+        console.print(line, style="dim")
 
 
 def print_interactive_status(
@@ -36,22 +35,9 @@ def print_interactive_status(
     config: InteractiveSessionConfig,
     state: InteractiveSessionState,
 ) -> None:
-    logging_status = "enabled" if config.log_run else "disabled"
-
-    console.print("\nInteractive session status", style="bold")
-    console.print(f"  Provider:        {config.provider_name}", style="dim")
-    console.print(f"  Model:           {config.model}", style="dim")
-    console.print(f"  Workspace:       {config.workspace}", style="dim")
-    console.print(f"  Permission mode: {config.permission_mode}", style="dim")
-    console.print(f"  Max iterations:  {config.max_iterations}", style="dim")
-    console.print(f"  Logging:         {logging_status}", style="dim")
-
-    if config.log_run:
-        console.print(f"  Log dir:         {config.log_dir}", style="dim")
-
-    console.print(f"  Session id:      {state.interactive_session_id}", style="dim")
-    console.print(f"  Context index:   {state.context_index}", style="dim")
-    console.print(f"  Turn index:      {state.turn_index}", style="dim")
+    console.print()
+    for line in format_interactive_status(config=config, state=state):
+        console.print(line, style="dim")
 
 
 def run_interactive_session(
