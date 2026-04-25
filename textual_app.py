@@ -9,7 +9,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
-from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
+from approval import ApprovalRequest, ApprovalResponse
 from interactive_commands import (
     format_interactive_help,
     format_interactive_status,
@@ -24,6 +24,7 @@ from interactive_session import (
 from permissions import PermissionContext
 from providers.base import Provider
 from textual_approval import TextualApprovalHandler
+from textual_approval_screen import ApprovalScreen
 from textual_event_sink import TextualEventSink
 
 
@@ -98,22 +99,6 @@ class WorkCopilotTextualApp(App):
     .warning {
         color: #ebcb8b;
     }
-
-    #approval-panel {
-        height: auto;
-        max-height: 24;
-        border: heavy #ebcb8b;
-        background: #141821;
-        padding: 1 2;
-    }
-
-    .hidden {
-        display: none;
-    }
-
-    #approval-panel.hidden {
-        display: none;
-    }
     """
 
     BINDINGS = [
@@ -136,7 +121,6 @@ class WorkCopilotTextualApp(App):
         self.pending_approval_request: ApprovalRequest | None = None
         self.pending_approval_response: ApprovalResponse | None = None
         self.pending_approval_event: Event | None = None
-        self.is_collecting_approval_feedback = False
 
 
     def _set_running(self, is_running: bool) -> None:
@@ -213,19 +197,11 @@ class WorkCopilotTextualApp(App):
         self.pending_approval_response = None
         self.pending_approval_event = approval_event
 
-        panel = self.query_one("#approval-panel", Static)
-        panel.remove_class("hidden")
-        panel.update(self._format_approval_panel(request))
-
-        prompt = self.query_one("#prompt-input", Input)
-        prompt.disabled = False
-        prompt.placeholder = (
-            "Approval required: y allow, n deny, f feedback, s tool session, p path session"
+        approval_screen = ApprovalScreen(
+            request=request,
+            complete_callback=self._complete_textual_approval,
         )
-        prompt.focus()
-
-        self.sub_title = "Approval required"
-        self._refresh_sidebar()
+        self.push_screen(approval_screen)
 
 
     def _format_approval_panel(self, request: ApprovalRequest) -> str:
@@ -274,21 +250,10 @@ class WorkCopilotTextualApp(App):
             return
 
         self.pending_approval_response = response
-        self.is_collecting_approval_feedback = False
-
-        panel = self.query_one("#approval-panel", Static)
-        panel.update("")
-        panel.add_class("hidden")
-
         self.pending_approval_event.set()
 
         self.pending_approval_request = None
         self.pending_approval_event = None
-
-        if self.is_agent_running:
-            prompt = self.query_one("#prompt-input", Input)
-            prompt.disabled = True
-            prompt.placeholder = "Agent is running..."
 
         self.sub_title = "Running" if self.is_agent_running else "Experimental Textual shell"
         self._refresh_sidebar()
@@ -341,72 +306,6 @@ class WorkCopilotTextualApp(App):
 
         if not user_prompt:
             return
-
-        if self.pending_approval_event is not None:
-            if self.is_collecting_approval_feedback:
-                feedback = user_prompt.strip()
-
-                if not feedback:
-                    self._log_system_message("Feedback cannot be empty. Type feedback or n to deny.")
-                    return
-
-                self._complete_textual_approval(
-                    ApprovalResponse(
-                        action=ApprovalAction.DENY_WITH_FEEDBACK,
-                        feedback=feedback,
-                    )
-                )
-                self._log_system_message("Approval denied with feedback.")
-                return
-
-            normalized = user_prompt.lower()
-
-            if normalized == "y":
-                self._complete_textual_approval(
-                    ApprovalResponse(action=ApprovalAction.ALLOW_ONCE)
-                )
-                self._log_system_message("Approval granted once.")
-                return
-
-            if normalized == "n":
-                self._complete_textual_approval(
-                    ApprovalResponse(action=ApprovalAction.DENY)
-                )
-                self._log_system_message("Approval denied.")
-                return
-
-            if normalized == "f":
-                self.is_collecting_approval_feedback = True
-                prompt = self.query_one("#prompt-input", Input)
-                prompt.placeholder = "Type denial feedback and press Enter"
-                self._log_system_message("Type denial feedback and press Enter.")
-                return
-
-            if normalized == "s":
-                self._complete_textual_approval(
-                    ApprovalResponse(action=ApprovalAction.ALLOW_TOOL_SESSION)
-                )
-                self._log_system_message("Approval granted for this tool for the session.")
-                return
-
-            if normalized == "p":
-                if (
-                    self.pending_approval_request is None
-                    or self.pending_approval_request.preview_path is None
-                ):
-                    self._log_system_message("Path session approval is not available for this request.")
-                    return
-
-                self._complete_textual_approval(
-                    ApprovalResponse(action=ApprovalAction.ALLOW_PATH_SESSION)
-                )
-                self._log_system_message("Approval granted for this path for the session.")
-                return
-
-            self._log_system_message(
-                "Approval pending. Use y, n, f, s, or p when path approval is available."
-            )
-            return
         
         if self.is_agent_running:
             self._log_system_message("A turn is already running. Please wait.")
@@ -458,7 +357,6 @@ class WorkCopilotTextualApp(App):
 
             with Vertical(id="main-area"):
                 yield RichLog(id="activity-log", wrap=True)
-                yield Static("", id="approval-panel", classes="hidden")
                 yield Input(
                     placeholder="Type /help, /status, /clear, or /exit",
                     id="prompt-input",
