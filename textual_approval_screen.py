@@ -2,19 +2,13 @@
 
 from collections.abc import Callable
 
-from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
-from textual_preview import (
-    format_diff_file_header,
-    format_diff_rows,
-    parse_unified_diff,
-    summarize_diff_rows,
-)
+from textual_diff_renderer import render_approval_preview
 
 
 class ApprovalScreen(Screen):
@@ -157,22 +151,11 @@ class ApprovalScreen(Screen):
 
 
     def _write_preview(self, preview_log: RichLog) -> None:
-        preview_log.write(Text.from_markup("[bold #88c0d0]Preview[/]"))
-        preview_log.write("")
-
-        if not self.request.preview:
-            preview_log.write(Text.from_markup("[#7f8ea3]No preview available.[/]"))
-            return
-
-        rows = parse_unified_diff(self.request.preview)
-        summary = summarize_diff_rows(rows)
-        preview_path = self.request.preview_path or "preview"
-
-        preview_log.write(format_diff_file_header(preview_path, summary))
-        preview_log.write(Text("─" * 60, style="#30363d"))
-
-        for row in format_diff_rows(rows):
-            preview_log.write(row)
+        render_approval_preview(
+            preview_log=preview_log,
+            preview=self.request.preview,
+            preview_path=self.request.preview_path,
+        )
 
 
     def _set_status(self, message: str) -> None:
