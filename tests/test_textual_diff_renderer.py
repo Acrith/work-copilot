@@ -36,5 +36,5 @@ def test_render_approval_preview_writes_file_header_and_rows():
     rendered = [str(message) for message in log.messages]
 
     assert "▸ sample.txt (+1, -0)" in rendered
-    assert " old  new  content" in rendered
-    assert "        1  + hello" in rendered
+    assert " old  new │ content" in rendered
+    assert "        1 │ + hello" in rendered
