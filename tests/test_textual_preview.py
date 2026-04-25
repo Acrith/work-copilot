@@ -2,7 +2,15 @@
 
 from rich.text import Text
 
-from textual_preview import DiffLine, format_preview_line, parse_hunk_header, parse_unified_diff
+from textual_preview import (
+    DiffLine,
+    format_diff_row,
+    format_line_number,
+    format_preview_line,
+    format_preview_rows,
+    parse_hunk_header,
+    parse_unified_diff,
+)
 
 
 def test_format_preview_line_formats_added_line():
@@ -89,10 +97,64 @@ def test_parse_unified_diff_tracks_added_removed_and_context_lines():
     ]
 
 
-def test_parse_unified_diff_tracks_metadata_lines():
+def test_parse_unified_diff_tracks_new_file_lines():
     rows = parse_unified_diff('New file: "sample.txt"\n+ hello')
 
     assert rows == [
         DiffLine(kind="metadata", text='New file: "sample.txt"'),
-        DiffLine(kind="added", text="+ hello", old_line_no=None, new_line_no=None),
+        DiffLine(kind="added", text="+ hello", old_line_no=None, new_line_no=1),
+    ]
+
+
+def test_format_line_number_pads_numbers():
+    assert format_line_number(1) == "   1"
+    assert format_line_number(25) == "  25"
+
+
+def test_format_line_number_returns_blank_for_none():
+    assert format_line_number(None) == "    "
+
+
+def test_format_diff_row_renders_added_line_with_new_line_number():
+    row = DiffLine(kind="added", text="+new", old_line_no=None, new_line_no=3)
+
+    formatted = format_diff_row(row)
+
+    assert isinstance(formatted, Text)
+    assert str(formatted) == "        3  +new"
+
+
+def test_format_diff_row_renders_removed_line_with_old_line_number():
+    row = DiffLine(kind="removed", text="-old", old_line_no=2, new_line_no=None)
+
+    formatted = format_diff_row(row)
+
+    assert isinstance(formatted, Text)
+    assert str(formatted) == "   2       -old"
+
+
+def test_format_diff_row_renders_context_line_with_both_line_numbers():
+    row = DiffLine(kind="context", text=" unchanged", old_line_no=1, new_line_no=1)
+
+    formatted = format_diff_row(row)
+
+    assert isinstance(formatted, Text)
+    assert str(formatted) == "   1    1   unchanged"
+
+
+def test_format_preview_rows_uses_structured_diff_rows():
+    rendered = format_preview_rows(
+        "\n".join(
+            [
+                "@@ -1,2 +1,2 @@",
+                "-old",
+                "+new",
+            ]
+        )
+    )
+
+    assert [str(row) for row in rendered] == [
+        "@@ -1,2 +1,2 @@",
+        "   1       -old",
+        "        1  +new",
     ]
