@@ -45,3 +45,22 @@ def test_textual_approval_handler_handles_request_without_preview():
     assert response.action == ApprovalAction.DENY_WITH_FEEDBACK
     assert response.feedback
     assert any("Bash" in str(message) for message in log.messages)
+
+
+def test_textual_approval_handler_can_write_through_callback():
+    log = FakeRichLog()
+    callback_messages = []
+    handler = TextualApprovalHandler(
+        log,
+        write_callback=callback_messages.append,
+    )
+
+    handler.request_approval(
+        ApprovalRequest(
+            function_name="Bash",
+            args={"command": "echo hello"},
+        )
+    )
+
+    assert callback_messages
+    assert log.messages == []

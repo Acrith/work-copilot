@@ -1,5 +1,7 @@
 # textual_event_sink.py
 
+from collections.abc import Callable
+
 from rich.text import Text
 from textual.widgets import RichLog
 
@@ -16,8 +18,14 @@ from runtime_events import (
 
 
 class TextualEventSink:
-    def __init__(self, log: RichLog) -> None:
+    def __init__(
+        self,
+        log: RichLog,
+        *,
+        write_callback: Callable[[str | Text], None] | None = None,
+    ) -> None:
         self.log = log
+        self.write_callback = write_callback
 
     def emit(self, event: RuntimeEvent) -> None:
         if isinstance(event, RunStartedEvent):
@@ -49,6 +57,10 @@ class TextualEventSink:
             return
 
     def _write(self, message: str | Text) -> None:
+        if self.write_callback is not None:
+            self.write_callback(message)
+            return
+
         self.log.write(message)
 
     def _write_markup(self, markup: str) -> None:

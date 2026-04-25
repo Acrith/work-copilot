@@ -129,3 +129,17 @@ def test_textual_event_sink_renders_usage_summary():
     )
 
     assert log.messages == []
+
+
+def test_textual_event_sink_can_write_through_callback():
+    log = FakeRichLog()
+    callback_messages = []
+    sink = TextualEventSink(
+        log,
+        write_callback=callback_messages.append,
+    )
+
+    sink.emit(ModelTurnEvent(text_parts=["Hello"], tool_calls=[], usage=None))
+
+    assert callback_messages
+    assert log.messages == []
