@@ -1,6 +1,7 @@
 # tests/test_textual_app.py
 
 from interactive_session import build_interactive_session_config
+from permissions import PermissionContext, PermissionMode, PermissionRuleSet
 from textual_app import WorkCopilotTextualApp
 
 
@@ -21,10 +22,18 @@ def test_textual_app_constructs(tmp_path):
         log_dir=".work_copilot/runs",
     )
 
+    permission_context = PermissionContext(
+        mode=PermissionMode.DEFAULT,
+        workspace=str(tmp_path),
+        rules=PermissionRuleSet(),
+    )
+
     app = WorkCopilotTextualApp(
         config=config,
         provider_factory=DummyProvider,
+        permission_context=permission_context,
     )
 
     assert app.config is config
     assert app.state.provider.__class__ is DummyProvider
+    assert app.permission_context is permission_context

@@ -217,6 +217,7 @@ def run_tui(
     *,
     config: CliConfig,
     provider_factory: Callable[[], Provider],
+    permission_context: PermissionContext,
 ) -> int:
     interactive_config = build_interactive_session_config(
         provider_name=config.provider_name,
@@ -233,6 +234,7 @@ def run_tui(
     app = WorkCopilotTextualApp(
         config=interactive_config,
         provider_factory=provider_factory,
+        permission_context=permission_context,
     )
     app.run()
 
@@ -298,6 +300,7 @@ def run_cli(argv: list[str] | None = None) -> int:
         return run_tui(
             config=config,
             provider_factory=provider_factory,
+            permission_context=permission_context,
         )
 
     if config.mode == "interactive":

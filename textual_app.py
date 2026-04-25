@@ -16,8 +16,11 @@ from interactive_session import (
     InteractiveSessionConfig,
     create_interactive_session_state,
     reset_interactive_context,
+    run_interactive_model_turn,
 )
+from permissions import PermissionContext
 from providers.base import Provider
+from textual_event_sink import TextualEventSink
 
 
 class WorkCopilotTextualApp(App):
@@ -102,10 +105,12 @@ class WorkCopilotTextualApp(App):
         *,
         config: InteractiveSessionConfig,
         provider_factory: Callable[[], Provider],
+        permission_context: PermissionContext,
     ) -> None:
         super().__init__()
         self.config = config
         self.provider_factory = provider_factory
+        self.permission_context = permission_context
         self.state = create_interactive_session_state(provider_factory)
 
 
@@ -157,6 +162,27 @@ class WorkCopilotTextualApp(App):
         prompt.value = ""
 
 
+    def _run_model_turn(self, user_prompt: str) -> None:
+        log = self.query_one("#activity-log", RichLog)
+        event_sink = TextualEventSink(log)
+
+        final_text = run_interactive_model_turn(
+            config=self.config,
+            state=self.state,
+            permission_context=self.permission_context,
+            user_prompt=user_prompt,
+            extra_event_sinks=[event_sink],
+            terminal_output=False,
+        )
+
+        self._refresh_sidebar()
+
+        if final_text is None:
+            self._log_system_message(
+                "Turn ended without a final response. You can continue or use /clear."
+            )
+
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         user_prompt = event.value.strip()
         self._clear_prompt()
@@ -198,7 +224,7 @@ class WorkCopilotTextualApp(App):
             return
 
         self._log_user_message(user_prompt)
-        self._log_assistant_message("Model execution is not wired into the TUI yet.")
+        self._run_model_turn(user_prompt)
 
 
     def compose(self) -> ComposeResult:
