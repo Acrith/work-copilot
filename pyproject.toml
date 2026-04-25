@@ -42,6 +42,7 @@ py-modules = [
     "terminal_approval",
     "terminal_event_sink",
     "textual_app",
+    "textual_approval",
     "textual_event_sink",
     "tool_dispatch",
     "tool_registry",

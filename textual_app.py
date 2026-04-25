@@ -20,6 +20,7 @@ from interactive_session import (
 )
 from permissions import PermissionContext
 from providers.base import Provider
+from textual_approval import TextualApprovalHandler
 from textual_event_sink import TextualEventSink
 
 
@@ -165,6 +166,7 @@ class WorkCopilotTextualApp(App):
     def _run_model_turn(self, user_prompt: str) -> None:
         log = self.query_one("#activity-log", RichLog)
         event_sink = TextualEventSink(log)
+        approval_handler = TextualApprovalHandler(log)
 
         final_text = run_interactive_model_turn(
             config=self.config,
@@ -173,6 +175,7 @@ class WorkCopilotTextualApp(App):
             user_prompt=user_prompt,
             extra_event_sinks=[event_sink],
             terminal_output=False,
+            approval_handler=approval_handler,
         )
 
         self._refresh_sidebar()

@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agent_runtime import run_agent
+from approval import ApprovalHandler
 from permissions import PermissionContext
 from providers.base import Provider
 from run_logging import RunLogger
@@ -121,6 +122,7 @@ def run_interactive_model_turn(
     user_prompt: str,
     extra_event_sinks: Sequence[EventSink] | None = None,
     terminal_output: bool = True,
+    approval_handler: ApprovalHandler | None = None,
 ) -> str | None:
     state.turn_index += 1
 
@@ -141,4 +143,5 @@ def run_interactive_model_turn(
         run_logger=run_logger,
         extra_event_sinks=extra_event_sinks,
         terminal_output=terminal_output,
+        approval_handler=approval_handler,
     )
