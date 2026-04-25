@@ -26,7 +26,7 @@ def test_textual_event_sink_renders_run_started():
 
     sink.emit(RunStartedEvent())
 
-    assert any("Run started" in str(message) for message in log.messages)
+    assert log.messages == []
 
 
 def test_textual_event_sink_renders_model_text():
@@ -95,7 +95,7 @@ def test_textual_event_sink_renders_final_response():
 
     sink.emit(FinalResponseEvent(text="Done."))
 
-    assert any("Done." in str(message) for message in log.messages)
+    assert log.messages == []
 
 
 def test_textual_event_sink_renders_provider_error():
@@ -128,4 +128,4 @@ def test_textual_event_sink_renders_usage_summary():
         )
     )
 
-    assert any("total=15" in str(message) for message in log.messages)
+    assert log.messages == []

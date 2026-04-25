@@ -55,7 +55,7 @@ class TextualEventSink:
         self._write(Text.from_markup(markup))
 
     def _handle_run_started(self, event: RunStartedEvent) -> None:
-        self._write_markup("[#7f8ea3]Run started.[/]")
+        return
 
     def _handle_model_turn(self, event: ModelTurnEvent) -> None:
         for text in event.text_parts:
@@ -78,9 +78,7 @@ class TextualEventSink:
         self._write_markup(f"[#88c0d0]• tool result[/] {event.name} ({status})")
 
     def _handle_final_response(self, event: FinalResponseEvent) -> None:
-        if event.text.strip():
-            self._write_markup("[bold #a3be8c]Final[/]")
-            self._write(event.text)
+        return
 
     def _handle_provider_error(self, event: ProviderErrorEvent) -> None:
         self._write_markup(f"[bold #bf616a]Provider error:[/] {event.error}")
@@ -91,10 +89,4 @@ class TextualEventSink:
         )
 
     def _handle_usage_summary(self, event: UsageSummaryEvent) -> None:
-        self._write_markup(
-            "[#7f8ea3]"
-            f"Usage: input={event.prompt_tokens} "
-            f"output={event.response_tokens} "
-            f"total={event.total_tokens} tokens"
-            "[/]"
-        )
+        return
