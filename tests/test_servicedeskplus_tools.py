@@ -4,7 +4,11 @@ import connectors.servicedeskplus.tools as tools_module
 from connectors.servicedeskplus.config import ServiceDeskPlusConfig
 
 
-def make_config(*, enabled: bool = True) -> ServiceDeskPlusConfig:
+def make_config(
+    *,
+    enabled: bool = True,
+    default_request_filter: str = "Open_System",
+) -> ServiceDeskPlusConfig:
     return ServiceDeskPlusConfig(
         enabled=enabled,
         deployment="onprem",
@@ -12,6 +16,7 @@ def make_config(*, enabled: bool = True) -> ServiceDeskPlusConfig:
         portal=None,
         authtoken="secret-token",
         oauth_access_token=None,
+        default_request_filter=default_request_filter,
     )
 
 
@@ -67,3 +72,93 @@ def test_list_request_filters_returns_client_error(monkeypatch):
     result = tools_module.servicedesk_list_request_filters()
 
     assert result == {"error": "boom"}
+
+
+def test_list_requests_uses_client_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def list_requests(
+            self,
+            *,
+            filter_name,
+            row_count,
+            start_index,
+            sort_field,
+            sort_order,
+        ):
+            captured["filter_name"] = filter_name
+            captured["row_count"] = row_count
+            captured["start_index"] = start_index
+            captured["sort_field"] = sort_field
+            captured["sort_order"] = sort_order
+            return {"requests": [{"id": "123"}]}
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_list_requests(
+        filter_name="Open Requests",
+        row_count=5,
+        start_index=1,
+    )
+
+    assert result == {"requests": [{"id": "123"}]}
+    assert captured == {
+        "filter_name": "Open Requests",
+        "row_count": 5,
+        "start_index": 1,
+        "sort_field": "created_time",
+        "sort_order": "desc",
+    }
+
+
+def test_list_requests_uses_configured_default_filter_when_omitted(monkeypatch):
+    config = ServiceDeskPlusConfig(
+        enabled=True,
+        deployment="onprem",
+        base_url="https://hd.exactforestall.com",
+        portal=None,
+        authtoken="secret-token",
+        oauth_access_token=None,
+        default_request_filter="IT - Wszystko w realizacji",
+    )
+
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: config,
+    )
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def list_requests(
+            self,
+            *,
+            filter_name,
+            row_count,
+            start_index,
+            sort_field,
+            sort_order,
+        ):
+            captured["filter_name"] = filter_name
+            return {"requests": []}
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_list_requests()
+
+    assert result == {"requests": []}
+    assert captured["filter_name"] == "IT - Wszystko w realizacji"

@@ -27,6 +27,7 @@ def make_config(
         portal=None,
         authtoken=authtoken,
         oauth_access_token=None,
+        default_request_filter="Open_System",
     )
 
 
@@ -147,3 +148,71 @@ def test_invalid_json_is_wrapped(monkeypatch):
 
     with pytest.raises(ServiceDeskPlusError, match="invalid JSON"):
         client.list_request_filters()
+
+
+def test_list_requests_calls_expected_endpoint_and_input_data(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(
+            b'{"requests": [{"id": "123", "subject": "Test request"}]}'
+        )
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.list_requests(
+        filter_name="Open Requests",
+        row_count=20,
+        start_index=2,
+    )
+
+    assert result == {"requests": [{"id": "123", "subject": "Test request"}]}
+
+    request = captured["request"]
+    parsed_url = urlparse(request.full_url)
+
+    assert parsed_url.scheme == "https"
+    assert parsed_url.netloc == "hd.exactforestall.com"
+    assert parsed_url.path == "/api/v3/requests"
+    assert captured["timeout"] == 30
+
+    query = parse_qs(parsed_url.query)
+    assert "input_data" in query
+
+    input_data = json.loads(query["input_data"][0])
+
+    assert input_data == {
+        "list_info": {
+            "row_count": 20,
+            "start_index": 2,
+            "sort_field": "created_time",
+            "sort_order": "desc",
+            "filter_by": {
+                "name": "Open Requests",
+            },
+        },
+    }
+
+
+def test_list_requests_caps_row_count(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"requests": []}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    client.list_requests(row_count=999)
+
+    parsed_url = urlparse(captured["request"].full_url)
+    query = parse_qs(parsed_url.query)
+    input_data = json.loads(query["input_data"][0])
+
+    assert input_data["list_info"]["row_count"] == 50

@@ -42,3 +42,32 @@ def servicedesk_list_request_filters(
         return client.list_request_filters()
     except ServiceDeskPlusError as error:
         return {"error": str(error)}
+
+
+def servicedesk_list_requests(
+    filter_name: str | None = None,
+    row_count: int = 10,
+    start_index: int = 1,
+    sort_field: str = "created_time",
+    sort_order: str = "desc",
+    working_directory: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    config = load_servicedeskplus_config()
+
+    if not config.enabled:
+        return {"error": "ServiceDesk Plus connector is disabled."}
+
+    effective_filter_name = filter_name or config.default_request_filter
+
+    try:
+        client = ServiceDeskPlusClient(config)
+        return client.list_requests(
+            filter_name=effective_filter_name,
+            row_count=row_count,
+            start_index=start_index,
+            sort_field=sort_field,
+            sort_order=sort_order,
+        )
+    except ServiceDeskPlusError as error:
+        return {"error": str(error)}

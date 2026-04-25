@@ -12,6 +12,7 @@ class ServiceDeskPlusConfig:
     portal: str | None
     authtoken: str | None
     oauth_access_token: str | None
+    default_request_filter: str
 
 
 def load_servicedeskplus_config() -> ServiceDeskPlusConfig:
@@ -22,4 +23,8 @@ def load_servicedeskplus_config() -> ServiceDeskPlusConfig:
         portal=os.getenv("SDP_PORTAL"),
         authtoken=os.getenv("SDP_AUTHTOKEN"),
         oauth_access_token=os.getenv("SDP_OAUTH_ACCESS_TOKEN"),
+        default_request_filter=os.getenv(
+            "SDP_DEFAULT_REQUEST_FILTER",
+            "Open_System",
+        ),
     )

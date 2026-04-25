@@ -94,3 +94,32 @@ class ServiceDeskPlusClient:
             "/api/v3/list_view_filters/show_all",
             input_data,
         )
+
+    def list_requests(
+        self,
+        *,
+        filter_name: str = "Open_System",
+        row_count: int = 10,
+        start_index: int = 1,
+        sort_field: str = "created_time",
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        safe_row_count = max(1, min(row_count, 50))
+        safe_start_index = max(1, start_index)
+
+        input_data = {
+            "list_info": {
+                "row_count": safe_row_count,
+                "start_index": safe_start_index,
+                "sort_field": sort_field,
+                "sort_order": sort_order,
+                "filter_by": {
+                    "name": filter_name,
+                },
+            },
+        }
+
+        return self.get_with_input_data(
+            "/api/v3/requests",
+            input_data,
+        )
