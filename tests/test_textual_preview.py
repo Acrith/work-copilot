@@ -4,12 +4,17 @@ from rich.text import Text
 
 from textual_preview import (
     DiffLine,
+    DiffSummary,
+    format_diff_column_header,
+    format_diff_file_header,
     format_diff_row,
+    format_diff_rows,
     format_line_number,
     format_preview_line,
     format_preview_rows,
     parse_hunk_header,
     parse_unified_diff,
+    summarize_diff_rows,
 )
 
 
@@ -155,6 +160,53 @@ def test_format_preview_rows_uses_structured_diff_rows():
 
     assert [str(row) for row in rendered] == [
         "@@ -1,2 +1,2 @@",
+        " old  new  content",
+        "   1       -old",
+        "        1  +new",
+    ]
+
+
+def test_summarize_diff_rows_counts_added_and_removed_lines():
+    rows = [
+        DiffLine(kind="context", text=" unchanged", old_line_no=1, new_line_no=1),
+        DiffLine(kind="removed", text="-old", old_line_no=2, new_line_no=None),
+        DiffLine(kind="added", text="+new", old_line_no=None, new_line_no=2),
+    ]
+
+    summary = summarize_diff_rows(rows)
+
+    assert summary == DiffSummary(additions=1, removals=1)
+
+
+def test_format_diff_column_header():
+    header = format_diff_column_header()
+
+    assert isinstance(header, Text)
+    assert str(header) == " old  new  content"
+
+
+def test_format_diff_file_header_includes_path_and_counts():
+    header = format_diff_file_header(
+        "sample.py",
+        DiffSummary(additions=2, removals=1),
+    )
+
+    assert isinstance(header, Text)
+    assert str(header) == "▸ sample.py (+2, -1)"
+
+
+def test_format_diff_rows_adds_column_header_before_first_structured_row():
+    rows = [
+        DiffLine(kind="hunk", text="@@ -1,1 +1,1 @@"),
+        DiffLine(kind="removed", text="-old", old_line_no=1, new_line_no=None),
+        DiffLine(kind="added", text="+new", old_line_no=None, new_line_no=1),
+    ]
+
+    rendered = format_diff_rows(rows)
+
+    assert [str(row) for row in rendered] == [
+        "@@ -1,1 +1,1 @@",
+        " old  new  content",
         "   1       -old",
         "        1  +new",
     ]

@@ -9,7 +9,12 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
-from textual_preview import format_preview_rows
+from textual_preview import (
+    format_diff_file_header,
+    format_diff_rows,
+    parse_unified_diff,
+    summarize_diff_rows,
+)
 
 
 class ApprovalScreen(Screen):
@@ -159,9 +164,15 @@ class ApprovalScreen(Screen):
             preview_log.write(Text.from_markup("[#7f8ea3]No preview available.[/]"))
             return
 
-        for row in format_preview_rows(self.request.preview):
-            preview_log.write(row)
+        rows = parse_unified_diff(self.request.preview)
+        summary = summarize_diff_rows(rows)
+        preview_path = self.request.preview_path or "preview"
 
+        preview_log.write(format_diff_file_header(preview_path, summary))
+        preview_log.write(Text("─" * 60, style="#30363d"))
+
+        for row in format_diff_rows(rows):
+            preview_log.write(row)
 
 
     def _set_status(self, message: str) -> None:
