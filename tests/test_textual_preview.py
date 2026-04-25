@@ -14,6 +14,7 @@ from textual_preview import (
     format_preview_rows,
     parse_hunk_header,
     parse_unified_diff,
+    strip_diff_marker,
     summarize_diff_rows,
 )
 
@@ -120,31 +121,43 @@ def test_format_line_number_returns_blank_for_none():
     assert format_line_number(None) == "    "
 
 
-def test_format_diff_row_renders_added_line_with_new_line_number():
+def test_strip_diff_marker_removes_added_marker():
+    assert strip_diff_marker("+new") == "new"
+
+
+def test_strip_diff_marker_removes_removed_marker():
+    assert strip_diff_marker("-old") == "old"
+
+
+def test_strip_diff_marker_preserves_plain_text():
+    assert strip_diff_marker("unchanged") == "unchanged"
+
+
+def test_format_diff_row_renders_added_line_with_marker_column():
     row = DiffLine(kind="added", text="+new", old_line_no=None, new_line_no=3)
 
     formatted = format_diff_row(row)
 
     assert isinstance(formatted, Text)
-    assert str(formatted) == "        3 │ +new"
+    assert str(formatted) == "        3 │ + │ new"
 
 
-def test_format_diff_row_renders_removed_line_with_old_line_number():
+def test_format_diff_row_renders_removed_line_with_marker_column():
     row = DiffLine(kind="removed", text="-old", old_line_no=2, new_line_no=None)
 
     formatted = format_diff_row(row)
 
     assert isinstance(formatted, Text)
-    assert str(formatted) == "   2      │ -old"
+    assert str(formatted) == "   2      │ - │ old"
 
 
-def test_format_diff_row_renders_context_line_with_both_line_numbers():
+def test_format_diff_row_renders_context_line_with_marker_column():
     row = DiffLine(kind="context", text=" unchanged", old_line_no=1, new_line_no=1)
 
     formatted = format_diff_row(row)
 
     assert isinstance(formatted, Text)
-    assert str(formatted) == "   1    1 │  unchanged"
+    assert str(formatted) == "   1    1 │   │ unchanged"
 
 
 def test_format_preview_rows_uses_structured_diff_rows():
@@ -160,9 +173,9 @@ def test_format_preview_rows_uses_structured_diff_rows():
 
     assert [str(row) for row in rendered] == [
         "change -1,2 +1,2",
-        " old  new │ content",
-        "   1      │ -old",
-        "        1 │ +new",
+        " old  new │ Δ │ content",
+        "   1      │ - │ old",
+        "        1 │ + │ new",
     ]
 
 
@@ -182,7 +195,7 @@ def test_format_diff_column_header():
     header = format_diff_column_header()
 
     assert isinstance(header, Text)
-    assert str(header) == " old  new │ content"
+    assert str(header) == " old  new │ Δ │ content"
 
 
 def test_format_diff_file_header_includes_path_and_counts():
@@ -206,9 +219,9 @@ def test_format_diff_rows_adds_column_header_before_first_structured_row():
 
     assert [str(row) for row in rendered] == [
         "change -1,1 +1,1",
-        " old  new │ content",
-        "   1      │ -old",
-        "        1 │ +new",
+        " old  new │ Δ │ content",
+        "   1      │ - │ old",
+        "        1 │ + │ new",
     ]
 
 
@@ -223,6 +236,6 @@ def test_format_diff_rows_skips_metadata_and_file_header_rows():
     rendered = format_diff_rows(rows)
 
     assert [str(row) for row in rendered] == [
-        " old  new │ content",
-        "        1 │ +hello",
+        " old  new │ Δ │ content",
+        "        1 │ + │ hello",
     ]

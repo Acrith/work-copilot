@@ -171,9 +171,16 @@ def format_line_number(value: int | None) -> str:
     return f"{value:>4}"
 
 
+def strip_diff_marker(text: str) -> str:
+    if text.startswith(("+", "-")):
+        return text[1:]
+
+    return text
+
+
 def format_diff_column_header() -> Text:
     return Text(
-        f"{'old':>4} {'new':>4} {DIFF_COLUMN_SEPARATOR} content",
+        f"{'old':>4} {'new':>4} {DIFF_COLUMN_SEPARATOR} Δ {DIFF_COLUMN_SEPARATOR} content",
         style=STYLE_DIFF_HEADER,
     )
 
@@ -204,19 +211,19 @@ def format_diff_row(row: DiffLine) -> Text | str:
 
     if row.kind == "added":
         return Text(
-            f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR} {row.text}",
+            f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR} + {DIFF_COLUMN_SEPARATOR} {strip_diff_marker(row.text)}",
             style=STYLE_ADDED,
         )
 
     if row.kind == "removed":
         return Text(
-            f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR} {row.text}",
+            f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR} - {DIFF_COLUMN_SEPARATOR} {strip_diff_marker(row.text)}",
             style=STYLE_REMOVED,
         )
 
     if row.kind == "context":
         return Text(
-            f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR} {row.text}",
+            f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR}   {DIFF_COLUMN_SEPARATOR} {row.text.lstrip()}",
             style=STYLE_CONTEXT,
         )
 
