@@ -7,9 +7,11 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
+from interactive_commands import parse_interactive_command
 from interactive_session import (
     InteractiveSessionConfig,
     create_interactive_session_state,
+    reset_interactive_context,
 )
 from providers.base import Provider
 
@@ -102,6 +104,73 @@ class WorkCopilotTextualApp(App):
         self.provider_factory = provider_factory
         self.state = create_interactive_session_state(provider_factory)
 
+
+    def _log(self, message: str) -> None:
+        log = self.query_one("#activity-log", RichLog)
+        log.write(message)
+
+
+    def _clear_prompt(self) -> None:
+        prompt = self.query_one("#prompt-input", Input)
+        prompt.value = ""
+
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        user_prompt = event.value.strip()
+        self._clear_prompt()
+
+        if not user_prompt:
+            return
+
+        command = parse_interactive_command(user_prompt)
+
+        if command == "exit":
+            self.exit()
+            return
+
+        if command == "help":
+            self._log("")
+            self._log("Commands:")
+            self._log("  /help    Show this help")
+            self._log("  /status  Show current session settings")
+            self._log("  /clear   Reset provider/session state")
+            self._log("  /exit    Exit Textual mode")
+            return
+
+        if command == "status":
+            self._log("")
+            self._log("Interactive session status")
+            self._log(f"  Provider:        {self.config.provider_name}")
+            self._log(f"  Model:           {self.config.model}")
+            self._log(f"  Workspace:       {self.config.workspace}")
+            self._log(f"  Permission mode: {self.config.permission_mode}")
+            self._log(f"  Max iterations:  {self.config.max_iterations}")
+            self._log(f"  Logging:         {'enabled' if self.config.log_run else 'disabled'}")
+            self._log(f"  Session id:      {self.state.interactive_session_id}")
+            self._log(f"  Context index:   {self.state.context_index}")
+            self._log(f"  Turn index:      {self.state.turn_index}")
+            return
+
+        if command == "clear":
+            reset_interactive_context(
+                state=self.state,
+                provider_factory=self.provider_factory,
+            )
+            self._refresh_sidebar()
+            self._log("")
+            self._log("Session cleared.")
+            return
+
+        if command == "unknown":
+            self._log("")
+            self._log(f"Unknown command: {user_prompt}. Type /help for commands.")
+            return
+
+        self._log("")
+        self._log(f"> {user_prompt}")
+        self._log("Model turns are not wired into the TUI yet.")
+
+
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
 
@@ -111,9 +180,8 @@ class WorkCopilotTextualApp(App):
             with Vertical(id="main-area"):
                 yield RichLog(id="activity-log", wrap=True)
                 yield Input(
-                    placeholder="TUI input is visual-only for now. Press q to quit.",
+                    placeholder="Type /help, /status, /clear, or /exit",
                     id="prompt-input",
-                    disabled=True,
                 )
 
         yield Footer()
@@ -139,6 +207,7 @@ class WorkCopilotTextualApp(App):
         )
         log.write("")
         log.write(Text.from_markup("[#a3be8c]Ready.[/] Press [bold]q[/] to quit."))
+        self.query_one("#prompt-input", Input).focus()
 
     def _refresh_sidebar(self) -> None:
         logging_status = "enabled" if self.config.log_run else "disabled"
