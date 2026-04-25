@@ -131,6 +131,33 @@ def build_interactive_run_logger(
     )
 
 
+def run_interactive_model_turn(
+    *,
+    config: InteractiveSessionConfig,
+    state: InteractiveSessionState,
+    permission_context: PermissionContext,
+    user_prompt: str,
+) -> str | None:
+    state.turn_index += 1
+
+    run_logger = build_interactive_run_logger(
+        config=config,
+        state=state,
+        user_prompt=user_prompt,
+    )
+
+    return run_agent(
+        provider=state.provider,
+        user_prompt=user_prompt,
+        workspace=config.workspace,
+        permission_context=permission_context,
+        verbose=config.verbose,
+        verbose_functions=config.verbose_functions,
+        max_iterations=config.max_iterations,
+        run_logger=run_logger,
+    )
+
+
 def run_interactive_session(
     *,
     provider_factory: Callable[[], Provider],
@@ -214,23 +241,11 @@ def run_interactive_session(
             )
             continue
 
-        state.turn_index += 1
-
-        run_logger = build_interactive_run_logger(
+        final_text = run_interactive_model_turn(
             config=config,
             state=state,
-            user_prompt=user_prompt,
-        )
-
-        final_text = run_agent(
-            provider=state.provider,
-            user_prompt=user_prompt,
-            workspace=config.workspace,
             permission_context=permission_context,
-            verbose=config.verbose,
-            verbose_functions=config.verbose_functions,
-            max_iterations=config.max_iterations,
-            run_logger=run_logger,
+            user_prompt=user_prompt,
         )
 
         if final_text is None:
