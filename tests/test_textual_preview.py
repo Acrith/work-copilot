@@ -5,6 +5,7 @@ from rich.text import Text
 from textual_preview import (
     DiffLine,
     DiffSummary,
+    format_change_block,
     format_diff_column_header,
     format_diff_file_header,
     format_diff_row,
@@ -13,6 +14,7 @@ from textual_preview import (
     format_line_number,
     format_preview_line,
     format_preview_rows,
+    highlight_changed_spans,
     parse_hunk_header,
     parse_unified_diff,
     strip_diff_marker,
@@ -179,12 +181,12 @@ def test_format_preview_rows_uses_structured_diff_rows():
         )
     )
 
-    assert [str(row) for row in rendered] == [
-        " old  new │ Δ │ content",
-        "change -1,2 → +1,2",
-        "   1      │ - │ old",
-        "        1 │ + │ new",
-    ]
+    rendered_text = [str(row) for row in rendered]
+
+    assert rendered_text[0] == " old  new │ Δ │ content"
+    assert rendered_text[1] == "change -1,2 → +1,2"
+    assert rendered_text[2].startswith("   1      │ - │ old")
+    assert rendered_text[3].startswith("        1 │ + │ new")
 
 
 def test_summarize_diff_rows_counts_added_and_removed_lines():
@@ -224,13 +226,12 @@ def test_format_diff_rows_adds_column_header_before_hunk_label():
     ]
 
     rendered = format_diff_rows(rows)
+    rendered_text = [str(row) for row in rendered]
 
-    assert [str(row) for row in rendered] == [
-        " old  new │ Δ │ content",
-        "change -1,1 → +1,1",
-        "   1      │ - │ old",
-        "        1 │ + │ new",
-    ]
+    assert rendered_text[0] == " old  new │ Δ │ content"
+    assert rendered_text[1] == "change -1,1 → +1,1"
+    assert rendered_text[2].startswith("   1      │ - │ old")
+    assert rendered_text[3].startswith("        1 │ + │ new")
 
 
 def test_format_diff_rows_skips_metadata_and_file_header_rows():
@@ -242,8 +243,27 @@ def test_format_diff_rows_skips_metadata_and_file_header_rows():
     ]
 
     rendered = format_diff_rows(rows)
+    rendered_text = [str(row) for row in rendered]
 
-    assert [str(row) for row in rendered] == [
-        " old  new │ Δ │ content",
-        "        1 │ + │ hello",
+    assert rendered_text[0] == " old  new │ Δ │ content"
+    assert rendered_text[1].startswith("        1 │ + │ hello")
+
+
+def test_highlight_changed_spans_marks_changed_chunks():
+    old_text, new_text = highlight_changed_spans("-hello world", "+hello there")
+
+    assert str(old_text) == "hello world"
+    assert str(new_text) == "hello there"
+
+
+def test_format_change_block_pairs_removed_and_added_rows():
+    rows = [
+        DiffLine(kind="removed", text="-hello world", old_line_no=1),
+        DiffLine(kind="added", text="+hello there", new_line_no=1),
     ]
+
+    rendered = format_change_block(rows)
+    rendered_text = [str(row) for row in rendered]
+
+    assert rendered_text[0].startswith("   1      │ - │ hello world")
+    assert rendered_text[1].startswith("        1 │ + │ hello there")

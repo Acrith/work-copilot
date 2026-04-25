@@ -45,6 +45,7 @@ py-modules = [
     "textual_approval",
     "textual_approval_screen",
     "textual_diff_renderer",
+    "textual_diff_view",
     "textual_event_sink",
     "textual_preview",
     "tool_dispatch",
