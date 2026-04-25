@@ -84,3 +84,59 @@ def test_textual_approval_handler_can_return_feedback_response():
 
     assert response.action == ApprovalAction.DENY_WITH_FEEDBACK
     assert response.feedback == "Do not create that file."
+
+
+def test_textual_approval_handler_can_return_allow_tool_session():
+    captured = {}
+
+    def request_callback(request: ApprovalRequest, approval_event: Event) -> None:
+        captured["response"] = ApprovalResponse(
+            action=ApprovalAction.ALLOW_TOOL_SESSION,
+        )
+        approval_event.set()
+
+    def response_getter() -> ApprovalResponse | None:
+        return captured["response"]
+
+    handler = TextualApprovalHandler(
+        request_callback=request_callback,
+        response_getter=response_getter,
+    )
+
+    response = handler.request_approval(
+        ApprovalRequest(
+            function_name="write_file",
+            args={"file_path": "example.txt"},
+            preview_path="example.txt",
+        )
+    )
+
+    assert response.action == ApprovalAction.ALLOW_TOOL_SESSION
+
+
+def test_textual_approval_handler_can_return_allow_path_session():
+    captured = {}
+
+    def request_callback(request: ApprovalRequest, approval_event: Event) -> None:
+        captured["response"] = ApprovalResponse(
+            action=ApprovalAction.ALLOW_PATH_SESSION,
+        )
+        approval_event.set()
+
+    def response_getter() -> ApprovalResponse | None:
+        return captured["response"]
+
+    handler = TextualApprovalHandler(
+        request_callback=request_callback,
+        response_getter=response_getter,
+    )
+
+    response = handler.request_approval(
+        ApprovalRequest(
+            function_name="write_file",
+            args={"file_path": "example.txt"},
+            preview_path="example.txt",
+        )
+    )
+
+    assert response.action == ApprovalAction.ALLOW_PATH_SESSION
