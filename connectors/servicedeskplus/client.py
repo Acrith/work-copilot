@@ -123,3 +123,9 @@ class ServiceDeskPlusClient:
             "/api/v3/requests",
             input_data,
         )
+    
+    def get_request(self, request_id: str) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        return self.get(f"/api/v3/requests/{request_id}")
