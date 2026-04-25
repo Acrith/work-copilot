@@ -101,10 +101,10 @@ class WorkCopilotTextualApp(App):
 
     #approval-panel {
         height: auto;
-        max-height: 12;
-        border: solid #ebcb8b;
-        background: #1b1a14;
-        padding: 1;
+        max-height: 24;
+        border: heavy #ebcb8b;
+        background: #141821;
+        padding: 1 2;
     }
 
     .hidden {
@@ -228,20 +228,23 @@ class WorkCopilotTextualApp(App):
 
     def _format_approval_panel(self, request: ApprovalRequest) -> str:
         lines = [
-            "[bold #ebcb8b]Approval required[/]",
+            "[bold #ebcb8b]Approval request[/] [#7f8ea3]The agent wants permission to continue.[/]",
             "",
-            f"[#7f8ea3]Tool[/] {request.function_name}",
+            "[bold #88c0d0]Request[/]",
+            f"  [#7f8ea3]Tool[/]    {request.function_name}",
         ]
 
         if request.preview_path:
-            lines.append(f"[#7f8ea3]Path[/] {request.preview_path}")
+            lines.append(f"  [#7f8ea3]Path[/]    {request.preview_path}")
 
         if request.preview:
             lines.extend(
                 [
                     "",
-                    "[#7f8ea3]Preview[/]",
+                    "[bold #88c0d0]Preview[/]",
+                    "[#7f8ea3]────────────────────────────────────────[/]",
                     request.preview,
+                    "[#7f8ea3]────────────────────────────────────────[/]",
                 ]
             )
 
@@ -249,9 +252,9 @@ class WorkCopilotTextualApp(App):
             [
                 "",
                 "[bold #88c0d0]Actions[/]",
-                "[#a3be8c]y[/] allow once",
-                "[#bf616a]n[/] deny",
-                "[#ebcb8b]f[/] deny with feedback",
+                "  [#a3be8c]y[/]  allow once",
+                "  [#bf616a]n[/]  deny",
+                "  [#ebcb8b]f[/]  deny with feedback",
             ]
         )
 
