@@ -37,3 +37,4 @@ def test_textual_app_constructs(tmp_path):
     assert app.config is config
     assert app.state.provider.__class__ is DummyProvider
     assert app.permission_context is permission_context
+    assert app.is_agent_running is False
