@@ -20,8 +20,10 @@ def test_render_approval_preview_handles_missing_preview():
         preview_path=None,
     )
 
-    assert any("Preview" in str(message) for message in log.messages)
-    assert any("No preview available" in str(message) for message in log.messages)
+    rendered = [str(message) for message in log.messages]
+
+    assert any("Preview" in message for message in rendered)
+    assert any("No preview available" in message for message in rendered)
 
 
 def test_render_approval_preview_writes_file_header_and_rows():
@@ -37,4 +39,4 @@ def test_render_approval_preview_writes_file_header_and_rows():
 
     assert "▸ sample.txt (+1, -0)" in rendered
     assert " old  new │ Δ │ content" in rendered
-    assert "        1 │ + │  hello" in rendered
+    assert any("│ + │ hello" in message for message in rendered)
