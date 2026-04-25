@@ -7,7 +7,11 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
-from interactive_commands import parse_interactive_command
+from interactive_commands import (
+    format_interactive_help,
+    format_interactive_status,
+    parse_interactive_command,
+)
 from interactive_session import (
     InteractiveSessionConfig,
     create_interactive_session_state,
@@ -90,7 +94,7 @@ class WorkCopilotTextualApp(App):
     """
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
+        ("ctrl+q", "quit", "Quit"),
     ]
 
     def __init__(
@@ -108,6 +112,24 @@ class WorkCopilotTextualApp(App):
     def _log(self, message: str) -> None:
         log = self.query_one("#activity-log", RichLog)
         log.write(message)
+
+
+    def _log_markup(self, markup: str) -> None:
+        self._log(Text.from_markup(markup))
+
+
+    def _log_command_lines(self, lines: list[str]) -> None:
+        for index, line in enumerate(lines):
+            if index == 0:
+                self._log_markup(f"[bold #88c0d0]{line}[/]")
+            elif line.startswith("  /"):
+                command, description = line.split(maxsplit=1)
+                self._log_markup(f"  [#c678dd]{command}[/]    [#d7e1ec]{description}[/]")
+            elif ":" in line:
+                label, value = line.split(":", maxsplit=1)
+                self._log_markup(f"  [#7f8ea3]{label}:[/] [#d7e1ec]{value.strip()}[/]")
+            else:
+                self._log(line)
 
 
     def _clear_prompt(self) -> None:
@@ -130,25 +152,14 @@ class WorkCopilotTextualApp(App):
 
         if command == "help":
             self._log("")
-            self._log("Commands:")
-            self._log("  /help    Show this help")
-            self._log("  /status  Show current session settings")
-            self._log("  /clear   Reset provider/session state")
-            self._log("  /exit    Exit Textual mode")
+            self._log_command_lines(format_interactive_help())
             return
 
         if command == "status":
             self._log("")
-            self._log("Interactive session status")
-            self._log(f"  Provider:        {self.config.provider_name}")
-            self._log(f"  Model:           {self.config.model}")
-            self._log(f"  Workspace:       {self.config.workspace}")
-            self._log(f"  Permission mode: {self.config.permission_mode}")
-            self._log(f"  Max iterations:  {self.config.max_iterations}")
-            self._log(f"  Logging:         {'enabled' if self.config.log_run else 'disabled'}")
-            self._log(f"  Session id:      {self.state.interactive_session_id}")
-            self._log(f"  Context index:   {self.state.context_index}")
-            self._log(f"  Turn index:      {self.state.turn_index}")
+            self._log_command_lines(
+                format_interactive_status(config=self.config, state=self.state)
+            )
             return
 
         if command == "clear":
@@ -206,7 +217,7 @@ class WorkCopilotTextualApp(App):
             )
         )
         log.write("")
-        log.write(Text.from_markup("[#a3be8c]Ready.[/] Press [bold]q[/] to quit."))
+        log.write(Text.from_markup("[#a3be8c]Ready.[/] Type [bold]/exit[/] or press [bold]Ctrl+Q[/] to quit."))
         self.query_one("#prompt-input", Input).focus()
 
     def _refresh_sidebar(self) -> None:
