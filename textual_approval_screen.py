@@ -111,13 +111,7 @@ class ApprovalScreen(Screen):
         self.sub_title = "Approval request"
 
         preview = self.query_one("#approval-preview", RichLog)
-        preview.write(Text.from_markup("[bold #88c0d0]Preview[/]"))
-        preview.write("")
-
-        if self.request.preview:
-            preview.write(self.request.preview)
-        else:
-            preview.write(Text.from_markup("[#7f8ea3]No preview available.[/]"))
+        self._write_preview(preview)
 
     def _format_header(self) -> str:
         return "\n".join(
@@ -154,6 +148,41 @@ class ApprovalScreen(Screen):
                 "[#7f8ea3]Press a key to choose an action.[/]",
             ]
         )
+
+    def _format_preview_line(self, line: str) -> Text | str:
+        if line.startswith("@@"):
+            return Text(line, style="bold #79c0ff")
+
+        if line.startswith("+") and not line.startswith("+++"):
+            return Text(line, style="bold #7ee787")
+
+        if line.startswith("-") and not line.startswith("---"):
+            return Text(line, style="bold #ff7b72")
+
+        if line.startswith("New file:") or line.startswith("Updated file:"):
+            return Text(line, style="bold #f2cc60")
+
+        if line.startswith("Deleted file:"):
+            return Text(line, style="bold #ff7b72")
+
+        if line.startswith("+++") or line.startswith("---"):
+            return Text(line, style="#8b949e")
+
+        return line
+
+
+    def _write_preview(self, preview_log: RichLog) -> None:
+        preview_log.write(Text.from_markup("[bold #88c0d0]Preview[/]"))
+        preview_log.write("")
+
+        if not self.request.preview:
+            preview_log.write(Text.from_markup("[#7f8ea3]No preview available.[/]"))
+            return
+
+        for line in self.request.preview.splitlines():
+            preview_log.write(self._format_preview_line(line))
+
+
 
     def _set_status(self, message: str) -> None:
         status = self.query_one("#approval-status", Static)
