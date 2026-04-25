@@ -65,6 +65,7 @@ def test_run_interactive_model_turn_increments_turn_index(tmp_path, monkeypatch)
         verbose_functions,
         max_iterations,
         run_logger,
+        extra_event_sinks,
     ):
         captured["provider"] = provider
         captured["user_prompt"] = user_prompt
@@ -74,6 +75,7 @@ def test_run_interactive_model_turn_increments_turn_index(tmp_path, monkeypatch)
         captured["verbose_functions"] = verbose_functions
         captured["max_iterations"] = max_iterations
         captured["run_logger"] = run_logger
+        captured["extra_event_sinks"] = extra_event_sinks
         return "done"
 
     monkeypatch.setattr(interactive_session, "run_agent", fake_run_agent)
@@ -116,6 +118,7 @@ def test_run_interactive_model_turn_increments_turn_index(tmp_path, monkeypatch)
     assert captured["permission_context"] is permission_context
     assert captured["max_iterations"] == 20
     assert captured["run_logger"] is None
+    assert captured["extra_event_sinks"] is None
 
 
 def test_build_interactive_session_config_stores_settings(tmp_path):
@@ -176,3 +179,60 @@ def test_reset_interactive_context_replaces_provider_and_increments_context():
     assert state.provider is new_provider
     assert state.context_index == 2
     assert state.turn_index == 0
+
+
+def test_run_interactive_model_turn_passes_extra_event_sinks(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run_agent(
+        *,
+        provider,
+        user_prompt,
+        workspace,
+        permission_context,
+        verbose,
+        verbose_functions,
+        max_iterations,
+        run_logger,
+        extra_event_sinks,
+    ):
+        captured["extra_event_sinks"] = extra_event_sinks
+        return "done"
+
+    monkeypatch.setattr(interactive_session, "run_agent", fake_run_agent)
+
+    config = InteractiveSessionConfig(
+        provider_name="gemini",
+        model="gemini-2.5-flash",
+        workspace=str(tmp_path),
+        permission_mode="default",
+        verbose=False,
+        verbose_functions=False,
+        max_iterations=20,
+        log_run=False,
+        log_dir=".work_copilot/runs",
+    )
+
+    state = InteractiveSessionState(
+        provider=DummyProvider(),
+        interactive_session_id="abc123",
+    )
+
+    permission_context = PermissionContext(
+        mode=PermissionMode.DEFAULT,
+        workspace=str(tmp_path),
+        rules=PermissionRuleSet(),
+    )
+
+    extra_sinks = []
+
+    result = run_interactive_model_turn(
+        config=config,
+        state=state,
+        permission_context=permission_context,
+        user_prompt="Hello",
+        extra_event_sinks=extra_sinks,
+    )
+
+    assert result == "done"
+    assert captured["extra_event_sinks"] is extra_sinks

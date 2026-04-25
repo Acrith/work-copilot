@@ -1,6 +1,6 @@
 # interactive_session.py
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -9,6 +9,7 @@ from agent_runtime import run_agent
 from permissions import PermissionContext
 from providers.base import Provider
 from run_logging import RunLogger
+from runtime_events import EventSink
 
 
 @dataclass(frozen=True)
@@ -118,6 +119,7 @@ def run_interactive_model_turn(
     state: InteractiveSessionState,
     permission_context: PermissionContext,
     user_prompt: str,
+    extra_event_sinks: Sequence[EventSink] | None = None,
 ) -> str | None:
     state.turn_index += 1
 
@@ -136,4 +138,5 @@ def run_interactive_model_turn(
         verbose_functions=config.verbose_functions,
         max_iterations=config.max_iterations,
         run_logger=run_logger,
+        extra_event_sinks=extra_event_sinks,
     )

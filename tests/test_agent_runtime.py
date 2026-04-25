@@ -1,11 +1,11 @@
 import json
 
-from agent_runtime import build_usage_summary_event, run_agent
+from agent_runtime import build_usage_summary_event, emit_runtime_event, run_agent
 from agent_types import ModelTurn, ToolCall, UsageStats, UsageTotals
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
 from providers.base import ProviderError
 from run_logging import RunLogger
-from runtime_events import ListEventSink
+from runtime_events import FinalResponseEvent, ListEventSink
 
 
 class FakeProvider:
@@ -199,7 +199,7 @@ def test_run_agent_emits_runtime_events(tmp_path):
         workspace=str(tmp_path),
         permission_context=make_context(str(tmp_path)),
         max_iterations=5,
-        event_sink=event_sink,
+        extra_event_sinks=[event_sink],
     )
 
     assert final_text == "The file contains hello."
@@ -214,3 +214,22 @@ def test_run_agent_emits_runtime_events(tmp_path):
         "final_response",
         "usage_summary",
     ]
+
+
+class FakeEventSink:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event):
+        self.events.append(event)
+
+
+def test_emit_runtime_event_sends_event_to_all_sinks():
+    first = FakeEventSink()
+    second = FakeEventSink()
+    event = FinalResponseEvent(text="Done.")
+
+    emit_runtime_event(event, [first, second])
+
+    assert first.events == [event]
+    assert second.events == [event]
