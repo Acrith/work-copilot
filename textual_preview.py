@@ -161,7 +161,13 @@ def format_preview_line(line: str) -> Text | str:
 
 
 def format_hunk_label(text: str) -> str:
-    return f"change {text.replace('@@', '').strip()}"
+    cleaned = text.replace("@@", "").strip()
+    parts = cleaned.split(maxsplit=2)
+
+    if len(parts) >= 2:
+        return f"change {parts[0]} → {parts[1]}"
+
+    return f"change {cleaned}"
 
 
 def format_line_number(value: int | None) -> str:
@@ -173,9 +179,9 @@ def format_line_number(value: int | None) -> str:
 
 def strip_diff_marker(text: str) -> str:
     if text.startswith(("+", "-")):
-        return text[1:]
+        return text[1:].lstrip()
 
-    return text
+    return text.lstrip()
 
 
 def format_diff_column_header() -> Text:
@@ -238,7 +244,7 @@ def format_diff_rows(rows: list[DiffLine]) -> list[Text | str]:
         if row.kind in {"metadata", "file_header"}:
             continue
 
-        if row.kind in STRUCTURED_DIFF_KINDS and not wrote_column_header:
+        if row.kind in {"hunk", *STRUCTURED_DIFF_KINDS} and not wrote_column_header:
             rendered.append(format_diff_column_header())
             wrote_column_header = True
 
