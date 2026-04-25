@@ -147,13 +147,11 @@ class ApprovalScreen(Screen):
                 "[#88c0d0]s[/]  allow tool for session",
                 path_action,
                 "",
-                "[bold #88c0d0]Request[/]",
+                "[bold #88c0d0]Review[/]",
                 "",
-                "[#7f8ea3]Tool[/]",
-                self.request.function_name,
+                "[#7f8ea3]Use the preview pane to inspect the requested change.[/]",
                 "",
-                "[#7f8ea3]Path[/]",
-                self.request.preview_path or "not available",
+                "[#7f8ea3]Press a key to choose an action.[/]",
             ]
         )
 
