@@ -150,6 +150,10 @@ def format_preview_line(line: str) -> Text | str:
     return line
 
 
+def format_hunk_label(text: str) -> str:
+    return f"change {text.replace('@@', '').strip()}"
+
+
 def format_line_number(value: int | None) -> str:
     if value is None:
         return "    "
@@ -180,7 +184,7 @@ def format_diff_row(row: DiffLine) -> Text | str:
         return Text(row.text, style="#8b949e")
 
     if row.kind == "hunk":
-        return Text(row.text, style="bold #79c0ff")
+        return Text(format_hunk_label(row.text), style="bold #79c0ff")
 
     old_no = format_line_number(row.old_line_no)
     new_no = format_line_number(row.new_line_no)
