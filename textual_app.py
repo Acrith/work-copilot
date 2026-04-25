@@ -109,6 +109,10 @@ class WorkCopilotTextualApp(App):
         self.state = create_interactive_session_state(provider_factory)
 
 
+    def _log_blank(self) -> None:
+        self._log("")
+
+
     def _log(self, message: str) -> None:
         log = self.query_one("#activity-log", RichLog)
         log.write(message)
@@ -116,6 +120,22 @@ class WorkCopilotTextualApp(App):
 
     def _log_markup(self, markup: str) -> None:
         self._log(Text.from_markup(markup))
+
+
+    def _log_user_message(self, message: str) -> None:
+        self._log_blank()
+        self._log_markup("[bold #88c0d0]You[/]")
+        self._log(message)
+
+
+    def _log_assistant_message(self, message: str) -> None:
+        self._log_blank()
+        self._log_markup("[bold #a3be8c]Work Copilot[/]")
+        self._log(message)
+
+
+    def _log_system_message(self, message: str) -> None:
+        self._log_markup(f"[#7f8ea3]{message}[/]")
 
 
     def _log_command_lines(self, lines: list[str]) -> None:
@@ -151,12 +171,12 @@ class WorkCopilotTextualApp(App):
             return
 
         if command == "help":
-            self._log("")
+            self._log_blank()
             self._log_command_lines(format_interactive_help())
             return
 
         if command == "status":
-            self._log("")
+            self._log_blank()
             self._log_command_lines(
                 format_interactive_status(config=self.config, state=self.state)
             )
@@ -168,18 +188,17 @@ class WorkCopilotTextualApp(App):
                 provider_factory=self.provider_factory,
             )
             self._refresh_sidebar()
-            self._log("")
+            self._log_blank()
             self._log("Session cleared.")
             return
 
         if command == "unknown":
-            self._log("")
+            self._log_blank()
             self._log(f"Unknown command: {user_prompt}. Type /help for commands.")
             return
 
-        self._log("")
-        self._log(f"> {user_prompt}")
-        self._log("Model turns are not wired into the TUI yet.")
+        self._log_user_message(user_prompt)
+        self._log_assistant_message("Model execution is not wired into the TUI yet.")
 
 
     def compose(self) -> ComposeResult:
@@ -203,21 +222,19 @@ class WorkCopilotTextualApp(App):
 
         self._refresh_sidebar()
 
-        log = self.query_one("#activity-log", RichLog)
-        log.write(Text.from_markup("[bold #88c0d0]Work Copilot Textual shell[/]"))
-        log.write("")
-        log.write(
-            Text.from_markup(
-                "[#7f8ea3]This TUI layout is now wired, but model turns are not yet enabled here.[/]"
-            )
+        self._log_markup("[bold #88c0d0]Work Copilot Textual shell[/]")
+        self._log_blank()
+        self._log_system_message(
+            "This TUI layout is now wired, but model turns are not yet enabled here."
         )
-        log.write(
-            Text.from_markup(
-                "[#7f8ea3]Use the normal interactive CLI for agent execution for now.[/]"
-            )
+        self._log_system_message(
+            "Use the normal interactive CLI for agent execution for now."
         )
-        log.write("")
-        log.write(Text.from_markup("[#a3be8c]Ready.[/] Type [bold]/exit[/] or press [bold]Ctrl+Q[/] to quit."))
+        self._log_blank()
+        self._log_markup(
+           "[#a3be8c]Ready.[/] Type [bold]/exit[/] or press [bold]Ctrl+Q[/] to quit."
+        )
+
         self.query_one("#prompt-input", Input).focus()
 
     def _refresh_sidebar(self) -> None:
