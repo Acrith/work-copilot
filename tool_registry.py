@@ -2,7 +2,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from agent_types import ToolSpec
-from connectors.servicedeskplus.tools import servicedesk_status
+from connectors.servicedeskplus.tools import (
+    servicedesk_list_request_filters,
+    servicedesk_list_requests,
+    servicedesk_status,
+)
 from functions.find_file import find_file
 from functions.get_file_content import get_file_content
 from functions.get_files_info import get_files_info
@@ -326,6 +330,73 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
         category=ToolCategory.CONNECTOR_READ,
         connector="servicedeskplus",
         resource_type="connector_status",
+    ),
+    "servicedesk_list_request_filters": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_list_request_filters",
+            description=(
+                "Lists available ServiceDesk Plus request filters/views. "
+                "This is a read-only connector tool and takes no arguments."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+        ),
+        handler=servicedesk_list_request_filters,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request_filter",
+    ),
+    "servicedesk_list_requests": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_list_requests",
+            description=(
+                "Lists ServiceDesk Plus requests using a named request filter. "
+                "This is a read-only connector tool. If no filter is provided, "
+                "uses the configured default request filter."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "filter_name": {
+                        "type": "string",
+                        "description": (
+                            "Named ServiceDesk request filter/view to use. "
+                            "If omitted, the configured default request filter is used."
+                        ),
+                        "default": "Open_System",
+                    },
+                    "row_count": {
+                        "type": "integer",
+                        "description": "Number of requests to return. Maximum 50.",
+                        "default": 10,
+                    },
+                    "start_index": {
+                        "type": "integer",
+                        "description": "1-based start index for paging.",
+                        "default": 1,
+                    },
+                    "sort_field": {
+                        "type": "string",
+                        "description": "Field to sort by.",
+                        "default": "created_time",
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "description": "Sort order: asc or desc.",
+                        "default": "desc",
+                    },
+                },
+                "required": [],
+            },
+        ),
+        handler=servicedesk_list_requests,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request",
     ),
 }
 
