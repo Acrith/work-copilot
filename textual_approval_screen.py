@@ -9,6 +9,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
+from textual_preview import format_preview_line
 
 
 class ApprovalScreen(Screen):
@@ -149,27 +150,6 @@ class ApprovalScreen(Screen):
             ]
         )
 
-    def _format_preview_line(self, line: str) -> Text | str:
-        if line.startswith("@@"):
-            return Text(line, style="bold #79c0ff")
-
-        if line.startswith("+") and not line.startswith("+++"):
-            return Text(line, style="bold #7ee787")
-
-        if line.startswith("-") and not line.startswith("---"):
-            return Text(line, style="bold #ff7b72")
-
-        if line.startswith("New file:") or line.startswith("Updated file:"):
-            return Text(line, style="bold #f2cc60")
-
-        if line.startswith("Deleted file:"):
-            return Text(line, style="bold #ff7b72")
-
-        if line.startswith("+++") or line.startswith("---"):
-            return Text(line, style="#8b949e")
-
-        return line
-
 
     def _write_preview(self, preview_log: RichLog) -> None:
         preview_log.write(Text.from_markup("[bold #88c0d0]Preview[/]"))
@@ -180,7 +160,7 @@ class ApprovalScreen(Screen):
             return
 
         for line in self.request.preview.splitlines():
-            preview_log.write(self._format_preview_line(line))
+            preview_log.write(format_preview_line(line))
 
 
 
