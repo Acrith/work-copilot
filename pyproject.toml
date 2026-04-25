@@ -30,6 +30,7 @@ py-modules = [
     "console_ui",
     "constants",
     "interactive_cli",
+    "interactive_commands",
     "interactive_session",
     "main",
     "permissions",

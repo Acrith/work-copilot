@@ -1,6 +1,6 @@
-# tests/test_interactive_cli.py
+# tests/test_interactive_commands.py
 
-from interactive_cli import parse_interactive_command
+from interactive_commands import parse_interactive_command
 
 
 def test_parse_interactive_command_returns_none_for_normal_prompt():

@@ -1,11 +1,11 @@
 # interactive_cli.py
 
 from collections.abc import Callable
-from typing import Literal
 from uuid import uuid4
 
 from rich.console import Console
 
+from interactive_commands import parse_interactive_command
 from interactive_session import (
     InteractiveSessionConfig,
     InteractiveSessionState,
@@ -15,32 +15,7 @@ from interactive_session import (
 from permissions import PermissionContext
 from providers.base import Provider
 
-InteractiveCommand = Literal["exit", "clear", "help", "status", "unknown"]
-
 console = Console()
-
-
-def parse_interactive_command(user_input: str) -> InteractiveCommand | None:
-    stripped = user_input.strip()
-
-    if not stripped.startswith("/"):
-        return None
-
-    command = stripped.split(maxsplit=1)[0].lower()
-
-    if command in {"/exit", "/quit"}:
-        return "exit"
-
-    if command == "/clear":
-        return "clear"
-
-    if command == "/help":
-        return "help"
-
-    if command == "/status":
-        return "status"
-
-    return "unknown"
 
 
 def print_interactive_help() -> None:
