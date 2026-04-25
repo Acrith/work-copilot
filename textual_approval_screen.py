@@ -9,7 +9,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
-from textual_preview import format_preview_line
+from textual_preview import format_preview_rows
 
 
 class ApprovalScreen(Screen):
@@ -159,8 +159,8 @@ class ApprovalScreen(Screen):
             preview_log.write(Text.from_markup("[#7f8ea3]No preview available.[/]"))
             return
 
-        for line in self.request.preview.splitlines():
-            preview_log.write(format_preview_line(line))
+        for row in format_preview_rows(self.request.preview):
+            preview_log.write(row)
 
 
 

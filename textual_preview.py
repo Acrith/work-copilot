@@ -56,7 +56,13 @@ def parse_unified_diff(preview: str) -> list[DiffLine]:
             rows.append(DiffLine(kind="file_header", text=line))
             continue
 
-        if line.startswith("New file:") or line.startswith("Updated file:"):
+        if line.startswith("New file:"):
+            old_line_no = None
+            new_line_no = 1
+            rows.append(DiffLine(kind="metadata", text=line))
+            continue
+
+        if line.startswith("Updated file:"):
             rows.append(DiffLine(kind="metadata", text=line))
             continue
 
@@ -123,3 +129,44 @@ def format_preview_line(line: str) -> Text | str:
         return Text(line, style="#8b949e")
 
     return line
+
+
+def format_line_number(value: int | None) -> str:
+    if value is None:
+        return "    "
+
+    return f"{value:>4}"
+
+
+def format_diff_row(row: DiffLine) -> Text | str:
+    if row.kind == "metadata":
+        return Text(row.text, style="bold #f2cc60")
+
+    if row.kind == "file_header":
+        return Text(row.text, style="#8b949e")
+
+    if row.kind == "hunk":
+        return Text(row.text, style="bold #79c0ff")
+
+    old_no = format_line_number(row.old_line_no)
+    new_no = format_line_number(row.new_line_no)
+
+    if row.kind == "added":
+        return Text(f"{old_no} {new_no}  {row.text}", style="bold #7ee787")
+
+    if row.kind == "removed":
+        return Text(f"{old_no} {new_no}  {row.text}", style="bold #ff7b72")
+
+    if row.kind == "context":
+        return Text(f"{old_no} {new_no}  {row.text}", style="#c9d1d9")
+
+    return row.text
+
+
+def format_preview_rows(preview: str) -> list[Text | str]:
+    rows = parse_unified_diff(preview)
+
+    if not rows:
+        return []
+
+    return [format_diff_row(row) for row in rows]
