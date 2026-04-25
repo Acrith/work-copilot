@@ -193,21 +193,17 @@ Currently supported:
 - preserves provider session context across turns
 - renders runtime events through the Textual activity log
 - prevents approval requests from falling back to terminal prompts
+- Textual approval supports: 
+  - allow one, 
+  - deny, 
+  - deny with feedback
 
 Current limitations:
 
 - Textual approval UI is not implemented yet
-- write/exec approval requests are denied safely in Textual mode
-- model execution currently runs synchronously and may temporarily block the UI
 - streaming output is not implemented yet
 - rich diff/tool preview panels are not implemented yet
 - provider/model selection inside the TUI is not implemented yet
-
-For write/exec tasks, use interactive CLI mode for now:
-
-```bash
-uv run work-copilot --interactive
-```
 
 ## Permission modes
 

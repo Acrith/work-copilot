@@ -225,7 +225,7 @@ Current Textual status:
 - normal model prompts work
 - provider session context is preserved across turns
 - runtime events render into the activity log
-- approval requests are denied safely
+- approval requests are listed with decisions to allow once, deny or deny with feedback
 - full approval UI is not implemented yet
 - execution is currently synchronous and may temporarily block the UI
 
@@ -269,15 +269,11 @@ Current behavior:
 ```text
 write/exec approval requested in Textual mode
   -> show approval request in TUI
-  -> explain Textual approval UI is not implemented
-  -> deny with feedback
-  -> do not prompt in terminal
+  -> Allow user to decide to allow once, deny or deny with feedback
 ```
 
 Future work:
 
-- real in-TUI approve/deny controls
-- feedback input
 - diff preview panels
 - session/path/tool approvals
 
@@ -755,8 +751,6 @@ Textual mode is functional but still experimental.
 Current limitations:
 
 - full approval UI is not implemented
-- write/exec approval requests are denied safely
-- execution is synchronous and may temporarily block the UI
 - streaming output is not implemented
 - rich diff/tool panels are not implemented
 - provider/model selection inside the TUI is not implemented
