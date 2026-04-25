@@ -55,3 +55,32 @@ def test_textual_approval_handler_denies_if_callback_returns_no_response():
 
     assert response.action == ApprovalAction.DENY
     assert response.feedback
+
+
+def test_textual_approval_handler_can_return_feedback_response():
+    captured = {}
+
+    def request_callback(request: ApprovalRequest, approval_event: Event) -> None:
+        captured["response"] = ApprovalResponse(
+            action=ApprovalAction.DENY_WITH_FEEDBACK,
+            feedback="Do not create that file.",
+        )
+        approval_event.set()
+
+    def response_getter() -> ApprovalResponse | None:
+        return captured["response"]
+
+    handler = TextualApprovalHandler(
+        request_callback=request_callback,
+        response_getter=response_getter,
+    )
+
+    response = handler.request_approval(
+        ApprovalRequest(
+            function_name="write_file",
+            args={"file_path": "example.txt"},
+        )
+    )
+
+    assert response.action == ApprovalAction.DENY_WITH_FEEDBACK
+    assert response.feedback == "Do not create that file."
