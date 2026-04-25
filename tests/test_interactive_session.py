@@ -5,6 +5,9 @@ from interactive_session import (
     InteractiveSessionConfig,
     InteractiveSessionState,
     build_interactive_log_dir,
+    build_interactive_session_config,
+    create_interactive_session_state,
+    reset_interactive_context,
     run_interactive_model_turn,
 )
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
@@ -113,3 +116,63 @@ def test_run_interactive_model_turn_increments_turn_index(tmp_path, monkeypatch)
     assert captured["permission_context"] is permission_context
     assert captured["max_iterations"] == 20
     assert captured["run_logger"] is None
+
+
+def test_build_interactive_session_config_stores_settings(tmp_path):
+    config = build_interactive_session_config(
+        provider_name="gemini",
+        model="gemini-2.5-flash",
+        workspace=str(tmp_path),
+        permission_mode="default",
+        verbose=True,
+        verbose_functions=False,
+        max_iterations=25,
+        log_run=True,
+        log_dir="logs",
+    )
+
+    assert config.provider_name == "gemini"
+    assert config.model == "gemini-2.5-flash"
+    assert config.workspace == str(tmp_path)
+    assert config.permission_mode == "default"
+    assert config.verbose is True
+    assert config.verbose_functions is False
+    assert config.max_iterations == 25
+    assert config.log_run is True
+    assert config.log_dir == "logs"
+
+
+def test_create_interactive_session_state_uses_provider_factory():
+    provider = DummyProvider()
+
+    def provider_factory():
+        return provider
+
+    state = create_interactive_session_state(provider_factory)
+
+    assert state.provider is provider
+    assert state.interactive_session_id
+    assert state.context_index == 1
+    assert state.turn_index == 0
+
+
+def test_reset_interactive_context_replaces_provider_and_increments_context():
+    old_provider = DummyProvider()
+    new_provider = DummyProvider()
+
+    state = InteractiveSessionState(
+        provider=old_provider,
+        interactive_session_id="abc123",
+    )
+
+    def provider_factory():
+        return new_provider
+
+    reset_interactive_context(
+        state=state,
+        provider_factory=provider_factory,
+    )
+
+    assert state.provider is new_provider
+    assert state.context_index == 2
+    assert state.turn_index == 0

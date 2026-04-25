@@ -1,7 +1,9 @@
 # interactive_session.py
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 from agent_runtime import run_agent
 from permissions import PermissionContext
@@ -30,6 +32,50 @@ class InteractiveSessionState:
     turn_index: int = 0
 
 
+def build_interactive_session_config(
+    *,
+    provider_name: str,
+    model: str,
+    workspace: str,
+    permission_mode: str,
+    verbose: bool,
+    verbose_functions: bool,
+    max_iterations: int,
+    log_run: bool,
+    log_dir: str,
+) -> InteractiveSessionConfig:
+    return InteractiveSessionConfig(
+        provider_name=provider_name,
+        model=model,
+        workspace=workspace,
+        permission_mode=permission_mode,
+        verbose=verbose,
+        verbose_functions=verbose_functions,
+        max_iterations=max_iterations,
+        log_run=log_run,
+        log_dir=log_dir,
+    )
+
+
+def create_interactive_session_state(
+    provider_factory: Callable[[], Provider],
+) -> InteractiveSessionState:
+    return InteractiveSessionState(
+        provider=provider_factory(),
+        interactive_session_id=uuid4().hex[:12],
+    )
+
+
+def reset_interactive_context(
+    *,
+    state: InteractiveSessionState,
+    provider_factory: Callable[[], Provider],
+) -> None:
+    state.provider = provider_factory()
+    state.context_index += 1
+
+
+    
 def build_interactive_log_dir(log_dir: str, interactive_session_id: str) -> Path:
     return Path(log_dir) / "interactive" / interactive_session_id
 
