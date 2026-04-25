@@ -1,66 +1,57 @@
 # tests/test_textual_approval.py
 
-from approval import ApprovalAction, ApprovalRequest
+from threading import Event
+
+from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
 from textual_approval import TextualApprovalHandler
 
 
-class FakeRichLog:
-    def __init__(self):
-        self.messages = []
+def test_textual_approval_handler_returns_callback_response():
+    captured = {}
 
-    def write(self, message):
-        self.messages.append(message)
+    def request_callback(request: ApprovalRequest, approval_event: Event) -> None:
+        captured["request"] = request
+        captured["approval_event"] = approval_event
+        captured["response"] = ApprovalResponse(action=ApprovalAction.ALLOW_ONCE)
+        approval_event.set()
 
+    def response_getter() -> ApprovalResponse | None:
+        return captured["response"]
 
-def test_textual_approval_handler_denies_with_feedback():
-    log = FakeRichLog()
-    handler = TextualApprovalHandler(log)
-
-    response = handler.request_approval(
-        ApprovalRequest(
-            function_name="Update",
-            args={"path": "sample.py"},
-            preview_path="sample.py",
-            preview="diff preview",
-        )
-    )
-
-    assert response.action == ApprovalAction.DENY_WITH_FEEDBACK
-    assert response.feedback
-    assert any("Textual approval UI" in str(message) for message in log.messages)
-    assert any("diff preview" in str(message) for message in log.messages)
-
-
-def test_textual_approval_handler_handles_request_without_preview():
-    log = FakeRichLog()
-    handler = TextualApprovalHandler(log)
-
-    response = handler.request_approval(
-        ApprovalRequest(
-            function_name="Bash",
-            args={"command": "echo hello"},
-        )
-    )
-
-    assert response.action == ApprovalAction.DENY_WITH_FEEDBACK
-    assert response.feedback
-    assert any("Bash" in str(message) for message in log.messages)
-
-
-def test_textual_approval_handler_can_write_through_callback():
-    log = FakeRichLog()
-    callback_messages = []
     handler = TextualApprovalHandler(
-        log,
-        write_callback=callback_messages.append,
+        request_callback=request_callback,
+        response_getter=response_getter,
     )
 
-    handler.request_approval(
+    request = ApprovalRequest(
+        function_name="write_file",
+        args={"file_path": "example.txt"},
+    )
+
+    response = handler.request_approval(request)
+
+    assert captured["request"] is request
+    assert response.action == ApprovalAction.ALLOW_ONCE
+
+
+def test_textual_approval_handler_denies_if_callback_returns_no_response():
+    def request_callback(request: ApprovalRequest, approval_event: Event) -> None:
+        approval_event.set()
+
+    def response_getter() -> ApprovalResponse | None:
+        return None
+
+    handler = TextualApprovalHandler(
+        request_callback=request_callback,
+        response_getter=response_getter,
+    )
+
+    response = handler.request_approval(
         ApprovalRequest(
-            function_name="Bash",
-            args={"command": "echo hello"},
+            function_name="write_file",
+            args={"file_path": "example.txt"},
         )
     )
 
-    assert callback_messages
-    assert log.messages == []
+    assert response.action == ApprovalAction.DENY
+    assert response.feedback

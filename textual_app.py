@@ -1,6 +1,7 @@
 # textual_app.py
 
 from collections.abc import Callable
+from threading import Event
 
 from rich.text import Text
 from textual import work
@@ -8,6 +9,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
+from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
 from interactive_commands import (
     format_interactive_help,
     format_interactive_status,
@@ -96,6 +98,22 @@ class WorkCopilotTextualApp(App):
     .warning {
         color: #ebcb8b;
     }
+
+    #approval-panel {
+        height: auto;
+        max-height: 12;
+        border: solid #ebcb8b;
+        background: #1b1a14;
+        padding: 1;
+    }
+
+    .hidden {
+        display: none;
+    }
+
+    #approval-panel.hidden {
+        display: none;
+    }
     """
 
     BINDINGS = [
@@ -115,6 +133,9 @@ class WorkCopilotTextualApp(App):
         self.permission_context = permission_context
         self.state = create_interactive_session_state(provider_factory)
         self.is_agent_running = False
+        self.pending_approval_request: ApprovalRequest | None = None
+        self.pending_approval_response: ApprovalResponse | None = None
+        self.pending_approval_event: Event | None = None
 
 
     def _set_running(self, is_running: bool) -> None:
@@ -182,6 +203,81 @@ class WorkCopilotTextualApp(App):
         prompt.value = ""
 
 
+    def request_textual_approval(
+        self,
+        request: ApprovalRequest,
+        approval_event: Event,
+    ) -> None:
+        self.pending_approval_request = request
+        self.pending_approval_response = None
+        self.pending_approval_event = approval_event
+
+        panel = self.query_one("#approval-panel", Static)
+        panel.remove_class("hidden")
+        panel.update(self._format_approval_panel(request))
+
+        prompt = self.query_one("#prompt-input", Input)
+        prompt.disabled = False
+        prompt.placeholder = "Approval required: press y to allow once, n to deny"
+        prompt.focus()
+
+        self.sub_title = "Approval required"
+        self._refresh_sidebar()
+
+
+    def _format_approval_panel(self, request: ApprovalRequest) -> str:
+        lines = [
+            "[bold #ebcb8b]Approval required[/]",
+            "",
+            f"[#7f8ea3]Tool[/] {request.function_name}",
+        ]
+
+        if request.preview_path:
+            lines.append(f"[#7f8ea3]Path[/] {request.preview_path}")
+
+        if request.preview:
+            lines.extend(
+                [
+                    "",
+                    "[#7f8ea3]Preview[/]",
+                    request.preview,
+                ]
+            )
+
+        lines.extend(
+            [
+                "",
+                "[#a3be8c]y[/] allow once    [#bf616a]n[/] deny",
+            ]
+        )
+
+        return "\n".join(lines)
+
+
+    def _complete_textual_approval(self, response: ApprovalResponse) -> None:
+        if self.pending_approval_event is None:
+            return
+
+        self.pending_approval_response = response
+
+        panel = self.query_one("#approval-panel", Static)
+        panel.add_class("hidden")
+        panel.update("")
+
+        self.pending_approval_event.set()
+
+        self.pending_approval_request = None
+        self.pending_approval_event = None
+
+        if self.is_agent_running:
+            prompt = self.query_one("#prompt-input", Input)
+            prompt.disabled = True
+            prompt.placeholder = "Agent is running..."
+
+        self.sub_title = "Running" if self.is_agent_running else "Experimental Textual shell"
+        self._refresh_sidebar()
+
+
     @work(thread=True)
     def _run_model_turn_worker(self, user_prompt: str) -> None:
         log = self.query_one("#activity-log", RichLog)
@@ -190,8 +286,12 @@ class WorkCopilotTextualApp(App):
             write_callback=lambda message: self.call_from_thread(log.write, message),
         )
         approval_handler = TextualApprovalHandler(
-            log,
-            write_callback=lambda message: self.call_from_thread(log.write, message),
+            request_callback=lambda request, approval_event: self.call_from_thread(
+                self.request_textual_approval,
+                request,
+                approval_event,
+            ),
+            response_getter=lambda: self.pending_approval_response,
         )
 
         try:
@@ -226,10 +326,30 @@ class WorkCopilotTextualApp(App):
         if not user_prompt:
             return
 
+        if self.pending_approval_event is not None:
+            normalized = user_prompt.lower()
+
+            if normalized == "y":
+                self._complete_textual_approval(
+                    ApprovalResponse(action=ApprovalAction.ALLOW_ONCE)
+                )
+                self._log_system_message("Approval granted once.")
+                return
+
+            if normalized == "n":
+                self._complete_textual_approval(
+                    ApprovalResponse(action=ApprovalAction.DENY)
+                )
+                self._log_system_message("Approval denied.")
+                return
+
+            self._log_system_message("Approval pending. Press y to allow once or n to deny.")
+            return
+        
         if self.is_agent_running:
             self._log_system_message("A turn is already running. Please wait.")
             return
-        
+
         command = parse_interactive_command(user_prompt)
 
         if command == "exit":
@@ -276,6 +396,7 @@ class WorkCopilotTextualApp(App):
 
             with Vertical(id="main-area"):
                 yield RichLog(id="activity-log", wrap=True)
+                yield Static("", id="approval-panel", classes="hidden")
                 yield Input(
                     placeholder="Type /help, /status, /clear, or /exit",
                     id="prompt-input",
