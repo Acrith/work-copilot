@@ -1,29 +1,34 @@
 # Work Copilot
 
-Personal AI agent development project.
+Work Copilot is a local terminal-based coding/workspace agent.
 
-Work Copilot is a local terminal-based coding/workspace agent. It can inspect files, search code, run tests, execute approved shell commands, and make approved file changes inside a selected workspace.
+It can inspect files, search code, run tests, execute approved shell commands, and make approved file changes inside a selected workspace.
 
-This is a learning/development project. Do not treat it as production-ready automation.
+This is a learning and development project. Do not treat it as production-ready automation.
 
-## Current capabilities
+## Current status
 
-- Gemini and OpenAI provider support
-- Provider-neutral agent runtime
-- Provider-neutral tool registry and tool dispatch
-- Permission-gated write and exec actions
-- Rich terminal output
-- File read/search/list tools
-- File write/update tools with previews
-- Bash tool with approval flow
-- Git inspection tools
-- Test runner tool
-- Token usage summary
-- Configurable max agent iterations
+Work Copilot currently supports:
+
+- Gemini and OpenAI providers
+- provider-neutral runtime and tool calling
+- workspace-scoped file and shell tools
+- permission-gated write and exec actions
+- typed approval requests and responses
+- terminal approval flow for write/exec actions
+- interactive CLI sessions
+- experimental Textual TUI mode
+- runtime events
+- terminal runtime event rendering
+- Textual runtime event rendering
+- opt-in JSON run logging
+- package script entrypoint with `uv run work-copilot`
+
+Textual mode is experimental. It can run normal model prompts, but full Textual approval UI, async execution, streaming, and rich tool/diff panels are not implemented yet.
 
 ## Requirements
 
-- Python
+- Python 3.13+
 - `uv`
 - API key for at least one supported provider
 
@@ -60,30 +65,74 @@ OPENAI_API_KEY="your-openai-api-key"
 
 The `.env` file should not be committed.
 
-## Basic usage
+## Running Work Copilot
+
+Preferred package entrypoint:
+
+```bash
+uv run work-copilot "List files in the workspace root and stop after listing them."
+```
+
+Interactive CLI mode:
+
+```bash
+uv run work-copilot --interactive
+```
+
+Experimental Textual TUI:
+
+```bash
+uv run work-copilot --tui
+```
+
+Show resolved config:
+
+```bash
+uv run work-copilot --show-config
+```
+
+The older development entrypoint still works:
+
+```bash
+uv run main.py "Say hello and stop."
+```
+
+## Common examples
 
 Run with the default provider:
 
 ```bash
-uv run main.py --workspace . "List files in the workspace root and stop after listing them."
+uv run work-copilot --workspace . "List files in the workspace root and stop after listing them."
 ```
 
 Run with Gemini explicitly:
 
 ```bash
-uv run main.py --workspace . --provider gemini "Say hello and stop."
+uv run work-copilot --workspace . --provider gemini "Say hello and stop."
 ```
 
 Run with OpenAI:
 
 ```bash
-uv run main.py --workspace . --provider openai --model gpt-5.4-mini "Say hello and stop."
+uv run work-copilot --workspace . --provider openai --model gpt-5.4-mini "Say hello and stop."
 ```
 
 Cheap OpenAI smoke test:
 
 ```bash
-uv run main.py --provider openai --model gpt-5.4-nano "Say hello and stop."
+uv run work-copilot --provider openai --model gpt-5.4-nano "Say hello and stop."
+```
+
+Use verbose output:
+
+```bash
+uv run work-copilot --verbose "Say hello and stop."
+```
+
+Limit model/tool loop iterations:
+
+```bash
+uv run work-copilot --max-iterations 3 "Inspect the project and summarize it."
 ```
 
 ## Provider and model configuration
@@ -91,7 +140,7 @@ uv run main.py --provider openai --model gpt-5.4-nano "Say hello and stop."
 You can choose provider/model using CLI flags:
 
 ```bash
-uv run main.py --provider openai --model gpt-5.4-mini "Say hello."
+uv run work-copilot --provider openai --model gpt-5.4-mini "Say hello."
 ```
 
 Or with environment variables:
@@ -101,7 +150,7 @@ WORK_COPILOT_PROVIDER="openai"
 WORK_COPILOT_MODEL="gpt-5.4-mini"
 ```
 
-Defaults:
+Current defaults:
 
 ```text
 Provider: gemini
@@ -111,36 +160,53 @@ OpenAI model: gpt-5.4-mini
 
 Gemini remains the default provider so OpenAI usage is explicit unless overridden.
 
-## Useful commands
+## Interactive commands
 
-List files:
+Interactive CLI mode and Textual mode support:
 
-```bash
-uv run main.py --workspace . "List files in the workspace root and stop after listing them."
+```text
+/help
+/status
+/clear
+/exit
+/quit
 ```
 
-Run tests through the agent:
+Command behavior:
+
+- `/help` shows available commands.
+- `/status` shows current session/provider/workspace state.
+- `/clear` resets provider/session context.
+- `/exit` exits the current interactive mode.
+- `/quit` is an alias for `/exit`.
+
+## Textual mode status
+
+Textual mode is experimental but can run normal model prompts.
+
+Currently supported:
+
+- launches with `uv run work-copilot --tui`
+- shows session/config state in the sidebar
+- supports `/help`, `/status`, `/clear`, `/exit`, and `/quit`
+- renders normal user prompts and model responses in the activity log
+- preserves provider session context across turns
+- renders runtime events through the Textual activity log
+- prevents approval requests from falling back to terminal prompts
+
+Current limitations:
+
+- Textual approval UI is not implemented yet
+- write/exec approval requests are denied safely in Textual mode
+- model execution currently runs synchronously and may temporarily block the UI
+- streaming output is not implemented yet
+- rich diff/tool preview panels are not implemented yet
+- provider/model selection inside the TUI is not implemented yet
+
+For write/exec tasks, use interactive CLI mode for now:
 
 ```bash
-uv run main.py --workspace . "Run the test suite."
-```
-
-Run a bash command with approval:
-
-```bash
-uv run main.py --workspace . "Run bash command echo hello"
-```
-
-Use verbose mode:
-
-```bash
-uv run main.py --workspace . --verbose "Say hello and stop."
-```
-
-Limit model/tool loop iterations:
-
-```bash
-uv run main.py --workspace . --max-iterations 3 "Inspect the project and summarize it."
+uv run work-copilot --interactive
 ```
 
 ## Permission modes
@@ -158,36 +224,29 @@ Available modes are defined by `PermissionMode` in `permissions.py`.
 Typical behavior:
 
 - read-only tools are allowed
-- write/update tools ask for approval
-- bash/exec tools ask for approval
+- write/update tools ask for approval in terminal CLI modes
+- bash/exec tools ask for approval in terminal CLI modes
+- Textual mode denies approval requests safely until a real TUI approval flow exists
 - sensitive/protected paths are denied
-- session-level approvals can be granted interactively
+- session-level approvals can be granted interactively in terminal CLI mode
 
-## Usage summary
+## Run logging
 
-At the end of a run, the agent prints token usage when the provider returns usage metadata:
+Run logging is opt-in because logs may contain prompts, file paths, tool outputs, and code snippets.
 
-```text
-Usage: input=1976 output=8 total=1984 tokens
+Enable JSON run logging:
+
+```bash
+uv run work-copilot --log-run "Say hello and stop."
 ```
 
-With `--verbose`, per-turn usage is also printed.
+Choose a log directory:
 
-## Architecture
-
-See [`docs/architecture.md`](docs/architecture.md) for the current provider/tool/runtime structure.
-
-High-level flow:
-
-```text
-main.py
-  -> providers/factory.py
-  -> agent_runtime.py
-  -> providers/<provider>.py
-  -> tool_registry.py
-  -> tool_dispatch.py
-  -> functions/*.py
+```bash
+uv run work-copilot --log-run --log-dir .work_copilot/runs "Say hello and stop."
 ```
+
+Interactive mode groups per-turn logs under an interactive session directory.
 
 ## Development
 
@@ -212,23 +271,38 @@ uv run ruff format .
 Common pre-PR check:
 
 ```bash
-uv run pytest
 uv run ruff check .
+uv run pytest
 ```
 
-## Notes
+## Architecture
 
-This project is intentionally evolving step by step.
+See [`docs/architecture.md`](docs/architecture.md) for the current provider/tool/runtime/Textual structure.
 
-Recent milestones:
+High-level flow:
 
-- provider-neutral tool registry and dispatch
-- Gemini provider extraction
-- OpenAI provider implementation
-- OpenAI tool calling support
-- provider selection through CLI/factory
-- usage summary and max iteration controls
-- provider error handling
+```text
+main.py
+  -> cli.py
+  -> providers/factory.py
+  -> agent_runtime.py
+  -> providers/*.py
+  -> tool_registry.py
+  -> tool_dispatch.py
+  -> functions/*.py
+```
+
+Interactive and Textual flow:
+
+```text
+cli.py
+  -> interactive_cli.py or textual_app.py
+  -> interactive_commands.py
+  -> interactive_session.py
+  -> agent_runtime.py
+  -> runtime_events.py
+  -> terminal_event_sink.py / textual_event_sink.py / run_logging.py
+```
 
 ## Repository visibility
 
@@ -244,6 +318,7 @@ Reasons to make it private later:
 - the project may become useful enough that it is no longer just a learning artifact
 
 Keep secrets out of the repository regardless of visibility.
+
 ```env
 # Never commit real keys
 GEMINI_API_KEY="..."
