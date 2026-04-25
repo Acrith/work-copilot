@@ -42,3 +42,12 @@ def test_servicedesk_status_is_connector_read_tool():
     assert definition.category == ToolCategory.CONNECTOR_READ
     assert definition.connector == "servicedeskplus"
     assert definition.resource_type == "connector_status"
+
+
+def test_servicedesk_list_request_filters_is_registered_as_connector_read():
+    definition = get_tool_definition("servicedesk_list_request_filters")
+
+    assert definition.category == ToolCategory.CONNECTOR_READ
+    assert definition.connector == "servicedeskplus"
+    assert definition.resource_type == "request_filter"
+    assert definition.spec.parameters["additionalProperties"] is False

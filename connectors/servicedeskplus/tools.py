@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from connectors.servicedeskplus.client import (
+    ServiceDeskPlusClient,
+    ServiceDeskPlusError,
+)
 from connectors.servicedeskplus.config import load_servicedeskplus_config
 
 
@@ -22,3 +26,19 @@ def servicedesk_status(
         f"authtoken_configured={bool(config.authtoken)}, "
         f"oauth_access_token_configured={bool(config.oauth_access_token)}"
     )
+
+
+def servicedesk_list_request_filters(
+    working_directory: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    config = load_servicedeskplus_config()
+
+    if not config.enabled:
+        return {"error": "ServiceDesk Plus connector is disabled."}
+
+    try:
+        client = ServiceDeskPlusClient(config)
+        return client.list_request_filters()
+    except ServiceDeskPlusError as error:
+        return {"error": str(error)}

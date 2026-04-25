@@ -2,7 +2,10 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from agent_types import ToolSpec
-from connectors.servicedeskplus.tools import servicedesk_status
+from connectors.servicedeskplus.tools import (
+    servicedesk_list_request_filters,
+    servicedesk_status,
+)
 from functions.find_file import find_file
 from functions.get_file_content import get_file_content
 from functions.get_files_info import get_files_info
@@ -327,6 +330,25 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
         connector="servicedeskplus",
         resource_type="connector_status",
     ),
+    "servicedesk_list_request_filters": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_list_request_filters",
+            description=(
+                "Lists available ServiceDesk Plus request filters/views. "
+                "This is a read-only connector tool and takes no arguments."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+        ),
+        handler=servicedesk_list_request_filters,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request_filter",
+),
 }
 
 
