@@ -5,10 +5,10 @@ from collections.abc import Callable
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Footer, Header, Input, RichLog, Static
+from textual.widgets import Footer, Header, Input, Static
 
 from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
-from textual_diff_renderer import render_approval_preview
+from textual_diff_view import DiffPreview
 
 
 class ApprovalScreen(Screen):
@@ -41,13 +41,6 @@ class ApprovalScreen(Screen):
         height: auto;
         border: solid #2b3a4a;
         background: #141821;
-        padding: 1 2;
-    }
-
-    #approval-preview {
-        height: 1fr;
-        border: solid #2b3a4a;
-        background: #0d1117;
         padding: 1 2;
     }
 
@@ -96,7 +89,7 @@ class ApprovalScreen(Screen):
 
             with Vertical(id="approval-main"):
                 yield Static(self._format_header(), id="approval-header")
-                yield RichLog(id="approval-preview", wrap=True)
+                yield DiffPreview(id="approval-preview")
                 yield Input(
                     placeholder="Type denial feedback and press Enter",
                     id="approval-feedback-input",
@@ -110,8 +103,11 @@ class ApprovalScreen(Screen):
         self.title = "Work Copilot"
         self.sub_title = "Approval request"
 
-        preview = self.query_one("#approval-preview", RichLog)
-        self._write_preview(preview)
+        preview = self.query_one("#approval-preview", DiffPreview)
+        preview.render_preview(
+            preview=self.request.preview,
+            preview_path=self.request.preview_path,
+        )
 
     def _format_header(self) -> str:
         return "\n".join(
@@ -148,15 +144,6 @@ class ApprovalScreen(Screen):
                 "[#7f8ea3]Press a key to choose an action.[/]",
             ]
         )
-
-
-    def _write_preview(self, preview_log: RichLog) -> None:
-        render_approval_preview(
-            preview_log=preview_log,
-            preview=self.request.preview,
-            preview_path=self.request.preview_path,
-        )
-
 
     def _set_status(self, message: str) -> None:
         status = self.query_one("#approval-status", Static)
