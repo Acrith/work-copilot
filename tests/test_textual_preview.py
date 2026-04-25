@@ -210,3 +210,19 @@ def test_format_diff_rows_adds_column_header_before_first_structured_row():
         "   1       -old",
         "        1  +new",
     ]
+
+
+def test_format_diff_rows_skips_metadata_and_file_header_rows():
+    rows = [
+        DiffLine(kind="metadata", text='New file: "sample.txt"'),
+        DiffLine(kind="file_header", text="--- sample.txt"),
+        DiffLine(kind="file_header", text="+++ sample.txt"),
+        DiffLine(kind="added", text="+hello", old_line_no=None, new_line_no=1),
+    ]
+
+    rendered = format_diff_rows(rows)
+
+    assert [str(row) for row in rendered] == [
+        " old  new  content",
+        "        1  +hello",
+    ]
