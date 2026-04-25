@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from rich.text import Text
+from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
@@ -181,27 +182,41 @@ class WorkCopilotTextualApp(App):
         prompt.value = ""
 
 
-    def _run_model_turn(self, user_prompt: str) -> None:
+    @work(thread=True)
+    def _run_model_turn_worker(self, user_prompt: str) -> None:
         log = self.query_one("#activity-log", RichLog)
-        event_sink = TextualEventSink(log)
-        approval_handler = TextualApprovalHandler(log)
-
-        final_text = run_interactive_model_turn(
-            config=self.config,
-            state=self.state,
-            permission_context=self.permission_context,
-            user_prompt=user_prompt,
-            extra_event_sinks=[event_sink],
-            terminal_output=False,
-            approval_handler=approval_handler,
+        event_sink = TextualEventSink(
+            log,
+            write_callback=lambda message: self.call_from_thread(log.write, message),
+        )
+        approval_handler = TextualApprovalHandler(
+            log,
+            write_callback=lambda message: self.call_from_thread(log.write, message),
         )
 
-        self._refresh_sidebar()
-
-        if final_text is None:
-            self._log_system_message(
-                "Turn ended without a final response. You can continue or use /clear."
+        try:
+            final_text = run_interactive_model_turn(
+                config=self.config,
+                state=self.state,
+                permission_context=self.permission_context,
+                user_prompt=user_prompt,
+                extra_event_sinks=[event_sink],
+                terminal_output=False,
+                approval_handler=approval_handler,
             )
+
+            if final_text is None:
+                self.call_from_thread(
+                    self._log_system_message,
+                    "Turn ended without a final response. You can continue or use /clear.",
+                )
+        except Exception as exc:
+            self.call_from_thread(
+                self._log_system_message,
+                f"Textual worker error: {exc}",
+            )
+        finally:
+            self.call_from_thread(self._set_running, False)
 
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -250,11 +265,7 @@ class WorkCopilotTextualApp(App):
 
         self._log_user_message(user_prompt)
         self._set_running(True)
-
-        try:
-            self._run_model_turn(user_prompt)
-        finally:
-            self._set_running(False)
+        self._run_model_turn_worker(user_prompt)
 
 
     def compose(self) -> ComposeResult:
