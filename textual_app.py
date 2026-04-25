@@ -218,7 +218,7 @@ class WorkCopilotTextualApp(App):
 
         prompt = self.query_one("#prompt-input", Input)
         prompt.disabled = False
-        prompt.placeholder = "Approval required: press y to allow once, n to deny"
+        prompt.placeholder = "Approval required: y = allow once, n = deny"
         prompt.focus()
 
         self.sub_title = "Approval required"
@@ -247,7 +247,9 @@ class WorkCopilotTextualApp(App):
         lines.extend(
             [
                 "",
-                "[#a3be8c]y[/] allow once    [#bf616a]n[/] deny",
+                "[bold #88c0d0]Actions[/]",
+                "[#a3be8c]y[/] allow once",
+                "[#bf616a]n[/] deny",
             ]
         )
 
