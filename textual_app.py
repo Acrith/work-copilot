@@ -413,10 +413,10 @@ class WorkCopilotTextualApp(App):
         self._log_markup("[bold #88c0d0]Work Copilot Textual shell[/]")
         self._log_blank()
         self._log_system_message(
-            "Textual mode can run normal prompts. Write/exec approvals are denied safely for now."
+            "Textual mode can run normal prompts and supports basic write/exec approval."
         )
         self._log_system_message(
-            "Use the interactive CLI for write/exec tasks until Textual approval UI is implemented."
+            "Approval UI currently supports allow once and deny."
         )
         self._log_blank()
         self._log_markup(
