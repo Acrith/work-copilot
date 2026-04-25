@@ -67,6 +67,7 @@ def test_run_interactive_model_turn_increments_turn_index(tmp_path, monkeypatch)
         run_logger,
         extra_event_sinks,
         terminal_output,
+        approval_handler,
     ):
         captured["provider"] = provider
         captured["user_prompt"] = user_prompt
@@ -78,6 +79,7 @@ def test_run_interactive_model_turn_increments_turn_index(tmp_path, monkeypatch)
         captured["run_logger"] = run_logger
         captured["extra_event_sinks"] = extra_event_sinks
         captured["terminal_output"] = terminal_output
+        captured["approval_handler"] = approval_handler
         return "done"
 
     monkeypatch.setattr(interactive_session, "run_agent", fake_run_agent)
@@ -122,6 +124,7 @@ def test_run_interactive_model_turn_increments_turn_index(tmp_path, monkeypatch)
     assert captured["run_logger"] is None
     assert captured["extra_event_sinks"] is None
     assert captured["terminal_output"] is True
+    assert captured["approval_handler"] is None
 
 
 def test_build_interactive_session_config_stores_settings(tmp_path):
@@ -199,6 +202,7 @@ def test_run_interactive_model_turn_passes_extra_event_sinks(tmp_path, monkeypat
         run_logger,
         extra_event_sinks,
         terminal_output,
+        approval_handler,
     ):
         captured["extra_event_sinks"] = extra_event_sinks
         captured["terminal_output"] = terminal_output
