@@ -162,3 +162,61 @@ def test_list_requests_uses_configured_default_filter_when_omitted(monkeypatch):
 
     assert result == {"requests": []}
     assert captured["filter_name"] == "IT - Wszystko w realizacji"
+
+
+def test_get_request_returns_error_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=False),
+    )
+
+    result = tools_module.servicedesk_get_request(request_id="55906")
+
+    assert result == {"error": "ServiceDesk Plus connector is disabled."}
+
+
+def test_get_request_uses_client_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def get_request(self, request_id):
+            captured["request_id"] = request_id
+            return {"request": {"id": request_id}}
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request(request_id="55906")
+
+    assert result == {"request": {"id": "55906"}}
+    assert captured["request_id"] == "55906"
+
+
+def test_get_request_returns_client_error(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def get_request(self, request_id):
+            raise tools_module.ServiceDeskPlusError("boom")
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request(request_id="55906")
+
+    assert result == {"error": "boom"}

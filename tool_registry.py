@@ -3,6 +3,7 @@ from typing import Any, Callable
 
 from agent_types import ToolSpec
 from connectors.servicedeskplus.tools import (
+    servicedesk_get_request,
     servicedesk_list_request_filters,
     servicedesk_list_requests,
     servicedesk_status,
@@ -394,6 +395,29 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             },
         ),
         handler=servicedesk_list_requests,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request",
+    ),
+    "servicedesk_get_request": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_get_request",
+            description=(
+                "Gets detailed information for a single ServiceDesk Plus request by ID. "
+                "This is a read-only connector tool."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "description": "ServiceDesk Plus request ID.",
+                    },
+                },
+                "required": ["request_id"],
+            },
+        ),
+        handler=servicedesk_get_request,
         category=ToolCategory.CONNECTOR_READ,
         connector="servicedeskplus",
         resource_type="request",

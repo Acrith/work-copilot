@@ -216,3 +216,48 @@ def test_list_requests_caps_row_count(monkeypatch):
     input_data = json.loads(query["input_data"][0])
 
     assert input_data["list_info"]["row_count"] == 50
+
+
+def test_get_request_calls_expected_endpoint_and_headers(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(
+            b'{"request": {"id": "55906", "subject": "Udostepnienie prezentacji"}}'
+        )
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.get_request("55906")
+
+    assert result == {
+        "request": {
+            "id": "55906",
+            "subject": "Udostepnienie prezentacji",
+        }
+    }
+
+    request = captured["request"]
+    parsed_url = urlparse(request.full_url)
+
+    assert parsed_url.scheme == "https"
+    assert parsed_url.netloc == "hd.exactforestall.com"
+    assert parsed_url.path == "/api/v3/requests/55906"
+    assert parsed_url.query == ""
+    assert captured["timeout"] == 30
+
+    headers = {key.lower(): value for key, value in request.header_items()}
+    assert headers["accept"] == "application/vnd.manageengine.sdp.v3+json"
+    assert headers["content-type"] == "application/x-www-form-urlencoded"
+    assert headers["authtoken"] == "secret-token"
+
+
+def test_get_request_requires_request_id():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
+        client.get_request("")

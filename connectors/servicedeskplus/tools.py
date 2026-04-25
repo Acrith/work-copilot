@@ -71,3 +71,20 @@ def servicedesk_list_requests(
         )
     except ServiceDeskPlusError as error:
         return {"error": str(error)}
+
+
+def servicedesk_get_request(
+    request_id: str,
+    working_directory: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    config = load_servicedeskplus_config()
+
+    if not config.enabled:
+        return {"error": "ServiceDesk Plus connector is disabled."}
+
+    try:
+        client = ServiceDeskPlusClient(config)
+        return client.get_request(request_id=request_id)
+    except ServiceDeskPlusError as error:
+        return {"error": str(error)}
