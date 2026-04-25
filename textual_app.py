@@ -113,6 +113,24 @@ class WorkCopilotTextualApp(App):
         self.provider_factory = provider_factory
         self.permission_context = permission_context
         self.state = create_interactive_session_state(provider_factory)
+        self.is_agent_running = False
+
+
+    def _set_running(self, is_agent_running: bool) -> None:
+        self.is_agent_running = is_agent_running
+
+        prompt = self.query_one("#prompt-input", Input)
+        prompt.disabled = is_agent_running
+
+        if is_agent_running:
+            prompt.placeholder = "Agent is running..."
+            self.sub_title = "Running"
+        else:
+            prompt.placeholder = "Type /help, /status, /clear, or /exit"
+            self.sub_title = "Experimental Textual shell"
+            prompt.focus()
+
+        self._refresh_sidebar()
 
 
     def _log_blank(self) -> None:
@@ -193,6 +211,10 @@ class WorkCopilotTextualApp(App):
         if not user_prompt:
             return
 
+        if self.is_agent_running:
+            self._log_system_message("A turn is already running. Please wait.")
+            return
+        
         command = parse_interactive_command(user_prompt)
 
         if command == "exit":
@@ -227,7 +249,12 @@ class WorkCopilotTextualApp(App):
             return
 
         self._log_user_message(user_prompt)
-        self._run_model_turn(user_prompt)
+        self._set_running(True)
+
+        try:
+            self._run_model_turn(user_prompt)
+        finally:
+            self._set_running(False)
 
 
     def compose(self) -> ComposeResult:
@@ -267,6 +294,7 @@ class WorkCopilotTextualApp(App):
         self.query_one("#prompt-input", Input).focus()
 
     def _refresh_sidebar(self) -> None:
+        run_status = "running" if self.is_agent_running else "idle"
         logging_status = "enabled" if self.config.log_run else "disabled"
 
         sidebar = self.query_one("#sidebar", Static)
@@ -285,6 +313,7 @@ class WorkCopilotTextualApp(App):
                     self.config.workspace,
                     "",
                     "[bold #88c0d0]State[/]",
+                    f"[#7f8ea3]Status[/]          {run_status}",
                     f"[#7f8ea3]Session id[/]      {self.state.interactive_session_id}",
                     f"[#7f8ea3]Context index[/]   {self.state.context_index}",
                     f"[#7f8ea3]Turn index[/]      {self.state.turn_index}",
