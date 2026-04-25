@@ -21,10 +21,13 @@ Work Copilot currently supports:
 - runtime events
 - terminal runtime event rendering
 - Textual runtime event rendering
+- full-screen Textual approval screen
+- structured Textual diff previews for approval reviews
 - opt-in JSON run logging
 - package script entrypoint with `uv run work-copilot`
+- terminal truecolor startup hint for improved Textual colors
 
-Textual mode is experimental. It can run normal model prompts, but full Textual approval UI, async execution, streaming, and rich tool/diff panels are not implemented yet.
+Textual mode is experimental, but it can now run normal model prompts and handle write/exec approval requests inside the TUI.
 
 ## Requirements
 
@@ -182,28 +185,41 @@ Command behavior:
 
 ## Textual mode status
 
-Textual mode is experimental but can run normal model prompts.
+Textual mode is experimental but functional for normal prompt turns and approval-gated write/exec actions.
 
 Currently supported:
 
 - launches with `uv run work-copilot --tui`
 - shows session/config state in the sidebar
 - supports `/help`, `/status`, `/clear`, `/exit`, and `/quit`
-- renders normal user prompts and model responses in the activity log
+- renders user prompts and model responses in the activity log
 - preserves provider session context across turns
 - renders runtime events through the Textual activity log
 - prevents approval requests from falling back to terminal prompts
-- Textual approval supports: 
-  - allow one, 
-  - deny, 
-  - deny with feedback
+- shows a full-screen approval screen for write/exec approval requests
+- supports Textual approval actions:
+  - `y` allow once
+  - `n` deny
+  - `f` deny with feedback
+  - `s` allow this tool for the session
+  - `p` allow this path for the session, when a path is available
+- renders structured approval diff previews with:
+  - file/change summary header
+  - old/new/marker/content columns
+  - added and removed row backgrounds
+  - marker column rendering
+  - intra-line changed-span highlighting
+- sets a terminal truecolor hint at startup so Textual colors render more consistently on modern terminals
 
 Current limitations:
 
-- Textual approval UI is not implemented yet
 - streaming output is not implemented yet
-- rich diff/tool preview panels are not implemented yet
+- cancellation/interrupt handling is not implemented yet
+- mouse/button approval controls are not implemented yet
+- side-by-side diff view is not implemented yet
+- multi-file diff navigation is not implemented yet
 - provider/model selection inside the TUI is not implemented yet
+- connector tools are not implemented yet
 
 ## Permission modes
 
@@ -220,11 +236,13 @@ Available modes are defined by `PermissionMode` in `permissions.py`.
 Typical behavior:
 
 - read-only tools are allowed
-- write/update tools ask for approval in terminal CLI modes
-- bash/exec tools ask for approval in terminal CLI modes
-- Textual mode denies approval requests safely until a real TUI approval flow exists
+- write/update tools ask for approval
+- bash/exec tools ask for approval
 - sensitive/protected paths are denied
-- session-level approvals can be granted interactively in terminal CLI mode
+- session-level tool approvals can be granted interactively
+- session-level path approvals can be granted when a path is available
+- terminal CLI modes use terminal approval prompts
+- Textual mode uses the full-screen Textual approval screen
 
 ## Run logging
 
@@ -298,6 +316,17 @@ cli.py
   -> agent_runtime.py
   -> runtime_events.py
   -> terminal_event_sink.py / textual_event_sink.py / run_logging.py
+```
+
+Textual approval/diff flow:
+
+```text
+textual_app.py
+  -> textual_approval.py
+  -> textual_approval_screen.py
+  -> textual_diff_view.py
+  -> textual_diff_renderer.py
+  -> textual_preview.py
 ```
 
 ## Repository visibility

@@ -5,6 +5,7 @@ This document explains the current Work Copilot architecture after the CLI found
 The main architectural goal is to keep these concerns separated:
 
 - CLI/app startup
+- terminal environment setup
 - mode dispatch
 - interactive session state
 - agent runtime loop
@@ -14,6 +15,7 @@ The main architectural goal is to keep these concerns separated:
 - approval handling
 - terminal rendering
 - Textual rendering
+- Textual approval/diff rendering
 - JSON run logging
 - actual tool execution
 
@@ -60,19 +62,27 @@ uv run work-copilot --tui
   -> agent_runtime.py
   -> textual_event_sink.py
   -> textual_approval.py
+  -> textual_approval_screen.py
+  -> textual_diff_view.py
+  -> textual_diff_renderer.py
+  -> textual_preview.py
 ```
 
 ## Mental model
 
 ```text
-main.py                    = tiny process entrypoint
+main.py                    = process entrypoint and terminal environment bootstrap
 cli.py                     = CLI parsing, resolved config, mode dispatch
 interactive_cli.py         = simple terminal REPL UI
 interactive_commands.py    = shared slash command parsing and formatting
 interactive_session.py     = provider-backed session state and model-turn execution
 textual_app.py             = experimental Textual UI
 textual_event_sink.py      = runtime events -> Textual activity log
-textual_approval.py        = safe approval denial in Textual mode
+textual_approval.py        = Textual approval bridge between runtime and TUI
+textual_approval_screen.py = full-screen Textual approval review screen
+textual_diff_view.py       = Textual diff preview widget and row CSS
+textual_diff_renderer.py   = approval preview -> rendered diff rows
+textual_preview.py         = diff parsing and structured row text formatting
 agent_runtime.py           = provider-neutral model/tool loop
 runtime_events.py          = typed runtime events and event sink protocol
 terminal_event_sink.py     = runtime events -> terminal
@@ -97,13 +107,16 @@ prompts.py                 = provider-neutral system prompt
 
 ### `main.py`
 
-Tiny process entrypoint.
+Process entrypoint.
 
 Responsibilities:
 
-- import `run_cli`
+- configure safe terminal environment defaults before Rich/Textual are imported
+- lazily import `run_cli`
 - call it
 - exit with its return code
+
+`main.py` sets `COLORTERM=truecolor` with `os.environ.setdefault(...)` so modern terminals are more likely to render Textual colors correctly.
 
 `main.py` should stay small. It should not own argument parsing, provider setup, tool dispatch, approval logic, or runtime logic.
 
@@ -219,15 +232,18 @@ Responsibilities:
 - pass `TextualEventSink` into runtime execution
 - pass `TextualApprovalHandler` into runtime execution
 - disable terminal runtime output for TUI turns
+- coordinate Textual approval requests and responses
 
 Current Textual status:
 
 - normal model prompts work
 - provider session context is preserved across turns
 - runtime events render into the activity log
-- approval requests are listed with decisions to allow once, deny or deny with feedback
-- full approval UI is not implemented yet
-- execution is currently synchronous and may temporarily block the UI
+- approval requests are handled inside the TUI
+- full-screen approval review is implemented
+- structured diff preview is implemented for approval reviews
+- streaming output is not implemented yet
+- cancellation/interrupt handling is not implemented yet
 
 ### `textual_event_sink.py`
 
@@ -254,28 +270,93 @@ Those may later be shown in a status area instead of the main conversation log.
 
 ### `textual_approval.py`
 
-Textual approval safety handler.
+Textual approval bridge.
 
 Responsibilities:
 
-- consume `ApprovalRequest`
-- render approval preview/details into the Textual activity log
-- deny approval requests safely for now
-- return `ApprovalResponse` with feedback
+- implement the `ApprovalHandler` protocol for Textual mode
+- receive `ApprovalRequest` values from tool dispatch
+- hand approval requests to the Textual app through callbacks/events
+- wait for a Textual approval decision
+- return a typed `ApprovalResponse`
 - prevent Textual mode from falling back to terminal approval prompts
 
-Current behavior:
+Current supported Textual approval actions:
 
 ```text
-write/exec approval requested in Textual mode
-  -> show approval request in TUI
-  -> Allow user to decide to allow once, deny or deny with feedback
+y = allow once
+n = deny
+f = deny with feedback
+s = allow tool for session
+p = allow path for session, when a path is available
 ```
 
-Future work:
+### `textual_approval_screen.py`
 
-- diff preview panels
-- session/path/tool approvals
+Full-screen Textual approval review screen.
+
+Responsibilities:
+
+- render the approval-mode layout
+- show approval actions in a sidebar
+- show request metadata in the header
+- host the diff preview widget
+- handle keyboard approval actions
+- collect denial feedback
+- return `ApprovalResponse` values through a completion callback
+
+This file owns the approval interaction UX, but it does not parse or format diffs directly.
+
+### `textual_diff_view.py`
+
+Textual diff preview widget.
+
+Responsibilities:
+
+- provide the scrollable diff preview container
+- mount one Textual row widget per rendered diff row
+- apply CSS classes for row-level styling
+- provide visible row backgrounds for added/removed/hunk rows
+
+This file owns Textual layout/CSS behavior for diff rows.
+
+Full-row backgrounds are implemented here, not inside Rich `Text` strings.
+
+### `textual_diff_renderer.py`
+
+Approval preview renderer.
+
+Responsibilities:
+
+- convert raw approval preview text into `DiffRenderRow` values
+- add high-level preview rows such as title, file summary, and separator
+- classify rendered diff rows into CSS classes such as:
+  - `column-header`
+  - `hunk`
+  - `added`
+  - `removed`
+  - `context`
+- keep compatibility with older `render_approval_preview(...)` tests/helpers
+
+This module bridges diff formatting and the Textual diff widget.
+
+### `textual_preview.py`
+
+Diff parsing and structured row text formatting.
+
+Responsibilities:
+
+- parse unified diff previews into structured `DiffLine` rows
+- track old/new line numbers from hunk metadata
+- summarize additions/removals
+- format file summary headers
+- format old/new/marker/content rows
+- format hunk labels
+- strip raw diff markers from content
+- pair adjacent removed/added rows
+- apply intra-line changed-span highlighting with `SequenceMatcher`
+
+This module does not own full-width row backgrounds. Row backgrounds are applied by `textual_diff_view.py` through Textual CSS.
 
 ### `runtime_events.py`
 
@@ -750,11 +831,13 @@ Textual mode is functional but still experimental.
 
 Current limitations:
 
-- full approval UI is not implemented
 - streaming output is not implemented
-- rich diff/tool panels are not implemented
+- cancellation/interrupt handling is not implemented
+- mouse/button approval controls are not implemented
+- side-by-side diff view is not implemented
+- multi-file diff navigation is not implemented
 - provider/model selection inside the TUI is not implemented
-- background cancellation is not implemented
+- connector tools are not implemented
 
 ## Package entrypoint and flat-layout note
 
