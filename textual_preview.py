@@ -202,6 +202,9 @@ def format_diff_rows(rows: list[DiffLine]) -> list[Text | str]:
     wrote_column_header = False
 
     for row in rows:
+        if row.kind in {"metadata", "file_header"}:
+            continue
+
         if row.kind in STRUCTURED_DIFF_KINDS and not wrote_column_header:
             rendered.append(format_diff_column_header())
             wrote_column_header = True
