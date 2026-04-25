@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from threading import Event
 
+from rich.console import RenderableType
+from rich.markdown import Markdown
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
@@ -144,7 +146,7 @@ class WorkCopilotTextualApp(App):
         self._log("")
 
 
-    def _log(self, message: str) -> None:
+    def _log(self, message: RenderableType) -> None:
         log = self.query_one("#activity-log", RichLog)
         log.write(message)
 
@@ -153,6 +155,10 @@ class WorkCopilotTextualApp(App):
         self._log(Text.from_markup(markup))
 
 
+    def _log_markdown(self, message: str) -> None:
+        self._log(Markdown(message))
+    
+    
     def _log_user_message(self, message: str) -> None:
         self._log_blank()
         self._log_markup("[bold #88c0d0]You[/]")
@@ -162,7 +168,7 @@ class WorkCopilotTextualApp(App):
     def _log_assistant_message(self, message: str) -> None:
         self._log_blank()
         self._log_markup("[bold #a3be8c]Work Copilot[/]")
-        self._log(message)
+        self._log_markdown(message)
 
 
     def _log_system_message(self, message: str) -> None:

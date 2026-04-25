@@ -2,6 +2,8 @@
 
 from collections.abc import Callable
 
+from rich.console import RenderableType
+from rich.markdown import Markdown
 from rich.text import Text
 from textual.widgets import RichLog
 
@@ -22,7 +24,7 @@ class TextualEventSink:
         self,
         log: RichLog,
         *,
-        write_callback: Callable[[str | Text], None] | None = None,
+        write_callback: Callable[[RenderableType], None] | None = None,
     ) -> None:
         self.log = log
         self.write_callback = write_callback
@@ -56,7 +58,7 @@ class TextualEventSink:
             self._handle_usage_summary(event)
             return
 
-    def _write(self, message: str | Text) -> None:
+    def _write(self, message: RenderableType) -> None:
         if self.write_callback is not None:
             self.write_callback(message)
             return
@@ -66,14 +68,26 @@ class TextualEventSink:
     def _write_markup(self, markup: str) -> None:
         self._write(Text.from_markup(markup))
 
+    def _write_markdown(self, markdown: str) -> None:
+        self._write(Markdown(markdown))
+
+    def _write_blank(self) -> None:
+        self._write("")
+
     def _handle_run_started(self, event: RunStartedEvent) -> None:
         return
 
     def _handle_model_turn(self, event: ModelTurnEvent) -> None:
+        has_tool_calls = bool(event.tool_calls)
+
         for text in event.text_parts:
             if text.strip():
+                self._write_blank()
                 self._write_markup("[bold #a3be8c]Work Copilot[/]")
-                self._write(text)
+                if has_tool_calls:
+                    self._write(text)
+                else:
+                    self._write_markdown(text)
 
         for tool_call in event.tool_calls:
             tool_name = str(tool_call.get("name", "unknown"))

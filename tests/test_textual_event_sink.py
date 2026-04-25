@@ -1,5 +1,7 @@
 # tests/test_textual_event_sink.py
 
+from rich.markdown import Markdown
+
 from runtime_events import (
     FinalResponseEvent,
     MaxIterationsReachedEvent,
@@ -29,7 +31,7 @@ def test_textual_event_sink_renders_run_started():
     assert log.messages == []
 
 
-def test_textual_event_sink_renders_model_text():
+def test_textual_event_sink_renders_model_text_as_markdown():
     log = FakeRichLog()
     sink = TextualEventSink(log)
 
@@ -41,7 +43,11 @@ def test_textual_event_sink_renders_model_text():
         )
     )
 
-    assert any("Hello" in str(message) for message in log.messages)
+    markdown_messages = [
+        message for message in log.messages if isinstance(message, Markdown)
+    ]
+
+    assert len(markdown_messages) == 1
 
 
 def test_textual_event_sink_renders_tool_call():
@@ -143,3 +149,34 @@ def test_textual_event_sink_can_write_through_callback():
 
     assert callback_messages
     assert log.messages == []
+
+
+def test_final_model_turn_writes_markdown_for_assistant_text():
+    log = FakeRichLog()
+    sink = TextualEventSink(log)
+
+    sink.emit(
+        ModelTurnEvent(
+            text_parts=["Here is **bold** text."],
+            tool_calls=[],
+            usage=None,
+        )
+    )
+
+    assert any(isinstance(message, Markdown) for message in log.messages)
+
+
+def test_tool_call_model_turn_keeps_text_plain():
+    log = FakeRichLog()
+    sink = TextualEventSink(log)
+
+    sink.emit(
+        ModelTurnEvent(
+            text_parts=["I will call a tool with **markdown**."],
+            tool_calls=[{"name": "servicedesk_get_request"}],
+            usage=None,
+        )
+    )
+
+    assert any(message == "I will call a tool with **markdown**." for message in log.messages)
+    assert not any(isinstance(message, Markdown) for message in log.messages)
