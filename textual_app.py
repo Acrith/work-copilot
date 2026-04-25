@@ -261,7 +261,7 @@ class WorkCopilotTextualApp(App):
                     f"[#7f8ea3]Turn index[/]      {self.state.turn_index}",
                     "",
                     "[bold #88c0d0]Controls[/]",
-                    "[#7f8ea3]q[/]               Quit",
+                    "[#7f8ea3]Ctrl+Q[/]          Quit",
                 ]
             )
         )
