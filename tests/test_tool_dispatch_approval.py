@@ -10,6 +10,7 @@ from approval import (
     ApprovalResponse,
 )
 from permissions import PermissionContext, PermissionMode, PermissionRuleSet
+from tool_categories import ToolCategory
 from tool_registry import ToolDefinition
 
 
@@ -28,6 +29,20 @@ def permission_context(mock_working_directory):
 
 
 def make_definition(name, handler):
+    category_by_name = {
+        "get_file_content": ToolCategory.READ,
+        "get_files_info": ToolCategory.READ,
+        "search_in_files": ToolCategory.READ,
+        "find_file": ToolCategory.READ,
+        "git_status": ToolCategory.READ,
+        "git_diff_file": ToolCategory.READ,
+        "write_file": ToolCategory.WRITE,
+        "update": ToolCategory.WRITE,
+        "run_python_file": ToolCategory.EXEC,
+        "run_tests": ToolCategory.EXEC,
+        "bash": ToolCategory.EXEC,
+    }
+
     return ToolDefinition(
         spec=ToolSpec(
             name=name,
@@ -39,8 +54,9 @@ def make_definition(name, handler):
             },
         ),
         handler=handler,
+        category=category_by_name.get(name, ToolCategory.EXEC),
     )
-
+    
 
 class FakeApprovalHandler:
     def __init__(self, responses):

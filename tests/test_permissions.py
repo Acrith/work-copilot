@@ -1,5 +1,6 @@
 import pytest
 
+import permissions as permissions_module
 from permissions import (
     Decision,
     PermissionContext,
@@ -11,6 +12,7 @@ from permissions import (
     is_sensitive_read_path,
     normalize_relative_path,
 )
+from tool_categories import ToolCategory
 
 
 def make_context(mode=PermissionMode.DEFAULT, rules=None):
@@ -28,7 +30,7 @@ def make_context(mode=PermissionMode.DEFAULT, rules=None):
         (PermissionMode.DEFAULT, "get_file_content", {"file_path": "a.txt"}, Decision.ALLOW),
         (PermissionMode.DEFAULT, "write_file", {"file_path": "a.txt"}, Decision.ASK),
         (PermissionMode.DEFAULT, "run_python_file", {"file_path": "a.py"}, Decision.ASK),
-        (PermissionMode.DEFAULT, "some_new_tool", {}, Decision.ASK),
+        (PermissionMode.DEFAULT, "some_new_tool", {}, Decision.DENY),
         # plan
         (PermissionMode.PLAN, "get_file_content", {"file_path": "a.txt"}, Decision.ALLOW),
         (PermissionMode.PLAN, "write_file", {"file_path": "a.txt"}, Decision.DENY),
@@ -38,7 +40,7 @@ def make_context(mode=PermissionMode.DEFAULT, rules=None):
         (PermissionMode.ACCEPT_EDITS, "get_file_content", {"file_path": "a.txt"}, Decision.ALLOW),
         (PermissionMode.ACCEPT_EDITS, "write_file", {"file_path": "a.txt"}, Decision.ALLOW),
         (PermissionMode.ACCEPT_EDITS, "run_python_file", {"file_path": "a.py"}, Decision.ASK),
-        (PermissionMode.ACCEPT_EDITS, "some_new_tool", {}, Decision.ASK),
+        (PermissionMode.ACCEPT_EDITS, "some_new_tool", {}, Decision.DENY),
         # dont_ask
         (PermissionMode.DONT_ASK, "get_file_content", {"file_path": "a.txt"}, Decision.ALLOW),
         (PermissionMode.DONT_ASK, "write_file", {"file_path": "a.txt"}, Decision.DENY),
@@ -67,9 +69,9 @@ def test_mode_baselines(mode, tool_name, args, expected):
             Decision.ASK,
         ),
         (
-            PermissionRuleSet(ask=["dangerous_tool"]),
-            "dangerous_tool",
-            {},
+            PermissionRuleSet(ask=["bash"]),
+            "bash",
+            {"command": "echo hello"},
             Decision.ASK,
         ),
         (
@@ -114,10 +116,10 @@ def test_tool_allow_path_does_not_override_sensitive_read_path():
 
 
 def test_explicit_ask_beats_session_allow_tool():
-    ctx = make_context(rules=PermissionRuleSet(ask=["dangerous_tool"]))
-    ctx.session_allow_tools.add("dangerous_tool")
+    ctx = make_context(rules=PermissionRuleSet(ask=["bash"]))
+    ctx.session_allow_tools.add("bash")
 
-    assert evaluate_request(ctx, "dangerous_tool", {}) == Decision.ASK
+    assert evaluate_request(ctx, "bash", {"command": "echo hello"}) == Decision.ASK
 
 
 def test_explicit_ask_beats_session_allow_path():
@@ -347,3 +349,65 @@ def test_normalize_relative_path(path, expected):
 def test_bash_permission_behavior(mode, args, expected):
     ctx = make_context(mode=mode)
     assert evaluate_request(ctx, "bash", args) == expected
+
+
+def test_connector_read_allowed_in_default_mode(monkeypatch):
+    monkeypatch.setattr(
+        permissions_module,
+        "get_tool_category",
+        lambda name: ToolCategory.CONNECTOR_READ if name == "servicedesk_status" else None,
+    )
+
+    ctx = make_context(mode=PermissionMode.DEFAULT)
+
+    decision = evaluate_request(
+        ctx,
+        "servicedesk_status",
+        {},
+    )
+
+    assert decision == Decision.ALLOW
+
+
+def test_connector_write_denied_even_if_session_allowed(monkeypatch):
+    monkeypatch.setattr(
+        permissions_module,
+        "get_tool_category",
+        lambda name: (
+            ToolCategory.CONNECTOR_WRITE
+            if name == "servicedesk_update_request"
+            else None
+        ),
+    )
+
+    ctx = make_context(mode=PermissionMode.DEFAULT)
+    ctx.session_allow_tools.add("servicedesk_update_request")
+
+    decision = evaluate_request(
+        ctx,
+        "servicedesk_update_request",
+        {"request_id": "123"},
+    )
+
+    assert decision == Decision.DENY
+
+
+def test_unknown_tool_is_denied():
+    ctx = make_context(mode=PermissionMode.DEFAULT)
+
+    decision = evaluate_request(
+        ctx,
+        "totally_fake_tool",
+        {},
+    )
+
+    assert decision == Decision.DENY
+
+
+def test_explicit_allow_does_not_allow_unknown_tool():
+    ctx = make_context(
+        mode=PermissionMode.DEFAULT,
+        rules=PermissionRuleSet(allow=["totally_fake_tool"]),
+    )
+
+    assert evaluate_request(ctx, "totally_fake_tool", {}) == Decision.DENY

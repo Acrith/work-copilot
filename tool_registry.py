@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from agent_types import ToolSpec
+from connectors.servicedeskplus.tools import servicedesk_status
 from functions.find_file import find_file
 from functions.get_file_content import get_file_content
 from functions.get_files_info import get_files_info
@@ -14,12 +15,16 @@ from functions.run_tests import run_tests
 from functions.search_in_files import search_in_files
 from functions.update_file import update_file
 from functions.write_file import write_file
+from tool_categories import ToolCategory
 
 
 @dataclass(frozen=True)
 class ToolDefinition:
     spec: ToolSpec
     handler: Callable[..., Any]
+    category: ToolCategory
+    connector: str | None = None
+    resource_type: str | None = None
 
 
 def string_property(description: str, *, nullable: bool = False) -> dict[str, Any]:
@@ -90,6 +95,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=get_files_info,
+        category=ToolCategory.READ,
     ),
     "get_file_content": ToolDefinition(
         spec=ToolSpec(
@@ -107,6 +113,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=get_file_content,
+        category=ToolCategory.READ,
     ),
     "write_file": ToolDefinition(
         spec=ToolSpec(
@@ -126,6 +133,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=write_file,
+        category=ToolCategory.WRITE,
     ),
     "run_python_file": ToolDefinition(
         spec=ToolSpec(
@@ -148,6 +156,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=run_python_file,
+        category=ToolCategory.EXEC,
     ),
     "search_in_files": ToolDefinition(
         spec=ToolSpec(
@@ -164,6 +173,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=search_in_files,
+        category=ToolCategory.READ,
     ),
     "run_tests": ToolDefinition(
         spec=ToolSpec(
@@ -192,6 +202,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=run_tests,
+        category=ToolCategory.EXEC,
     ),
     "update": ToolDefinition(
         spec=ToolSpec(
@@ -211,6 +222,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=update_file,
+        category=ToolCategory.WRITE,
     ),
     "find_file": ToolDefinition(
         spec=ToolSpec(
@@ -227,6 +239,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=find_file,
+        category=ToolCategory.READ,
     ),
     "git_status": ToolDefinition(
         spec=ToolSpec(
@@ -238,6 +251,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             parameters=object_schema({}, required=[]),
         ),
         handler=git_status,
+        category=ToolCategory.READ,
     ),
     "git_diff_file": ToolDefinition(
         spec=ToolSpec(
@@ -256,6 +270,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=git_diff_file,
+        category=ToolCategory.READ,
     ),
     "git_diff": ToolDefinition(
         spec=ToolSpec(
@@ -267,6 +282,7 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             parameters=object_schema({}, required=[]),
         ),
         handler=git_diff,
+        category=ToolCategory.READ,
     ),
     "bash": ToolDefinition(
         spec=ToolSpec(
@@ -290,6 +306,26 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
             ),
         ),
         handler=run_shell_command,
+        category=ToolCategory.EXEC,
+    ),
+    "servicedesk_status": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_status",
+            description=(
+                "Shows whether the ServiceDesk Plus connector is configured. "
+                "Takes no arguments."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+        ),
+        handler=servicedesk_status,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="connector_status",
     ),
 }
 
