@@ -219,7 +219,9 @@ class WorkCopilotTextualApp(App):
 
         prompt = self.query_one("#prompt-input", Input)
         prompt.disabled = False
-        prompt.placeholder = "Approval required: y = allow once, n = deny, f = deny with feedback"
+        prompt.placeholder = (
+            "Approval required: y allow, n deny, f feedback, s tool session, p path session"
+        )
         prompt.focus()
 
         self.sub_title = "Approval required"
@@ -255,8 +257,14 @@ class WorkCopilotTextualApp(App):
                 "  [#a3be8c]y[/]  allow once",
                 "  [#bf616a]n[/]  deny",
                 "  [#ebcb8b]f[/]  deny with feedback",
+                "  [#88c0d0]s[/]  allow this tool for session",
             ]
         )
+
+        if request.preview_path:
+            lines.append("  [#88c0d0]p[/]  allow this path for session")
+        else:
+            lines.append("  [#7f8ea3]p[/]  allow path unavailable")
 
         return "\n".join(lines)
 
@@ -374,8 +382,29 @@ class WorkCopilotTextualApp(App):
                 self._log_system_message("Type denial feedback and press Enter.")
                 return
 
+            if normalized == "s":
+                self._complete_textual_approval(
+                    ApprovalResponse(action=ApprovalAction.ALLOW_TOOL_SESSION)
+                )
+                self._log_system_message("Approval granted for this tool for the session.")
+                return
+
+            if normalized == "p":
+                if (
+                    self.pending_approval_request is None
+                    or self.pending_approval_request.preview_path is None
+                ):
+                    self._log_system_message("Path session approval is not available for this request.")
+                    return
+
+                self._complete_textual_approval(
+                    ApprovalResponse(action=ApprovalAction.ALLOW_PATH_SESSION)
+                )
+                self._log_system_message("Approval granted for this path for the session.")
+                return
+
             self._log_system_message(
-                "Approval pending. Press y to allow once, n to deny, or f to deny with feedback."
+                "Approval pending. Use y, n, f, s, or p when path approval is available."
             )
             return
         
