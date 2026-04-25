@@ -1,9 +1,11 @@
 # tests/test_interactive_commands.py
 
 from interactive_commands import (
+    build_servicedesk_triage_prompt,
     format_interactive_help,
     format_interactive_status,
     parse_interactive_command,
+    parse_triage_limit,
 )
 from interactive_session import InteractiveSessionConfig, InteractiveSessionState
 
@@ -54,12 +56,15 @@ class DummyProvider:
 
 def test_format_interactive_help_includes_supported_commands():
     lines = format_interactive_help()
+    help_text = "\n".join(lines)
 
     assert "Commands:" in lines
-    assert "  /help    Show this help" in lines
-    assert "  /status  Show current session settings" in lines
-    assert "  /clear   Reset provider/session state" in lines
-    assert "  /exit    Exit interactive mode" in lines
+    assert "/help" in help_text
+    assert "Show this help" in help_text
+    assert "/status" in help_text
+    assert "/clear" in help_text
+    assert "/triage servicedesk <limit>" in help_text
+    assert "/exit" in help_text
 
 
 def test_format_interactive_status_includes_session_state(tmp_path):
@@ -110,3 +115,33 @@ def test_format_interactive_status_includes_log_dir_when_logging_enabled(tmp_pat
 
     assert "  Logging:         enabled" in lines
     assert "  Log dir:         logs" in lines
+
+
+def test_parse_triage_servicedesk_command():
+    assert parse_interactive_command("/triage servicedesk") == "triage_servicedesk"
+
+
+def test_parse_triage_servicedesk_aliases():
+    assert parse_interactive_command("/triage sdp") == "triage_servicedesk"
+    assert parse_interactive_command("/triage tickets") == "triage_servicedesk"
+
+
+def test_parse_unknown_triage_target():
+    assert parse_interactive_command("/triage coffee") == "unknown"
+
+
+def test_parse_triage_limit_defaults():
+    assert parse_triage_limit("/triage servicedesk") == 10
+
+
+def test_parse_triage_limit_caps_maximum():
+    assert parse_triage_limit("/triage servicedesk 999") == 20
+
+
+def test_build_servicedesk_triage_prompt_is_read_only():
+    prompt = build_servicedesk_triage_prompt(5)
+
+    assert "Read up to 5 requests" in prompt
+    assert "Do not update tickets" in prompt
+    assert "Do not add notes" in prompt
+    assert "Do not execute commands" in prompt
