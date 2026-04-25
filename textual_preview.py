@@ -16,6 +16,14 @@ DiffLineKind = Literal[
 ]
 
 DIFF_COLUMN_SEPARATOR = "│"
+STYLE_DIFF_HEADER = "bold #8b949e"
+STYLE_FILE_HEADER = "bold #c9d1d9"
+STYLE_METADATA = "bold #f2cc60"
+STYLE_HUNK = "bold #79c0ff on #111d2e"
+STYLE_ADDED = "bold #7ee787 on #102a16"
+STYLE_REMOVED = "bold #ff7b72 on #2a1414"
+STYLE_CONTEXT = "#c9d1d9"
+STYLE_MUTED = "#8b949e"
 
 
 @dataclass(frozen=True)
@@ -166,14 +174,14 @@ def format_line_number(value: int | None) -> str:
 def format_diff_column_header() -> Text:
     return Text(
         f"{'old':>4} {'new':>4} {DIFF_COLUMN_SEPARATOR} content",
-        style="bold #8b949e",
+        style=STYLE_DIFF_HEADER,
     )
 
 
 def format_diff_file_header(path: str, summary: DiffSummary) -> Text:
     text = Text()
-    text.append("▸ ", style="#8b949e")
-    text.append(path, style="bold #c9d1d9")
+    text.append("▸ ", style=STYLE_MUTED)
+    text.append(path, style=STYLE_FILE_HEADER)
     text.append(" ")
     text.append(f"(+{summary.additions}", style="bold #7ee787")
     text.append(", ")
@@ -183,13 +191,13 @@ def format_diff_file_header(path: str, summary: DiffSummary) -> Text:
 
 def format_diff_row(row: DiffLine) -> Text | str:
     if row.kind == "metadata":
-        return Text(row.text, style="bold #f2cc60")
+        return Text(row.text, style=STYLE_METADATA)
 
     if row.kind == "file_header":
-        return Text(row.text, style="#8b949e")
+        return Text(row.text, style=STYLE_MUTED)
 
     if row.kind == "hunk":
-        return Text(format_hunk_label(row.text), style="bold #79c0ff")
+        return Text(format_hunk_label(row.text), style=STYLE_HUNK)
 
     old_no = format_line_number(row.old_line_no)
     new_no = format_line_number(row.new_line_no)
@@ -197,23 +205,23 @@ def format_diff_row(row: DiffLine) -> Text | str:
     if row.kind == "added":
         return Text(
             f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR} {row.text}",
-            style="bold #7ee787",
+            style=STYLE_ADDED,
         )
 
     if row.kind == "removed":
         return Text(
             f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR} {row.text}",
-            style="bold #ff7b72",
+            style=STYLE_REMOVED,
         )
 
     if row.kind == "context":
         return Text(
             f"{old_no} {new_no} {DIFF_COLUMN_SEPARATOR} {row.text}",
-            style="#c9d1d9",
+            style=STYLE_CONTEXT,
         )
 
     return row.text
-    
+
 
 def format_diff_rows(rows: list[DiffLine]) -> list[Text | str]:
     rendered: list[Text | str] = []
