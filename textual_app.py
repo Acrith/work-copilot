@@ -117,13 +117,13 @@ class WorkCopilotTextualApp(App):
         self.is_agent_running = False
 
 
-    def _set_running(self, is_agent_running: bool) -> None:
-        self.is_agent_running = is_agent_running
+    def _set_running(self, is_running: bool) -> None:
+        self.is_agent_running = is_running
 
         prompt = self.query_one("#prompt-input", Input)
-        prompt.disabled = is_agent_running
+        prompt.disabled = is_running
 
-        if is_agent_running:
+        if is_running:
             prompt.placeholder = "Agent is running..."
             self.sub_title = "Running"
         else:
@@ -292,10 +292,10 @@ class WorkCopilotTextualApp(App):
         self._log_markup("[bold #88c0d0]Work Copilot Textual shell[/]")
         self._log_blank()
         self._log_system_message(
-            "This TUI layout is now wired, but model turns are not yet enabled here."
+            "Textual mode can run normal prompts. Write/exec approvals are denied safely for now."
         )
         self._log_system_message(
-            "Use the normal interactive CLI for agent execution for now."
+            "Use the interactive CLI for write/exec tasks until Textual approval UI is implemented."
         )
         self._log_blank()
         self._log_markup(
@@ -305,7 +305,8 @@ class WorkCopilotTextualApp(App):
         self.query_one("#prompt-input", Input).focus()
 
     def _refresh_sidebar(self) -> None:
-        run_status = "running" if self.is_agent_running else "idle"
+        run_status = "RUNNING" if self.is_agent_running else "idle"
+        run_status_style = "#ebcb8b" if self.is_agent_running else "#7f8ea3"
         logging_status = "enabled" if self.config.log_run else "disabled"
 
         sidebar = self.query_one("#sidebar", Static)
@@ -324,7 +325,7 @@ class WorkCopilotTextualApp(App):
                     self.config.workspace,
                     "",
                     "[bold #88c0d0]State[/]",
-                    f"[#7f8ea3]Status[/]          {run_status}",
+                    f"[#7f8ea3]Status[/]          [{run_status_style}]{run_status}[/]",
                     f"[#7f8ea3]Session id[/]      {self.state.interactive_session_id}",
                     f"[#7f8ea3]Context index[/]   {self.state.context_index}",
                     f"[#7f8ea3]Turn index[/]      {self.state.turn_index}",
