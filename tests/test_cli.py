@@ -86,3 +86,29 @@ def test_build_cli_config_resolves_default_model(tmp_path):
     config = build_cli_config(args)
 
     assert config.model
+
+
+def test_parse_args_accepts_tui_without_prompt():
+    args = parse_args(["--tui"])
+
+    assert args.tui is True
+    assert args.user_prompt is None
+
+
+def test_parse_args_rejects_tui_with_prompt():
+    with pytest.raises(SystemExit):
+        parse_args(["--tui", "List files"])
+
+
+def test_parse_args_rejects_tui_with_interactive():
+    with pytest.raises(SystemExit):
+        parse_args(["--tui", "--interactive"])
+
+
+def test_build_cli_config_resolves_tui_mode(tmp_path):
+    args = parse_args(["--workspace", str(tmp_path), "--tui"])
+
+    config = build_cli_config(args)
+
+    assert config.mode == "tui"
+    assert config.workspace == str(tmp_path)

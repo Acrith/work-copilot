@@ -11,13 +11,15 @@ from rich.console import Console
 
 from agent_runtime import run_agent
 from interactive_cli import run_interactive_session
+from interactive_session import build_interactive_session_config
 from permissions import PermissionContext, PermissionMode, load_rules
 from providers.base import Provider
 from providers.factory import DEFAULT_PROVIDER, create_provider, get_default_model
 from run_logging import RunLogger
+from textual_app import WorkCopilotTextualApp
 
 console = Console()
-CliMode = Literal["one-shot", "interactive"]
+CliMode = Literal["one-shot", "interactive", "tui"]
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,12 @@ class CliConfig:
 def build_cli_config(args: argparse.Namespace) -> CliConfig:
     workspace = resolve_workspace(args.workspace)
     model = args.model or get_default_model(args.provider)
-    mode: CliMode = "interactive" if args.interactive else "one-shot"
+    if args.tui:
+        mode: CliMode = "tui"
+    elif args.interactive:
+        mode = "interactive"
+    else:
+        mode = "one-shot"
 
     return CliConfig(
         mode=mode,
@@ -127,6 +134,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print resolved configuration and exit",
     )
 
+    parser.add_argument(
+       "--tui",
+        action="store_true",
+        help="Start the experimental Textual TUI",
+    )
+
     return parser
 
 
@@ -141,11 +154,21 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
     if args.max_iterations < 1:
         parser.error("--max-iterations must be at least 1")
 
-    if args.interactive and args.user_prompt:
-        parser.error("Use either --interactive or a one-shot user_prompt, not both")
+    if args.interactive and args.tui:
+        parser.error("Use either --interactive or --tui, not both")
 
-    if not args.interactive and not args.show_config and not args.user_prompt:
-        parser.error("user_prompt is required unless --interactive or --show-config is used")
+    if args.user_prompt and (args.interactive or args.tui):
+        parser.error("Use either a session mode or a one-shot user_prompt, not both")
+
+    if (
+        not args.interactive
+        and not args.tui
+        and not args.show_config
+        and not args.user_prompt
+    ):
+        parser.error(
+            "user_prompt is required unless --interactive, --tui, or --show-config is used"
+        )
 
 
 def resolve_workspace(workspace_arg: str) -> str:
@@ -188,6 +211,32 @@ def build_one_shot_run_logger(config: CliConfig) -> RunLogger | None:
             "user_prompt": config.user_prompt,
         },
     )
+
+
+def run_tui(
+    *,
+    config: CliConfig,
+    provider_factory: Callable[[], Provider],
+) -> int:
+    interactive_config = build_interactive_session_config(
+        provider_name=config.provider_name,
+        model=config.model,
+        workspace=config.workspace,
+        permission_mode=config.permission_mode,
+        verbose=config.verbose,
+        verbose_functions=config.verbose_functions,
+        max_iterations=config.max_iterations,
+        log_run=config.log_run,
+        log_dir=config.log_dir,
+    )
+
+    app = WorkCopilotTextualApp(
+        config=interactive_config,
+        provider_factory=provider_factory,
+    )
+    app.run()
+
+    return 0
 
 
 def run_one_shot(
@@ -244,6 +293,12 @@ def run_cli(argv: list[str] | None = None) -> int:
 
     permission_context = build_permission_context(config)
     provider_factory = build_provider_factory(config)
+
+    if config.mode == "tui":
+        return run_tui(
+            config=config,
+            provider_factory=provider_factory,
+        )
 
     if config.mode == "interactive":
         return run_interactive_session(
