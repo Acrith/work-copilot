@@ -1,7 +1,6 @@
 # interactive_cli.py
 
 from collections.abc import Callable
-from uuid import uuid4
 
 from rich.console import Console
 
@@ -10,6 +9,9 @@ from interactive_session import (
     InteractiveSessionConfig,
     InteractiveSessionState,
     build_interactive_log_dir,
+    build_interactive_session_config,
+    create_interactive_session_state,
+    reset_interactive_context,
     run_interactive_model_turn,
 )
 from permissions import PermissionContext
@@ -66,7 +68,7 @@ def run_interactive_session(
     log_run: bool,
     log_dir: str,
 ) -> int:
-    config = InteractiveSessionConfig(
+    config = build_interactive_session_config(
         provider_name=provider_name,
         model=model,
         workspace=workspace,
@@ -78,10 +80,7 @@ def run_interactive_session(
         log_dir=log_dir,
     )
 
-    state = InteractiveSessionState(
-        provider=provider_factory(),
-        interactive_session_id=uuid4().hex[:12],
-    )
+    state = create_interactive_session_state(provider_factory)
 
     console.print("Work Copilot interactive mode", style="bold")
     console.print("Type /help for commands. Type /exit to quit.", style="dim")
@@ -123,8 +122,10 @@ def run_interactive_session(
             continue
 
         if command == "clear":
-            state.provider = provider_factory()
-            state.context_index += 1
+            reset_interactive_context(
+                state=state,
+                provider_factory=provider_factory,
+            )
             console.print("Session cleared.", style="green")
             continue
 
