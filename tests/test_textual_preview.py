@@ -159,7 +159,7 @@ def test_format_preview_rows_uses_structured_diff_rows():
     )
 
     assert [str(row) for row in rendered] == [
-        "@@ -1,2 +1,2 @@",
+        "change -1,2 +1,2",
         " old  new  content",
         "   1       -old",
         "        1  +new",
@@ -205,7 +205,7 @@ def test_format_diff_rows_adds_column_header_before_first_structured_row():
     rendered = format_diff_rows(rows)
 
     assert [str(row) for row in rendered] == [
-        "@@ -1,1 +1,1 @@",
+        "change -1,1 +1,1",
         " old  new  content",
         "   1       -old",
         "        1  +new",
