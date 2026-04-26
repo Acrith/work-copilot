@@ -501,3 +501,71 @@ def test_list_request_conversations_requires_request_id():
 
     with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
         client.list_request_conversations(request_id="")
+
+
+def test_get_conversation_content_allows_relative_api_url(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"description": "Conversation body"}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.get_conversation_content(
+        "/api/v3/requests/55478/_conversations/296479/content"
+    )
+
+    assert result == {"description": "Conversation body"}
+
+    parsed_url = urlparse(captured["request"].full_url)
+    assert parsed_url.scheme == "https"
+    assert parsed_url.netloc == "hd.exactforestall.com"
+    assert parsed_url.path == "/api/v3/requests/55478/_conversations/296479/content"
+
+
+def test_get_conversation_content_allows_same_host_absolute_api_url(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"description": "Conversation body"}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.get_conversation_content(
+        "https://hd.exactforestall.com/api/v3/requests/55478/_conversations/296479/content"
+    )
+
+    assert result == {"description": "Conversation body"}
+
+    parsed_url = urlparse(captured["request"].full_url)
+    assert parsed_url.netloc == "hd.exactforestall.com"
+    assert parsed_url.path == "/api/v3/requests/55478/_conversations/296479/content"
+
+
+def test_get_conversation_content_rejects_external_url():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="configured ServiceDesk Plus host"):
+        client.get_conversation_content(
+            "https://example.com/api/v3/requests/55478/_conversations/296479/content"
+        )
+
+
+def test_get_conversation_content_rejects_non_api_path():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="ServiceDesk API path"):
+        client.get_conversation_content("/reports/private")
+
+
+def test_get_conversation_content_requires_content_url():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="content_url is required"):
+        client.get_conversation_content("")

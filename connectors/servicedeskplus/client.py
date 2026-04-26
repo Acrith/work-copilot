@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from connectors.servicedeskplus.config import ServiceDeskPlusConfig
@@ -202,3 +202,30 @@ class ServiceDeskPlusClient:
             f"/api/v3/requests/{request_id}/_conversations",
             input_data,
         )
+
+
+    def get_conversation_content(self, content_url: str) -> dict[str, Any]:
+        if not content_url:
+            raise ServiceDeskPlusError("content_url is required.")
+
+        base_url = self._base_url()
+        base_netloc = urlparse(base_url).netloc
+
+        if content_url.startswith("/"):
+            path = content_url
+        else:
+            parsed_content_url = urlparse(content_url)
+
+            if parsed_content_url.netloc != base_netloc:
+                raise ServiceDeskPlusError(
+                    "content_url must belong to the configured ServiceDesk Plus host."
+                )
+
+            path = parsed_content_url.path
+            if parsed_content_url.query:
+                path = f"{path}?{parsed_content_url.query}"
+
+        if not path.startswith("/api/"):
+            raise ServiceDeskPlusError("content_url must point to a ServiceDesk API path.")
+
+        return self.get(path)

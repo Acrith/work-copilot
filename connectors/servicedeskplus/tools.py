@@ -155,3 +155,20 @@ def servicedesk_get_request_conversations(
         )
     except ServiceDeskPlusError as error:
         return {"error": str(error)}
+
+
+def servicedesk_get_request_conversation_content(
+    content_url: str,
+    working_directory: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    config = load_servicedeskplus_config()
+
+    if not config.enabled:
+        return {"error": "ServiceDesk Plus connector is disabled."}
+
+    try:
+        client = ServiceDeskPlusClient(config)
+        return client.get_conversation_content(content_url=content_url)
+    except ServiceDeskPlusError as error:
+        return {"error": str(error)}

@@ -464,3 +464,67 @@ def test_get_request_conversations_returns_client_error(monkeypatch):
     result = tools_module.servicedesk_get_request_conversations(request_id="55906")
 
     assert result == {"error": "boom"}
+
+
+def test_get_request_conversation_content_returns_error_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=False),
+    )
+
+    result = tools_module.servicedesk_get_request_conversation_content(
+        content_url="/api/v3/example"
+    )
+
+    assert result == {"error": "ServiceDesk Plus connector is disabled."}
+
+
+def test_get_request_conversation_content_uses_client_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def get_conversation_content(self, content_url):
+            captured["content_url"] = content_url
+            return {"description": "Conversation body"}
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_conversation_content(
+        content_url="/api/v3/requests/55478/_conversations/296479/content"
+    )
+
+    assert result == {"description": "Conversation body"}
+    assert captured["content_url"] == "/api/v3/requests/55478/_conversations/296479/content"
+
+
+def test_get_request_conversation_content_returns_client_error(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def get_conversation_content(self, content_url):
+            raise tools_module.ServiceDeskPlusError("boom")
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_conversation_content(
+        content_url="/api/v3/example"
+    )
+
+    assert result == {"error": "boom"}

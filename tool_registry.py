@@ -5,6 +5,7 @@ from agent_types import ToolSpec
 from connectors.servicedeskplus.tools import (
     servicedesk_get_request,
     servicedesk_get_request_attachments,
+    servicedesk_get_request_conversation_content,
     servicedesk_get_request_conversations,
     servicedesk_get_request_notes,
     servicedesk_list_request_filters,
@@ -524,6 +525,32 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
         category=ToolCategory.CONNECTOR_READ,
         connector="servicedeskplus",
         resource_type="request_conversation",
+    ),
+    "servicedesk_get_request_conversation_content": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_get_request_conversation_content",
+            description=(
+                "Gets the text/content for a ServiceDesk Plus request conversation entry "
+                "using a content_url returned by servicedesk_get_request_conversations. "
+                "This is a read-only connector tool and only accepts ServiceDesk content URLs."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "content_url": {
+                        "type": "string",
+                        "description": (
+                            "The content_url value from a ServiceDesk request conversation entry."
+                        ),
+                    },
+                },
+                "required": ["content_url"],
+            },
+        ),
+        handler=servicedesk_get_request_conversation_content,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request_conversation_content",
     ),
 }
 
