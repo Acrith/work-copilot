@@ -1,6 +1,7 @@
 # textual_app.py
 
 from collections.abc import Callable
+from pathlib import Path
 from threading import Event
 
 from rich.console import RenderableType
@@ -12,11 +13,14 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from approval import ApprovalRequest, ApprovalResponse
+from draft_exports import build_servicedesk_draft_path, save_text_draft
 from interactive_commands import (
     build_interactive_help_renderable,
+    build_servicedesk_draft_reply_prompt,
     build_servicedesk_triage_prompt,
     format_interactive_status,
     parse_interactive_command,
+    parse_sdp_request_id,
     parse_triage_limit,
 )
 from interactive_session import (
@@ -268,7 +272,11 @@ class WorkCopilotTextualApp(App):
 
 
     @work(thread=True)
-    def _run_model_turn_worker(self, user_prompt: str) -> None:
+    def _run_model_turn_worker(
+        self,
+        user_prompt: str,
+        draft_output_path: str | None = None,
+    ) -> None:
         log = self.query_one("#activity-log", RichLog)
         event_sink = TextualEventSink(
             log,
@@ -293,6 +301,13 @@ class WorkCopilotTextualApp(App):
                 terminal_output=False,
                 approval_handler=approval_handler,
             )
+
+            if final_text is not None and draft_output_path is not None:
+                saved_path = save_text_draft(Path(draft_output_path), final_text)
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"Draft saved to: {saved_path}",
+                )
 
             if final_text is None:
                 self.call_from_thread(
@@ -347,7 +362,7 @@ class WorkCopilotTextualApp(App):
             self._log("Session cleared.")
             return
 
-        if command == "triage_servicedesk":
+        if command in {"triage_servicedesk", "sdp_triage"}:
             limit = parse_triage_limit(user_prompt)
             triage_prompt = build_servicedesk_triage_prompt(limit)
 
@@ -357,6 +372,31 @@ class WorkCopilotTextualApp(App):
             )
             self._set_running(True)
             self._run_model_turn_worker(triage_prompt)
+            return
+
+        if command == "sdp_draft_reply":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp draft-reply <request_id>")
+                return
+
+            draft_prompt = build_servicedesk_draft_reply_prompt(request_id)
+            draft_path = build_servicedesk_draft_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Drafting ServiceDesk reply for request {request_id}."
+            )
+            self._set_running(True)
+            self._run_model_turn_worker(
+                draft_prompt,
+                draft_output_path=str(draft_path),
+            )
             return
 
         if command == "unknown":
@@ -378,7 +418,7 @@ class WorkCopilotTextualApp(App):
             with Vertical(id="main-area"):
                 yield RichLog(id="activity-log", wrap=True)
                 yield Input(
-                    placeholder="Type /help, /status, /clear, or /exit",
+                    placeholder="Type /help for more commands or /exit",
                     id="prompt-input",
                 )
 

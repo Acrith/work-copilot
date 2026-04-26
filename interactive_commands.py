@@ -12,7 +12,8 @@ InteractiveCommand = Literal[
     "clear",
     "help",
     "status",
-    "triage_servicedesk",
+    "sdp_draft_reply",
+    "sdp_triage",
     "unknown",
 ]
 
@@ -20,24 +21,23 @@ COMMAND_HELP = [
     ("/help", "Show this help"),
     ("/status", "Show current session settings"),
     ("/clear", "Reset provider/session state"),
-    ("/triage servicedesk <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
+    ("/sdp triage <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
+    ("/sdp draft-reply <id>", "Draft a requester reply and save it locally"),
     ("/exit", "Exit interactive mode"),
 ]
 
 
-def parse_interactive_command(user_input: str) -> InteractiveCommand | None:
+def parse_interactive_command(user_input: str) -> InteractiveCommand:
     stripped = user_input.strip()
 
     if not stripped.startswith("/"):
         return None
 
-    command = stripped.split(maxsplit=1)[0].lower()
+    parts = stripped.split()
+    command = parts[0].lower()
 
     if command in {"/exit", "/quit"}:
         return "exit"
-
-    if command == "/clear":
-        return "clear"
 
     if command == "/help":
         return "help"
@@ -45,10 +45,21 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand | None:
     if command == "/status":
         return "status"
 
+    if command == "/clear":
+        return "clear"
+
     if command == "/triage":
-        parts = stripped.split()
         if len(parts) >= 2 and parts[1].lower() in {"servicedesk", "sdp", "tickets"}:
             return "triage_servicedesk"
+        return "unknown"
+
+    if command == "/sdp":
+        if len(parts) >= 2 and parts[1].lower() == "triage":
+            return "sdp_triage"
+
+        if len(parts) >= 2 and parts[1].lower() in {"draft-reply", "draft_reply", "reply"}:
+            return "sdp_draft_reply"
+
         return "unknown"
 
     return "unknown"
@@ -110,15 +121,15 @@ def format_interactive_status(
 def parse_triage_limit(user_input: str, *, default: int = 10, maximum: int = 20) -> int:
     parts = user_input.strip().split()
 
-    if len(parts) < 3:
-        return default
+    for part in parts[2:]:
+        try:
+            requested = int(part)
+        except ValueError:
+            continue
 
-    try:
-        requested = int(parts[2])
-    except ValueError:
-        return default
+        return max(1, min(requested, maximum))
 
-    return max(1, min(requested, maximum))
+    return default
 
 
 def build_servicedesk_triage_prompt(limit: int = 10) -> str:
@@ -166,4 +177,51 @@ def build_servicedesk_triage_prompt(limit: int = 10) -> str:
         "Do not add notes. Do not send replies. Do not execute commands."
         "Limit conversation content fetching to the tickets where it is most useful, "
         "especially closeable, ambiguous, or automation-candidate tickets.\n"
+    )
+
+
+def parse_sdp_request_id(user_input: str) -> str | None:
+    parts = user_input.strip().split()
+
+    if len(parts) < 3:
+        return None
+
+    request_id = parts[2].strip()
+
+    if not request_id:
+        return None
+
+    return request_id
+
+
+def build_servicedesk_draft_reply_prompt(request_id: str) -> str:
+    return (
+        f"Prepare a ServiceDesk reply draft for request {request_id}.\n\n"
+        "Use this workflow:\n"
+        "1. Read the request details.\n"
+        "2. Read request notes.\n"
+        "3. Read attachment metadata. Do not download or inspect attachment contents.\n"
+        "4. Read request conversations.\n"
+        "5. When conversation entries include content_url values and the content is needed, "
+        "fetch the conversation content.\n\n"
+        "Return a concise draft suitable for the requester. If the situation is unclear, "
+        "draft a question asking for the missing information instead of pretending the issue "
+        "is resolved.\n\n"
+        "Use this output structure:\n\n"
+        "# ServiceDesk reply draft\n\n"
+        f"Ticket: {request_id}\n"
+        "Reply type: public requester reply\n\n"
+        "## Draft reply\n\n"
+        "<write the reply text here>\n\n"
+        "## Internal reasoning\n\n"
+        "<briefly explain why this reply is appropriate>\n\n"
+        "## Safety notes\n\n"
+        "<mention uncertainties, missing information, or risky assumptions>\n\n"
+        "Important rules:\n"
+        "- Use only read-only ServiceDesk tools.\n"
+        "- Do not update ServiceDesk.\n"
+        "- Do not add notes.\n"
+        "- Do not send replies.\n"
+        "- Do not execute commands.\n"
+        "- Do not claim attachment contents were inspected."
     )
