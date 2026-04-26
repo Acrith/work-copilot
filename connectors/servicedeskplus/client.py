@@ -172,3 +172,33 @@ class ServiceDeskPlusClient:
             "request_id": request_id,
             "attachments": attachments,
         }
+
+    
+    def list_request_conversations(
+        self,
+        *,
+        request_id: str,
+        row_count: int = 20,
+        start_index: int = 1,
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        safe_row_count = max(1, min(row_count, 50))
+        safe_start_index = max(1, start_index)
+
+        input_data = {
+            "list_info": {
+                "row_count": safe_row_count,
+                "start_index": safe_start_index,
+                "sort_order": sort_order,
+            },
+            "system_notifications": False,
+            "notes": True,
+        }
+
+        return self.get_with_input_data(
+            f"/api/v3/requests/{request_id}/_conversations",
+            input_data,
+        )

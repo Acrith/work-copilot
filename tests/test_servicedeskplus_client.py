@@ -425,3 +425,79 @@ def test_get_request_attachments_requires_request_id():
 
     with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
         client.get_request_attachments("")
+
+
+def test_list_request_conversations_calls_expected_endpoint_and_input_data(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(
+            b'{"conversations": [{"id": "conv-1", "description": "Test reply"}]}'
+        )
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.list_request_conversations(
+        request_id="55906",
+        row_count=10,
+        start_index=2,
+        sort_order="asc",
+    )
+
+    assert result == {
+        "conversations": [{"id": "conv-1", "description": "Test reply"}]
+    }
+
+    request = captured["request"]
+    parsed_url = urlparse(request.full_url)
+
+    assert parsed_url.scheme == "https"
+    assert parsed_url.netloc == "hd.exactforestall.com"
+    assert parsed_url.path == "/api/v3/requests/55906/_conversations"
+    assert captured["timeout"] == 30
+
+    query = parse_qs(parsed_url.query)
+    assert "input_data" in query
+
+    input_data = json.loads(query["input_data"][0])
+
+    assert input_data == {
+        "list_info": {
+            "row_count": 10,
+            "start_index": 2,
+            "sort_order": "asc",
+        },
+        "system_notifications": False,
+        "notes": True,
+    }
+
+
+def test_list_request_conversations_caps_row_count(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"conversations": []}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    client.list_request_conversations(request_id="55906", row_count=999)
+
+    parsed_url = urlparse(captured["request"].full_url)
+    query = parse_qs(parsed_url.query)
+    input_data = json.loads(query["input_data"][0])
+
+    assert input_data["list_info"]["row_count"] == 50
+
+
+def test_list_request_conversations_requires_request_id():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
+        client.list_request_conversations(request_id="")
