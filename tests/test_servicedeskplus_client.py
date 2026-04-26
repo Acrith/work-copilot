@@ -261,3 +261,167 @@ def test_get_request_requires_request_id():
 
     with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
         client.get_request("")
+
+
+def test_list_request_notes_calls_expected_endpoint_and_input_data(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(
+            b'{"notes": [{"id": "note-1", "description": "Test note"}]}'
+        )
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.list_request_notes(
+        request_id="55906",
+        row_count=10,
+        start_index=2,
+        sort_order="asc",
+    )
+
+    assert result == {"notes": [{"id": "note-1", "description": "Test note"}]}
+
+    request = captured["request"]
+    parsed_url = urlparse(request.full_url)
+
+    assert parsed_url.scheme == "https"
+    assert parsed_url.netloc == "hd.exactforestall.com"
+    assert parsed_url.path == "/api/v3/requests/55906/notes"
+    assert captured["timeout"] == 30
+
+    query = parse_qs(parsed_url.query)
+    assert "input_data" in query
+
+    input_data = json.loads(query["input_data"][0])
+
+    assert input_data == {
+        "list_info": {
+            "row_count": 10,
+            "start_index": 2,
+            "sort_field": "created_time",
+            "sort_order": "asc",
+        },
+    }
+
+    headers = {key.lower(): value for key, value in request.header_items()}
+    assert headers["accept"] == "application/vnd.manageengine.sdp.v3+json"
+    assert headers["content-type"] == "application/x-www-form-urlencoded"
+    assert headers["authtoken"] == "secret-token"
+
+
+def test_list_request_notes_caps_row_count(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"notes": []}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    client.list_request_notes(request_id="55906", row_count=999)
+
+    parsed_url = urlparse(captured["request"].full_url)
+    query = parse_qs(parsed_url.query)
+    input_data = json.loads(query["input_data"][0])
+
+    assert input_data["list_info"]["row_count"] == 50
+
+
+def test_list_request_notes_normalizes_start_index(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"notes": []}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    client.list_request_notes(request_id="55906", start_index=-5)
+
+    parsed_url = urlparse(captured["request"].full_url)
+    query = parse_qs(parsed_url.query)
+    input_data = json.loads(query["input_data"][0])
+
+    assert input_data["list_info"]["start_index"] == 1
+
+
+def test_list_request_notes_requires_request_id():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
+        client.list_request_notes(request_id="")
+
+
+def test_get_request_attachments_returns_metadata(monkeypatch):
+    def fake_get_request(self, request_id):
+        assert request_id == "55906"
+        return {
+            "request": {
+                "id": "55906",
+                "subject": "Test ticket",
+                "attachments": [
+                    {
+                        "id": "attachment-1",
+                        "name": "screenshot.png",
+                        "content_type": "image/png",
+                        "size": "12345",
+                    }
+                ],
+            }
+        }
+
+    monkeypatch.setattr(ServiceDeskPlusClient, "get_request", fake_get_request)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.get_request_attachments("55906")
+
+    assert result == {
+        "request_id": "55906",
+        "attachments": [
+            {
+                "id": "attachment-1",
+                "name": "screenshot.png",
+                "content_type": "image/png",
+                "size": "12345",
+            }
+        ],
+    }
+
+
+def test_get_request_attachments_returns_empty_list_when_missing(monkeypatch):
+    def fake_get_request(self, request_id):
+        assert request_id == "55906"
+        return {
+            "request": {
+                "id": "55906",
+                "subject": "Test ticket",
+            }
+        }
+
+    monkeypatch.setattr(ServiceDeskPlusClient, "get_request", fake_get_request)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.get_request_attachments("55906")
+
+    assert result == {
+        "request_id": "55906",
+        "attachments": [],
+    }
+
+
+def test_get_request_attachments_requires_request_id():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
+        client.get_request_attachments("")

@@ -88,3 +88,45 @@ def servicedesk_get_request(
         return client.get_request(request_id=request_id)
     except ServiceDeskPlusError as error:
         return {"error": str(error)}
+
+
+def servicedesk_get_request_notes(
+    request_id: str,
+    row_count: int = 20,
+    start_index: int = 1,
+    sort_order: str = "desc",
+    working_directory: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    config = load_servicedeskplus_config()
+
+    if not config.enabled:
+        return {"error": "ServiceDesk Plus connector is disabled."}
+
+    try:
+        client = ServiceDeskPlusClient(config)
+        return client.list_request_notes(
+            request_id=request_id,
+            row_count=row_count,
+            start_index=start_index,
+            sort_order=sort_order,
+        )
+    except ServiceDeskPlusError as error:
+        return {"error": str(error)}
+
+
+def servicedesk_get_request_attachments(
+    request_id: str,
+    working_directory: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    config = load_servicedeskplus_config()
+
+    if not config.enabled:
+        return {"error": "ServiceDesk Plus connector is disabled."}
+
+    try:
+        client = ServiceDeskPlusClient(config)
+        return client.get_request_attachments(request_id=request_id)
+    except ServiceDeskPlusError as error:
+        return {"error": str(error)}

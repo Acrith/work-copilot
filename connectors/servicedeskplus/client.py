@@ -129,3 +129,46 @@ class ServiceDeskPlusClient:
             raise ServiceDeskPlusError("request_id is required.")
 
         return self.get(f"/api/v3/requests/{request_id}")
+
+
+    def list_request_notes(
+        self,
+        *,
+        request_id: str,
+        row_count: int = 20,
+        start_index: int = 1,
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        safe_row_count = max(1, min(row_count, 50))
+        safe_start_index = max(1, start_index)
+
+        input_data = {
+            "list_info": {
+                "row_count": safe_row_count,
+                "start_index": safe_start_index,
+                "sort_field": "created_time",
+                "sort_order": sort_order,
+            },
+        }
+
+        return self.get_with_input_data(
+            f"/api/v3/requests/{request_id}/notes",
+            input_data,
+        )
+
+    
+    def get_request_attachments(self, request_id: str) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        request_data = self.get_request(request_id)
+        request = request_data.get("request", {})
+        attachments = request.get("attachments", [])
+
+        return {
+            "request_id": request_id,
+            "attachments": attachments,
+        }
