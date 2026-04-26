@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from connectors.servicedeskplus.config import ServiceDeskPlusConfig
@@ -129,3 +129,103 @@ class ServiceDeskPlusClient:
             raise ServiceDeskPlusError("request_id is required.")
 
         return self.get(f"/api/v3/requests/{request_id}")
+
+
+    def list_request_notes(
+        self,
+        *,
+        request_id: str,
+        row_count: int = 20,
+        start_index: int = 1,
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        safe_row_count = max(1, min(row_count, 50))
+        safe_start_index = max(1, start_index)
+
+        input_data = {
+            "list_info": {
+                "row_count": safe_row_count,
+                "start_index": safe_start_index,
+                "sort_field": "created_time",
+                "sort_order": sort_order,
+            },
+        }
+
+        return self.get_with_input_data(
+            f"/api/v3/requests/{request_id}/notes",
+            input_data,
+        )
+
+    
+    def get_request_attachments(self, request_id: str) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        request_data = self.get_request(request_id)
+        request = request_data.get("request", {})
+        attachments = request.get("attachments", [])
+
+        return {
+            "request_id": request_id,
+            "attachments": attachments,
+        }
+
+    
+    def list_request_conversations(
+        self,
+        *,
+        request_id: str,
+        row_count: int = 20,
+        start_index: int = 1,
+        sort_order: str = "desc",
+    ) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        safe_row_count = max(1, min(row_count, 50))
+        safe_start_index = max(1, start_index)
+
+        input_data = {
+            "list_info": {
+                "row_count": safe_row_count,
+                "start_index": safe_start_index,
+                "sort_order": sort_order,
+            },
+            "system_notifications": False,
+            "notes": True,
+        }
+
+        return self.get_with_input_data(
+            f"/api/v3/requests/{request_id}/_conversations",
+            input_data,
+        )
+
+
+    def get_conversation_content(self, content_url: str) -> dict[str, Any]:
+        if not content_url:
+            raise ServiceDeskPlusError("content_url is required.")
+
+        base_url = self._base_url()
+        base_netloc = urlparse(base_url).netloc
+
+        if content_url.startswith("/"):
+            path = content_url
+        else:
+            parsed_content_url = urlparse(content_url)
+
+            if parsed_content_url.netloc != base_netloc:
+                raise ServiceDeskPlusError(
+                    "content_url must belong to the configured ServiceDesk Plus host."
+                )
+
+            path = parsed_content_url.path
+            if parsed_content_url.query:
+                path = f"{path}?{parsed_content_url.query}"
+
+        if not path.startswith("/api/"):
+            raise ServiceDeskPlusError("content_url must point to a ServiceDesk API path.")
+
+        return self.get(path)

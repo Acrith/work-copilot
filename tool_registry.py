@@ -4,6 +4,10 @@ from typing import Any, Callable
 from agent_types import ToolSpec
 from connectors.servicedeskplus.tools import (
     servicedesk_get_request,
+    servicedesk_get_request_attachments,
+    servicedesk_get_request_conversation_content,
+    servicedesk_get_request_conversations,
+    servicedesk_get_request_notes,
     servicedesk_list_request_filters,
     servicedesk_list_requests,
     servicedesk_status,
@@ -421,6 +425,132 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
         category=ToolCategory.CONNECTOR_READ,
         connector="servicedeskplus",
         resource_type="request",
+    ),
+    "servicedesk_get_request_notes": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_get_request_notes",
+            description=(
+                "Gets notes for a ServiceDesk Plus request. "
+                "This is a read-only connector tool."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "description": "ServiceDesk Plus request ID.",
+                    },
+                    "row_count": {
+                        "type": "integer",
+                        "description": "Number of notes to return. Maximum 50.",
+                        "default": 20,
+                    },
+                    "start_index": {
+                        "type": "integer",
+                        "description": "1-based start index for paging.",
+                        "default": 1,
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "description": "Sort order: asc or desc.",
+                        "default": "desc",
+                    },
+                },
+                "required": ["request_id"],
+            },
+        ),
+        handler=servicedesk_get_request_notes,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request_note",
+    ),
+    "servicedesk_get_request_attachments": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_get_request_attachments",
+            description=(
+                "Gets attachment metadata for a ServiceDesk Plus request, such as filename, "
+                "size, and content type. This does not download or inspect attachment contents."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "description": "ServiceDesk Plus request ID.",
+                    },
+                },
+                "required": ["request_id"],
+            },
+        ),
+        handler=servicedesk_get_request_attachments,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request_attachment",
+    ),
+    "servicedesk_get_request_conversations": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_get_request_conversations",
+            description=(
+                "Gets conversation history for a ServiceDesk Plus request, such as requester "
+                "replies, technician replies, and visible request conversation entries. "
+                "This is a read-only connector tool."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "description": "ServiceDesk Plus request ID.",
+                    },
+                    "row_count": {
+                        "type": "integer",
+                        "description": "Number of conversation entries to return. Maximum 50.",
+                        "default": 20,
+                    },
+                    "start_index": {
+                        "type": "integer",
+                        "description": "1-based start index for paging.",
+                        "default": 1,
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "description": "Sort order: asc or desc.",
+                        "default": "desc",
+                    },
+                },
+                "required": ["request_id"],
+            },
+        ),
+        handler=servicedesk_get_request_conversations,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request_conversation",
+    ),
+    "servicedesk_get_request_conversation_content": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_get_request_conversation_content",
+            description=(
+                "Gets the text/content for a ServiceDesk Plus request conversation entry "
+                "using a content_url returned by servicedesk_get_request_conversations. "
+                "This is a read-only connector tool and only accepts ServiceDesk content URLs."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "content_url": {
+                        "type": "string",
+                        "description": (
+                            "The content_url value from a ServiceDesk request conversation entry."
+                        ),
+                    },
+                },
+                "required": ["content_url"],
+            },
+        ),
+        handler=servicedesk_get_request_conversation_content,
+        category=ToolCategory.CONNECTOR_READ,
+        connector="servicedeskplus",
+        resource_type="request_conversation_content",
     ),
 }
 

@@ -220,3 +220,311 @@ def test_get_request_returns_client_error(monkeypatch):
     result = tools_module.servicedesk_get_request(request_id="55906")
 
     assert result == {"error": "boom"}
+
+
+def test_get_request_notes_returns_error_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=False),
+    )
+
+    result = tools_module.servicedesk_get_request_notes(request_id="55906")
+
+    assert result == {"error": "ServiceDesk Plus connector is disabled."}
+
+
+def test_get_request_notes_uses_client_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def list_request_notes(
+            self,
+            *,
+            request_id,
+            row_count,
+            start_index,
+            sort_order,
+        ):
+            captured["request_id"] = request_id
+            captured["row_count"] = row_count
+            captured["start_index"] = start_index
+            captured["sort_order"] = sort_order
+            return {"notes": [{"id": "note-1"}]}
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_notes(
+        request_id="55906",
+        row_count=5,
+        start_index=2,
+        sort_order="asc",
+    )
+
+    assert result == {"notes": [{"id": "note-1"}]}
+    assert captured == {
+        "request_id": "55906",
+        "row_count": 5,
+        "start_index": 2,
+        "sort_order": "asc",
+    }
+
+
+def test_get_request_notes_returns_client_error(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def list_request_notes(
+            self,
+            *,
+            request_id,
+            row_count,
+            start_index,
+            sort_order,
+        ):
+            raise tools_module.ServiceDeskPlusError("boom")
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_notes(request_id="55906")
+
+    assert result == {"error": "boom"}
+
+
+def test_get_request_attachments_returns_error_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=False),
+    )
+
+    result = tools_module.servicedesk_get_request_attachments(request_id="55906")
+
+    assert result == {"error": "ServiceDesk Plus connector is disabled."}
+
+
+def test_get_request_attachments_uses_client_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def get_request_attachments(self, request_id):
+            captured["request_id"] = request_id
+            return {
+                "request_id": request_id,
+                "attachments": [
+                    {
+                        "name": "screenshot.png",
+                        "content_type": "image/png",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_attachments(request_id="55906")
+
+    assert result == {
+        "request_id": "55906",
+        "attachments": [
+            {
+                "name": "screenshot.png",
+                "content_type": "image/png",
+            }
+        ],
+    }
+    assert captured["request_id"] == "55906"
+
+
+def test_get_request_attachments_returns_client_error(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def get_request_attachments(self, request_id):
+            raise tools_module.ServiceDeskPlusError("boom")
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_attachments(request_id="55906")
+
+    assert result == {"error": "boom"}
+
+
+def test_get_request_conversations_returns_error_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=False),
+    )
+
+    result = tools_module.servicedesk_get_request_conversations(request_id="55906")
+
+    assert result == {"error": "ServiceDesk Plus connector is disabled."}
+
+
+def test_get_request_conversations_uses_client_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def list_request_conversations(
+            self,
+            *,
+            request_id,
+            row_count,
+            start_index,
+            sort_order,
+        ):
+            captured["request_id"] = request_id
+            captured["row_count"] = row_count
+            captured["start_index"] = start_index
+            captured["sort_order"] = sort_order
+            return {"conversations": [{"id": "conv-1"}]}
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_conversations(
+        request_id="55906",
+        row_count=5,
+        start_index=2,
+        sort_order="asc",
+    )
+
+    assert result == {"conversations": [{"id": "conv-1"}]}
+    assert captured == {
+        "request_id": "55906",
+        "row_count": 5,
+        "start_index": 2,
+        "sort_order": "asc",
+    }
+
+
+def test_get_request_conversations_returns_client_error(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def list_request_conversations(
+            self,
+            *,
+            request_id,
+            row_count,
+            start_index,
+            sort_order,
+        ):
+            raise tools_module.ServiceDeskPlusError("boom")
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_conversations(request_id="55906")
+
+    assert result == {"error": "boom"}
+
+
+def test_get_request_conversation_content_returns_error_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=False),
+    )
+
+    result = tools_module.servicedesk_get_request_conversation_content(
+        content_url="/api/v3/example"
+    )
+
+    assert result == {"error": "ServiceDesk Plus connector is disabled."}
+
+
+def test_get_request_conversation_content_uses_client_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def get_conversation_content(self, content_url):
+            captured["content_url"] = content_url
+            return {"description": "Conversation body"}
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_conversation_content(
+        content_url="/api/v3/requests/55478/_conversations/296479/content"
+    )
+
+    assert result == {"description": "Conversation body"}
+    assert captured["content_url"] == "/api/v3/requests/55478/_conversations/296479/content"
+
+
+def test_get_request_conversation_content_returns_client_error(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "load_servicedeskplus_config",
+        lambda: make_config(enabled=True),
+    )
+
+    class FakeClient:
+        def __init__(self, config):
+            self.config = config
+
+        def get_conversation_content(self, content_url):
+            raise tools_module.ServiceDeskPlusError("boom")
+
+    monkeypatch.setattr(tools_module, "ServiceDeskPlusClient", FakeClient)
+
+    result = tools_module.servicedesk_get_request_conversation_content(
+        content_url="/api/v3/example"
+    )
+
+    assert result == {"error": "boom"}

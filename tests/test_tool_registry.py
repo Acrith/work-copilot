@@ -68,3 +68,39 @@ def test_servicedesk_get_request_is_registered_as_connector_read():
     assert definition.connector == "servicedeskplus"
     assert definition.resource_type == "request"
     assert "request_id" in definition.spec.parameters["required"]
+
+
+def test_servicedesk_get_request_notes_is_registered_as_connector_read():
+    definition = get_tool_definition("servicedesk_get_request_notes")
+
+    assert definition.category == ToolCategory.CONNECTOR_READ
+    assert definition.connector == "servicedeskplus"
+    assert definition.resource_type == "request_note"
+    assert "request_id" in definition.spec.parameters["required"]
+
+
+def test_servicedesk_get_request_attachments_is_registered_as_connector_read():
+    definition = get_tool_definition("servicedesk_get_request_attachments")
+
+    assert definition.category == ToolCategory.CONNECTOR_READ
+    assert definition.connector == "servicedeskplus"
+    assert definition.resource_type == "request_attachment"
+    assert "request_id" in definition.spec.parameters["required"]
+
+
+def test_servicedesk_get_request_conversations_is_registered_as_connector_read():
+    definition = get_tool_definition("servicedesk_get_request_conversations")
+
+    assert definition.category == ToolCategory.CONNECTOR_READ
+    assert definition.connector == "servicedeskplus"
+    assert definition.resource_type == "request_conversation"
+    assert "request_id" in definition.spec.parameters["required"]
+
+
+def test_servicedesk_get_request_conversation_content_is_registered_as_connector_read():
+    definition = get_tool_definition("servicedesk_get_request_conversation_content")
+
+    assert definition.category == ToolCategory.CONNECTOR_READ
+    assert definition.connector == "servicedeskplus"
+    assert definition.resource_type == "request_conversation_content"
+    assert "content_url" in definition.spec.parameters["required"]
