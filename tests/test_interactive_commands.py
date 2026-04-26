@@ -1,10 +1,12 @@
 # tests/test_interactive_commands.py
 
 from interactive_commands import (
+    build_servicedesk_draft_reply_prompt,
     build_servicedesk_triage_prompt,
     format_interactive_help,
     format_interactive_status,
     parse_interactive_command,
+    parse_sdp_request_id,
     parse_triage_limit,
 )
 from interactive_session import InteractiveSessionConfig, InteractiveSessionState
@@ -63,7 +65,8 @@ def test_format_interactive_help_includes_supported_commands():
     assert "Show this help" in help_text
     assert "/status" in help_text
     assert "/clear" in help_text
-    assert "/triage servicedesk <limit>" in help_text
+    assert "/sdp triage <limit>" in help_text
+    assert "/sdp draft-reply <id>" in help_text
     assert "/exit" in help_text
 
 
@@ -126,22 +129,73 @@ def test_parse_triage_servicedesk_aliases():
     assert parse_interactive_command("/triage tickets") == "triage_servicedesk"
 
 
+def test_parse_sdp_triage_command():
+    assert parse_interactive_command("/sdp triage") == "sdp_triage"
+
+
+def test_parse_sdp_triage_with_limit():
+    assert parse_interactive_command("/sdp triage 5") == "sdp_triage"
+
+
 def test_parse_unknown_triage_target():
     assert parse_interactive_command("/triage coffee") == "unknown"
 
 
+def test_parse_sdp_unknown_subcommand():
+    assert parse_interactive_command("/sdp coffee") == "unknown"
+
+
 def test_parse_triage_limit_defaults():
     assert parse_triage_limit("/triage servicedesk") == 10
+    assert parse_triage_limit("/sdp triage") == 10
 
 
 def test_parse_triage_limit_caps_maximum():
     assert parse_triage_limit("/triage servicedesk 999") == 20
+    assert parse_triage_limit("/sdp triage 999") == 20
+
+
+def test_parse_triage_limit_reads_sdp_limit():
+    assert parse_triage_limit("/sdp triage 7") == 7
 
 
 def test_build_servicedesk_triage_prompt_is_read_only():
     prompt = build_servicedesk_triage_prompt(5)
 
     assert "Read up to 5 requests" in prompt
+    assert "Use only read-only ServiceDesk tools" in prompt
     assert "Do not update tickets" in prompt
     assert "Do not add notes" in prompt
+    assert "Do not send replies" in prompt
     assert "Do not execute commands" in prompt
+    assert "Do not download or inspect attachment contents" in prompt
+
+
+def test_parse_sdp_draft_reply_command():
+    assert parse_interactive_command("/sdp draft-reply 55478") == "sdp_draft_reply"
+
+
+def test_parse_sdp_draft_reply_aliases():
+    assert parse_interactive_command("/sdp draft_reply 55478") == "sdp_draft_reply"
+    assert parse_interactive_command("/sdp reply 55478") == "sdp_draft_reply"
+
+
+def test_parse_sdp_request_id():
+    assert parse_sdp_request_id("/sdp draft-reply 55478") == "55478"
+
+
+def test_parse_sdp_request_id_missing():
+    assert parse_sdp_request_id("/sdp draft-reply") is None
+
+
+def test_build_servicedesk_draft_reply_prompt_is_read_only():
+    prompt = build_servicedesk_draft_reply_prompt("55478")
+
+    assert "request 55478" in prompt
+    assert "Draft reply" in prompt
+    assert "Use only read-only ServiceDesk tools" in prompt
+    assert "Do not update ServiceDesk" in prompt
+    assert "Do not add notes" in prompt
+    assert "Do not send replies" in prompt
+    assert "Do not execute commands" in prompt
+    assert "Do not claim attachment contents were inspected" in prompt
