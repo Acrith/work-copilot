@@ -175,9 +175,9 @@ def build_connector_write_preview(
             [
                 "# ServiceDesk draft reply",
                 "",
-                f"**Action:** Save draft reply",
-                f"**Ticket:** {request_id}",
-                f"**Type:** {draft_type}",
+                "- **Action:** Save draft reply",
+                f"- **Ticket:** {request_id}",
+                f"- **Type:** {draft_type}",
                 "",
                 "## Subject",
                 "",
