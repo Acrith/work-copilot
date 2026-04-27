@@ -283,6 +283,15 @@ def test_build_servicedesk_draft_reply_prompt_includes_chronology_rules():
     assert "Do not list information as missing if a later conversation entry" in prompt
     assert "Do not base the draft on stale missing-information requests" in prompt
 
+def test_build_servicedesk_draft_reply_prompt_includes_tone_guidance():
+    prompt = build_servicedesk_draft_reply_prompt("55478")
+
+    assert "Tone guidance:" in prompt
+    assert "Be friendly, professional, and helpful." in prompt
+    assert "Match the requester's language and formality." in prompt
+    assert "Do not use automatic honorifics like Pan/Pani or Mr/Ms/Mrs unless the conversation already uses them." in prompt
+    assert "Keep replies concise. Provide just enough detail for clarity." in prompt
+
 
 def test_build_servicedesk_draft_reply_prompt_uses_saved_context():
     saved_context = "# ServiceDesk request context\n\nTicket: 55478\n\n## Current state\nready_to_close"
