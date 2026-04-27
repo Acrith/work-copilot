@@ -1,0 +1,133 @@
+id: active_directory.group.add_member
+family: active_directory.group
+name: Add user to Active Directory group
+version: 1
+status: draft_only
+
+description: >
+  Prepares a runbook for adding a user to a specific Active Directory group.
+  In the current workflow, this is mainly used for NAS/file-share access groups
+  or distribution groups used for mailing. The skill covers only the membership
+  addition and validation checklist, not broad access reviews or mailbox-level
+  permissions.
+
+when_to_use:
+  - Ticket asks to add a user to a specific named AD group
+  - Ticket asks to grant NAS or file-share access through an AD group
+  - Ticket asks to add a user to a distribution group or mailing group
+  - Ticket names the target group or provides enough context to identify the group
+  - Ticket references a small, concrete membership addition
+
+when_not_to_use:
+  - Ticket asks to create a new account
+  - Ticket asks to disable or block an account
+  - Ticket asks to remove a user from a group
+  - Ticket asks to change mailbox-level permissions directly, such as Full Access or Send As
+  - Ticket is a broad access review rather than a concrete membership request
+  - Ticket asks for direct Synology/NAS ACL changes outside AD group membership
+  - Ticket asks for file-share access but no target share, group, or owner approval is identifiable
+
+required_inputs:
+  - name: target_user
+    description: User account that should be added to the group.
+    required: true
+  - name: group_name
+    description: Target Active Directory group name, if known.
+    required: true
+  - name: group_purpose
+    description: Whether the group is for NAS/file-share access, distribution mailing, or another clearly identified purpose.
+    required: true
+  - name: requested_resource
+    description: File share, NAS folder, distribution list, or resource that the group controls.
+    required: false
+  - name: business_justification
+    description: Reason for the access or membership change.
+    required: true
+  - name: requester_or_manager_authorization
+    description: Confirmation that the membership change is authorized.
+    required: true
+  - name: resource_or_group_owner_approval
+    description: Approval from the data owner, group owner, mailbox/list owner, or other responsible approver when required.
+    required: false
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for tracking and audit purposes.
+    required: true
+  - name: expiration_date
+    description: Optional expiry date for time-bound access.
+    required: false
+
+derived_outputs:
+  - group_membership_plan
+  - group_purpose_classification
+  - authorization_summary
+  - entitlement_checklist
+  - audit_log_entry
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_membership_plan
+  - change_checklist
+
+systems:
+  - Active Directory
+  - File share
+  - NAS
+  - Microsoft 365
+  - Exchange Online
+
+data_sensitivity:
+  - personal_data
+  - access_rights
+  - audit_information
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+risk_level: high
+
+approval_requirements:
+  - requester or manager authorization
+  - target user identity confirmation
+  - exact group confirmation
+  - group purpose confirmation
+  - resource or group owner approval when required
+  - local policy confirmation when the group is role-bound or sensitive
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_change_checklist
+
+forbidden_actions_now:
+  - add_group_member
+  - remove_group_member
+  - create_account
+  - block_account
+  - modify_mailbox_permissions
+  - modify_file_permissions
+  - modify_synology_permissions
+
+current_manual_adapter:
+  type: manual_review_and_queue
+  notes: >
+    Current handling is a human-reviewed membership change. For NAS or file-share
+    requests, access should be granted through the appropriate AD group when that
+    is the approved access model. Direct Synology or manual ACL changes are outside
+    this skill. Distribution group membership should be validated as a mailing/list
+    membership change, not as mailbox permissions.
+
+future_tool_bindings:
+  inspect:
+    - active_directory.user.lookup
+    - active_directory.group.lookup
+    - active_directory.group.membership.inspect
+  prepare:
+    - active_directory.group.prepare_add_member_parameters
+  execute:
+    - active_directory.group.add_member
+
+automation_readiness: partial

@@ -1,0 +1,122 @@
+id: active_directory.user.block_on_closure_date
+family: active_directory.user
+name: Block user on closure date
+version: 1
+status: draft_only
+
+description: >
+  Prepares a runbook for blocking or disabling a user account on the scheduled
+  closure date when a worker exits or a contract ends. The skill is intentionally
+  narrow and only covers the account block/disable decision and checklist, not
+  broader offboarding tasks such as hardware return, mailbox archive/deletion,
+  group cleanup, or downstream scheduled offboarding automation.
+
+when_to_use:
+  - Ticket asks to block, disable, or close a user account on a specific end date
+  - Ticket is an offboarding request where the IT action needed now is account blocking
+  - Ticket mentions closure date, last day of work, or contract end date for account deactivation
+  - Ticket asks for an account to be blocked after a handover or transition period
+
+when_not_to_use:
+  - Ticket asks to create a new user account
+  - Ticket asks to add or remove group memberships
+  - Ticket asks to modify mailbox permissions or mailbox content
+  - Ticket asks to order, return, or dispose of hardware
+  - Ticket is only about password reset or login troubleshooting
+  - Ticket asks to manually run full offboarding deletion/archive automation
+
+required_inputs:
+  - name: target_user
+    description: User account to be blocked or disabled.
+    required: true
+  - name: closure_date
+    description: Date on which the block should take effect.
+    required: true
+  - name: requester_or_manager_authorization
+    description: Confirmation that the request is approved by the requester, manager, or HR process.
+    required: true
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for tracking and audit purposes.
+    required: true
+  - name: scheduled_execution_time
+    description: Time of day when the block should take effect, if different from normal closure-date handling.
+    required: false
+  - name: country
+    description: Country for any site-specific account handling rules.
+    required: false
+  - name: branch_or_company_code
+    description: Optional branch or company code used in local offboarding procedures.
+    required: false
+  - name: reason
+    description: Reason for blocking the account, if provided.
+    required: false
+  - name: manager_identifier
+    description: Manager identifier when manager-based approval or notification is needed.
+    required: false
+
+derived_outputs:
+  - disable_action_plan
+  - closure_date_checklist
+  - requester_confirmation_summary
+  - audit_log_entry
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_blocking_plan
+  - closure_date_execution_checklist
+
+systems:
+  - Active Directory
+  - Microsoft 365
+
+data_sensitivity:
+  - personal_data
+  - access_rights
+  - audit_information
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+risk_level: high
+
+approval_requirements:
+  - requester, manager, or HR authorization
+  - identity confirmation for the target user
+  - closure date confirmation
+  - local offboarding policy confirmation if applicable
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_execution_checklist
+
+forbidden_actions_now:
+  - disable_account
+  - block_account
+  - remove_group_memberships
+  - change_mailbox_permissions
+  - trigger_offboarding_script
+  - delete_account
+  - send_credentials
+
+current_manual_adapter:
+  type: manual_review_and_queue
+  notes: >
+    Current handling is a human-reviewed offboarding step coordinated through the
+    ServiceDesk ticket and internal account closure process. Broader mailbox archive,
+    account deletion, and cleanup actions may be handled later by scheduled automation
+    outside this skill.
+
+future_tool_bindings:
+  inspect:
+    - active_directory.user.lookup
+  prepare:
+    - active_directory.user.prepare_disable_parameters
+  execute:
+    - active_directory.user.disable
+
+automation_readiness: partial
