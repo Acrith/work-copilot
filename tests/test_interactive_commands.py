@@ -203,6 +203,18 @@ def test_build_servicedesk_draft_reply_prompt_is_read_only():
     assert "Do not claim attachment contents were inspected" in prompt
 
 
+def test_build_servicedesk_draft_reply_prompt_includes_reply_decision_labels():
+    prompt = build_servicedesk_draft_reply_prompt("55478")
+
+    assert "Reply recommended:" in prompt
+    assert "Detected reply intent:" in prompt
+    assert "Allowed reply_recommended labels:" in prompt
+    assert "Allowed reply_intent labels:" in prompt
+    assert "`no_reply_recommended`" in prompt
+    assert "No requester-facing reply recommended at this time." in prompt
+    assert "do not force a follow-up message" in prompt
+
+
 def test_parse_sdp_context_command():
     assert parse_interactive_command("/sdp context 55478") == "sdp_context"
 
@@ -223,3 +235,49 @@ def test_build_servicedesk_context_prompt_is_read_only():
     assert "Do not send replies" in prompt
     assert "Do not execute commands" in prompt
     assert "Do not claim attachment contents were inspected" in prompt
+
+
+def test_build_servicedesk_context_prompt_includes_allowed_labels():
+    prompt = build_servicedesk_context_prompt("55478")
+
+    assert "Allowed current_state labels:" in prompt
+    assert "`not_yet_processed`" in prompt
+    assert "`needs_work`" in prompt
+    assert "`waiting_for_requester`" in prompt
+    assert "`waiting_for_internal`" in prompt
+    assert "`ready_to_close`" in prompt
+    assert "`blocked`" in prompt
+    assert "`risky_manual`" in prompt
+    assert "`unclear`" in prompt
+
+    assert "Allowed reply_recommended labels:" in prompt
+    assert "`yes`" in prompt
+    assert "`no`" in prompt
+
+    assert "Allowed reply_intent labels:" in prompt
+    assert "`ask_info`" in prompt
+    assert "`confirm_resolution`" in prompt
+    assert "`completed`" in prompt
+    assert "`follow_up`" in prompt
+    assert "`explain_limitation`" in prompt
+    assert "`handoff_or_escalate`" in prompt
+    assert "`no_reply_recommended`" in prompt
+
+    assert "Use one of the allowed labels exactly" in prompt
+
+
+def test_build_servicedesk_context_prompt_includes_chronology_rules():
+    prompt = build_servicedesk_context_prompt("55853")
+
+    assert "Analyze the ticket chronologically" in prompt
+    assert "Do not list information as missing if a later conversation entry" in prompt
+    assert "Resolved earlier questions" in prompt
+    assert "Use `Resolved earlier questions`" in prompt
+
+
+def test_build_servicedesk_draft_reply_prompt_includes_chronology_rules():
+    prompt = build_servicedesk_draft_reply_prompt("55853")
+
+    assert "Analyze the ticket chronologically" in prompt
+    assert "Do not list information as missing if a later conversation entry" in prompt
+    assert "Do not base the draft on stale missing-information requests" in prompt

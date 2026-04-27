@@ -28,6 +28,90 @@ COMMAND_HELP = [
     ("/exit", "Exit interactive mode"),
 ]
 
+CURRENT_STATE_LABELS = [
+    "not_yet_processed",
+    "needs_work",
+    "waiting_for_requester",
+    "waiting_for_internal",
+    "ready_to_close",
+    "blocked",
+    "risky_manual",
+    "unclear",
+]
+
+REPLY_INTENT_LABELS = [
+    "ask_info",
+    "confirm_resolution",
+    "completed",
+    "follow_up",
+    "explain_limitation",
+    "handoff_or_escalate",
+    "no_reply_recommended",
+    "unclear",
+]
+
+REPLY_RECOMMENDED_LABELS = [
+    "yes",
+    "no",
+    "unclear",
+]
+
+CONFIDENCE_LABELS = [
+    "low",
+    "medium",
+    "high",
+]
+
+AUTOMATION_CANDIDATE_LABELS = [
+    "no",
+    "partial",
+    "yes",
+]
+
+RISK_LEVEL_LABELS = [
+    "low",
+    "medium",
+    "high",
+    "risky",
+]
+
+SERVICEDESK_CONTEXT_WORKFLOW = (
+    "Use this workflow:\n"
+    "1. Read the request details.\n"
+    "2. Read request notes.\n"
+    "3. Read attachment metadata. Do not download or inspect attachment contents.\n"
+    "4. Read request conversations.\n"
+    "5. When conversation entries include content_url values and the content is needed, "
+    "fetch the conversation content.\n\n"
+)
+
+SERVICEDESK_READ_ONLY_RULES = (
+    "Important rules:\n"
+    "- Use only read-only ServiceDesk tools.\n"
+    "- Do not update ServiceDesk.\n"
+    "- Do not add notes.\n"
+    "- Do not send replies.\n"
+    "- Do not execute commands.\n"
+    "- Do not claim attachment contents were inspected.\n"
+)
+
+SERVICEDESK_CHRONOLOGY_RULES = (
+    "Chronology rules:\n"
+    "- Analyze the ticket chronologically. Later requester/technician messages may "
+    "resolve or supersede earlier missing-information requests.\n"
+    "- Do not list information as missing if a later conversation entry appears to "
+    "provide or resolve it.\n"
+    "- If an earlier question was answered later, mention it as resolved instead of "
+    "listing it under Missing information.\n"
+)
+
+def format_allowed_labels(labels: list[str]) -> str:
+    return ", ".join(f"`{label}`" for label in labels)
+
+
+def format_allowed_label_section(title: str, labels: list[str]) -> str:
+    return f"{title}:\n{format_allowed_labels(labels)}\n\n"
+
 
 def parse_interactive_command(user_input: str) -> InteractiveCommand:
     stripped = user_input.strip()
@@ -202,74 +286,103 @@ def parse_sdp_request_id(user_input: str) -> str | None:
 def build_servicedesk_draft_reply_prompt(request_id: str) -> str:
     return (
         f"Prepare a ServiceDesk reply draft for request {request_id}.\n\n"
-        "Use this workflow:\n"
-        "1. Read the request details.\n"
-        "2. Read request notes.\n"
-        "3. Read attachment metadata. Do not download or inspect attachment contents.\n"
-        "4. Read request conversations.\n"
-        "5. When conversation entries include content_url values and the content is needed, "
-        "fetch the conversation content.\n\n"
-        "Return a concise draft suitable for the requester. If the situation is unclear, "
-        "draft a question asking for the missing information instead of pretending the issue "
-        "is resolved.\n\n"
+        f"{SERVICEDESK_CONTEXT_WORKFLOW}"
+        "Determine whether a requester-facing reply is actually recommended. If no reply is "
+        "recommended, do not invent one.\n\n"
+        "Use one of the allowed labels exactly. If none fits safely, use `unclear` and "
+        "explain why in Safety notes.\n\n"
+        f"{format_allowed_label_section('Allowed reply_recommended labels', REPLY_RECOMMENDED_LABELS)}"
+        f"{format_allowed_label_section('Allowed reply_intent labels', REPLY_INTENT_LABELS)}"
+        f"{format_allowed_label_section('Allowed confidence labels', CONFIDENCE_LABELS)}"
         "Use this output structure:\n\n"
         "# ServiceDesk reply draft\n\n"
         f"Ticket: {request_id}\n"
-        "Reply type: public requester reply\n\n"
+        "Reply type: public requester reply\n"
+        "Reply recommended: <one allowed reply_recommended label>\n"
+        "Detected reply intent: <one allowed reply_intent label>\n"
+        "Confidence: <one allowed confidence label>\n\n"
         "## Draft reply\n\n"
-        "<write the reply text here>\n\n"
+        "<write the reply text here. If no requester-facing reply is recommended, write: "
+        "`No requester-facing reply recommended at this time.`>\n\n"
         "## Internal reasoning\n\n"
-        "<briefly explain why this reply is appropriate>\n\n"
+        "<briefly explain why this reply is appropriate, or why no reply is recommended. "
+        "Mention earlier questions or blockers that were resolved by later conversation "
+        "entries if relevant.>\n\n"
         "## Safety notes\n\n"
         "<mention uncertainties, missing information, or risky assumptions>\n\n"
-        "Important rules:\n"
-        "- Use only read-only ServiceDesk tools.\n"
-        "- Do not update ServiceDesk.\n"
-        "- Do not add notes.\n"
-        "- Do not send replies.\n"
-        "- Do not execute commands.\n"
-        "- Do not claim attachment contents were inspected."
+        "Consistency rules:\n"
+        "- If `Reply recommended` is `no`, use `Detected reply intent` = "
+        "`no_reply_recommended` unless there is a clear reason not to.\n"
+        "- If no requester-facing reply is recommended, do not force a follow-up message.\n"
+        "- Do not claim work is being investigated unless ticket assignment, status, notes, "
+        "or conversations support that.\n"
+        "- If the ticket is unassigned or not clearly being worked, prefer wording like "
+        "`We will review this` instead of `We are investigating this`.\n"
+        "- Do not base the draft on stale missing-information requests if later conversation "
+        "entries appear to resolve them.\n\n"
+        f"{SERVICEDESK_CHRONOLOGY_RULES}\n"
+        f"{SERVICEDESK_READ_ONLY_RULES}"
     )
 
 
 def build_servicedesk_context_prompt(request_id: str) -> str:
     return (
         f"Prepare a ServiceDesk context summary for request {request_id}.\n\n"
-        "Use this workflow:\n"
-        "1. Read the request details.\n"
-        "2. Read request notes.\n"
-        "3. Read attachment metadata. Do not download or inspect attachment contents.\n"
-        "4. Read request conversations.\n"
-        "5. When conversation entries include content_url values and the content is needed, "
-        "fetch the conversation content.\n\n"
+        f"{SERVICEDESK_CONTEXT_WORKFLOW}"
         "Return a concise but useful context summary. Focus on what happened, current state, "
         "who is waiting on whom, and the safest next action.\n\n"
+        "Use one of the allowed labels exactly. If none fits safely, use `unclear` and "
+        "explain why in Safety notes.\n\n"
+        f"{format_allowed_label_section('Allowed current_state labels', CURRENT_STATE_LABELS)}"
+        f"{format_allowed_label_section('Allowed reply_recommended labels', REPLY_RECOMMENDED_LABELS)}"
+        f"{format_allowed_label_section('Allowed reply_intent labels', REPLY_INTENT_LABELS)}"
+        f"{format_allowed_label_section('Allowed confidence labels', CONFIDENCE_LABELS)}"
+        f"{format_allowed_label_section('Allowed automation_candidate labels', AUTOMATION_CANDIDATE_LABELS)}"
+        f"{format_allowed_label_section('Allowed risk_level labels', RISK_LEVEL_LABELS)}"
         "Use this output structure:\n\n"
         "# ServiceDesk request context\n\n"
         f"Ticket: {request_id}\n\n"
         "## Current state\n\n"
-        "Choose one: not yet processed, needs work, waiting for requester, ready to close, "
-        "blocked, risky/manual, or unclear.\n\n"
+        "<one allowed current_state label>\n\n"
+        "## Confidence\n\n"
+        "<one allowed confidence label>\n\n"
+        "## Reply recommended\n\n"
+        "<one allowed reply_recommended label>\n\n"
+        "## Possible reply intent\n\n"
+        "<one allowed reply_intent label>\n\n"
         "## Summary\n\n"
         "<summarize the request and relevant conversation history>\n\n"
         "## Latest known activity\n\n"
         "<summarize the newest meaningful requester/technician activity>\n\n"
         "## Suggested next action\n\n"
         "<recommend the safest next action>\n\n"
-        "## Possible reply intent\n\n"
-        "Choose one if applicable: ask-info, confirm-resolution, completed, follow-up, "
-        "reject-or-explain, or unclear.\n\n"
+        "## Missing information\n\n"
+        "- <list missing details, or write `none`>\n\n"
+        "## Resolved earlier questions\n\n"
+        "- <list earlier blockers/questions resolved by later conversation entries, "
+        "or write `none`>\n\n"
+        "## Automation candidate\n\n"
+        "<one allowed automation_candidate label>\n\n"
+        "## Risk level\n\n"
+        "<one allowed risk_level label>\n\n"
         "## Context inspected\n\n"
-        "List which context was inspected: request details, notes, attachment metadata, "
-        "conversations, conversation content.\n\n"
+        "- request details: yes/no\n"
+        "- notes: yes/no\n"
+        "- attachment metadata: yes/no\n"
+        "- conversations: yes/no\n"
+        "- conversation content: yes/no\n\n"
         "## Safety notes\n\n"
         "<mention uncertainty, missing information, risky assumptions, or attachments that "
         "exist but were not inspected>\n\n"
-        "Important rules:\n"
-        "- Use only read-only ServiceDesk tools.\n"
-        "- Do not update ServiceDesk.\n"
-        "- Do not add notes.\n"
-        "- Do not send replies.\n"
-        "- Do not execute commands.\n"
-        "- Do not claim attachment contents were inspected."
+        "Consistency rules:\n"
+        "- If `Reply recommended` is `no`, use `Possible reply intent` = "
+        "`no_reply_recommended` unless there is a clear reason not to.\n"
+        "- If `Current state` is `waiting_for_requester`, decide whether a follow-up is "
+        "actually needed now. Waiting does not automatically mean a reply is required.\n"
+        "- Do not claim work is being investigated unless ticket assignment, status, notes, "
+        "or conversations support that.\n"
+        "- Use `Resolved earlier questions` for earlier asks that were answered or made "
+        "irrelevant by later conversation entries.\n\n"
+        f"{SERVICEDESK_CHRONOLOGY_RULES}\n"
+        f"{SERVICEDESK_READ_ONLY_RULES}"
     )

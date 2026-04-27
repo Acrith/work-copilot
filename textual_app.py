@@ -16,6 +16,8 @@ from approval import ApprovalRequest, ApprovalResponse
 from draft_exports import (
     build_servicedesk_context_path,
     build_servicedesk_draft_path,
+    build_servicedesk_latest_context_path,
+    build_servicedesk_latest_draft_path,
     save_text_draft,
 )
 from interactive_commands import (
@@ -281,6 +283,7 @@ class WorkCopilotTextualApp(App):
         self,
         user_prompt: str,
         save_output_path: str | None = None,
+        save_latest_path: str | None = None,
     ) -> None:
         log = self.query_one("#activity-log", RichLog)
         event_sink = TextualEventSink(
@@ -313,6 +316,13 @@ class WorkCopilotTextualApp(App):
                     self._log_system_message,
                     f"Output saved to: {saved_path}",
                 )
+
+                if save_latest_path is not None:
+                    latest_path = save_text_draft(Path(save_latest_path), final_text)
+                    self.call_from_thread(
+                        self._log_system_message,
+                        f"Latest output saved to: {latest_path}",
+                    )
 
             if final_text is None:
                 self.call_from_thread(
@@ -393,6 +403,10 @@ class WorkCopilotTextualApp(App):
                 workspace=self.config.workspace,
                 request_id=request_id,
             )
+            latest_context_path = build_servicedesk_latest_context_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
 
             self._log_user_message(user_prompt)
             self._log_system_message(
@@ -402,6 +416,7 @@ class WorkCopilotTextualApp(App):
             self._run_model_turn_worker(
                 context_prompt,
                 save_output_path=str(context_path),
+                save_latest_path=str(latest_context_path),
             )
             return
 
@@ -418,6 +433,10 @@ class WorkCopilotTextualApp(App):
                 workspace=self.config.workspace,
                 request_id=request_id,
             )
+            latest_draft_path = build_servicedesk_latest_draft_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
 
             self._log_user_message(user_prompt)
             self._log_system_message(
@@ -426,7 +445,8 @@ class WorkCopilotTextualApp(App):
             self._set_running(True)
             self._run_model_turn_worker(
                 draft_prompt,
-                save_output_path=str(draft_path)
+                save_output_path=str(draft_path),
+                save_latest_path=str(latest_draft_path),
             )
             return
 
