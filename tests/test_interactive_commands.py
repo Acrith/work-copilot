@@ -3,6 +3,7 @@
 from interactive_commands import (
     build_servicedesk_context_prompt,
     build_servicedesk_draft_reply_prompt,
+    build_servicedesk_skill_plan_prompt,
     build_servicedesk_triage_prompt,
     format_interactive_help,
     format_interactive_status,
@@ -315,3 +316,39 @@ def test_parse_sdp_save_draft_command():
 
 def test_parse_sdp_save_draft_alias():
     assert parse_interactive_command("/sdp save_draft 55776") == "sdp_save_draft"
+
+
+def test_parse_sdp_skill_plan_command():
+    assert parse_interactive_command("/sdp skill-plan 55853") == "sdp_skill_plan"
+
+
+def test_build_servicedesk_skill_plan_prompt_contains_read_only_rules():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="55853",
+        saved_context="# ServiceDesk request context\n\nExample context",
+        skill_definitions_text="## active_directory.create_user\n\nExample skill",
+    )
+
+    assert "Prepare a read-only skill plan" in prompt
+    assert "Skills represent the operational work to do, not ServiceDesk tools" in prompt
+    assert "active_directory.create_user" in prompt
+    assert "Do not execute commands" in prompt
+    assert "Do not modify ServiceDesk" in prompt
+    assert "Do not call connector-write tools" in prompt
+
+
+def test_build_servicedesk_skill_plan_prompt_distinguishes_current_issue_from_history():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="55853",
+        saved_context="# ServiceDesk request context\n\nExample context",
+        skill_definitions_text="## active_directory.create_user\n\nExample skill",
+    )
+
+    assert "Distinguish the original work type from the current unresolved issue" in prompt
+    assert "Skill relevance" in prompt
+    assert "primary/secondary/historical/no_match" in prompt
+    assert "Work status" in prompt
+    assert "Current unresolved issue" in prompt
+    assert "Missing information needed now" in prompt
+    assert "not_needed_now" in prompt
+    assert "Do not ask the requester for missing skill information unless it is needed" in prompt

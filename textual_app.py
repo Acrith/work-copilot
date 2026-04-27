@@ -20,6 +20,8 @@ from draft_exports import (
     build_servicedesk_draft_subject,
     build_servicedesk_latest_context_path,
     build_servicedesk_latest_draft_path,
+    build_servicedesk_latest_skill_plan_path,
+    build_servicedesk_skill_plan_path,
     extract_servicedesk_draft_reply,
     extract_servicedesk_request_subject,
     is_no_requester_reply_recommended,
@@ -30,6 +32,7 @@ from interactive_commands import (
     build_interactive_help_renderable,
     build_servicedesk_context_prompt,
     build_servicedesk_draft_reply_prompt,
+    build_servicedesk_skill_plan_prompt,
     build_servicedesk_triage_prompt,
     format_interactive_status,
     parse_interactive_command,
@@ -44,6 +47,7 @@ from interactive_session import (
 )
 from permissions import PermissionContext
 from providers.base import Provider
+from skills.loader import format_skill_definitions_for_prompt, load_skill_definitions
 from textual_approval import TextualApprovalHandler
 from textual_approval_screen import ApprovalScreen
 from textual_event_sink import TextualEventSink
@@ -630,6 +634,60 @@ class WorkCopilotTextualApp(App):
                 request_id=request_id,
                 subject=subject,
                 description=draft_body,
+            )
+            return
+
+        if command == "sdp_skill_plan":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp skill-plan <request_id>")
+                return
+
+            latest_context_path = build_servicedesk_latest_context_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            saved_context = read_text_if_exists(latest_context_path)
+
+            if saved_context is None:
+                self._log_blank()
+                self._log(
+                    f"No saved context found for request {request_id}. "
+                    f"Run /sdp context {request_id} first."
+                )
+                return
+
+            skills = load_skill_definitions()
+            skill_definitions_text = format_skill_definitions_for_prompt(skills)
+
+            skill_plan_prompt = build_servicedesk_skill_plan_prompt(
+                request_id=request_id,
+                saved_context=saved_context,
+                skill_definitions_text=skill_definitions_text,
+            )
+
+            skill_plan_path = build_servicedesk_skill_plan_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            latest_skill_plan_path = build_servicedesk_latest_skill_plan_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Preparing read-only skill plan for ServiceDesk request {request_id}."
+            )
+            self._log_system_message(f"Saved context: {latest_context_path}")
+
+            self._set_running(True)
+            self._run_model_turn_worker(
+                skill_plan_prompt,
+                save_output_path=str(skill_plan_path),
+                save_latest_path=str(latest_skill_plan_path),
             )
             return
 

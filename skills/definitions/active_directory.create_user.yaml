@@ -1,0 +1,50 @@
+id: active_directory.create_user
+name: Create Active Directory user
+version: 1
+status: draft_only
+
+description: >
+  Handles requests to create a new employee/domain account in Active Directory
+  based on onboarding data.
+
+intents:
+  - create new AD user
+  - onboard employee
+  - new domain account
+  - account for new hire
+
+required_information:
+  - first_name
+  - last_name
+  - country
+  - branch_or_site
+  - department
+  - manager_or_requester
+  - start_date
+  - username_or_naming_rule
+  - mailbox_or_license_requirement
+
+systems:
+  - Active Directory
+  - Microsoft 365
+  - Exchange Online
+
+risk_level: high
+
+approval_requirements:
+  - requester/manager authorization
+  - target OU confirmation
+  - group membership confirmation
+  - license/mailbox requirement confirmation
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+
+forbidden_actions_now:
+  - create_account
+  - modify_groups
+  - assign_licenses
+  - send_password

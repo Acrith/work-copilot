@@ -7,7 +7,9 @@ from draft_exports import (
     build_servicedesk_draft_subject,
     build_servicedesk_latest_context_path,
     build_servicedesk_latest_draft_path,
+    build_servicedesk_latest_skill_plan_path,
     build_servicedesk_output_dir,
+    build_servicedesk_skill_plan_path,
     extract_markdown_section,
     extract_servicedesk_draft_reply,
     extract_servicedesk_request_subject,
@@ -196,3 +198,29 @@ needs_work
 """
 
     assert extract_servicedesk_request_subject(context) == "VPN access"
+
+
+def test_build_servicedesk_skill_plan_path(tmp_path):
+    path = build_servicedesk_skill_plan_path(
+        workspace=str(tmp_path),
+        request_id="55853",
+    )
+
+    assert path.parent == tmp_path / ".work_copilot" / "servicedesk" / "55853"
+    assert path.name.startswith("skill_plan_")
+    assert path.name.endswith(".md")
+
+
+def test_build_servicedesk_latest_skill_plan_path(tmp_path):
+    path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path),
+        request_id="55853",
+    )
+
+    assert path == (
+        tmp_path
+        / ".work_copilot"
+        / "servicedesk"
+        / "55853"
+        / "latest_skill_plan.md"
+    )
