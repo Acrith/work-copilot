@@ -107,6 +107,16 @@ SERVICEDESK_CHRONOLOGY_RULES = (
     "listing it under Missing information.\n"
 )
 
+SERVICEDESK_DRAFT_REPLY_TONE_GUIDANCE = (
+    "Tone guidance:\n"
+    "- Be friendly, professional, and helpful.\n"
+    "- Match the requester\'s language and formality. For example, if the requester writes "
+    "casually, use a casual but professional tone.\n"
+    "- Do not use automatic honorifics like Pan/Pani or Mr/Ms/Mrs unless the conversation "
+    "already uses them.\n"
+    "- Keep replies concise. Provide just enough detail for clarity.\n\n"
+)
+
 def format_allowed_labels(labels: list[str]) -> str:
     return ", ".join(f"`{label}`" for label in labels)
 
@@ -315,6 +325,7 @@ def build_servicedesk_draft_reply_prompt(
         f"Prepare a ServiceDesk reply draft for request {request_id}.\n\n"
         f"{context_instruction}"
         f"{SERVICEDESK_CONTEXT_WORKFLOW}"
+        f"{SERVICEDESK_DRAFT_REPLY_TONE_GUIDANCE}"
         "Determine whether a requester-facing reply is actually recommended. If no reply is "
         "recommended, do not invent one.\n\n"
         "Use one of the allowed labels exactly. If none fits safely, use `unclear` and "
