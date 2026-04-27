@@ -31,3 +31,20 @@ def save_text_draft(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def build_servicedesk_context_path(
+    *,
+    workspace: str,
+    request_id: str,
+    now: datetime | None = None,
+) -> Path:
+    timestamp = (now or datetime.now(UTC)).strftime("%Y%m%d_%H%M%S")
+    safe_request_id = safe_filename_part(request_id)
+
+    return (
+        Path(workspace)
+        / ".work_copilot"
+        / "drafts"
+        / f"servicedesk_{safe_request_id}_context_{timestamp}.md"
+    )
