@@ -81,3 +81,42 @@ def read_text_if_exists(path: Path) -> str | None:
         return None
 
     return path.read_text(encoding="utf-8")
+
+
+NO_REQUESTER_REPLY_RECOMMENDED = "No requester-facing reply recommended at this time."
+
+
+def extract_markdown_section(markdown: str, heading: str) -> str | None:
+    target = f"## {heading}".strip()
+    lines = markdown.splitlines()
+
+    in_section = False
+    section_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped == target:
+            in_section = True
+            continue
+
+        if in_section and stripped.startswith("## "):
+            break
+
+        if in_section:
+            section_lines.append(line)
+
+    section = "\n".join(section_lines).strip()
+    return section or None
+
+
+def extract_servicedesk_draft_reply(markdown: str) -> str | None:
+    return extract_markdown_section(markdown, "Draft reply")
+
+
+def is_no_requester_reply_recommended(text: str) -> bool:
+    return text.strip().rstrip(".") == NO_REQUESTER_REPLY_RECOMMENDED.rstrip(".")
+
+
+def build_servicedesk_draft_subject(request_id: str) -> str:
+    return f"Re: ServiceDesk request {request_id}"

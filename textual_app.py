@@ -12,12 +12,16 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
+from agent_types import ToolCall
 from approval import ApprovalRequest, ApprovalResponse
 from draft_exports import (
     build_servicedesk_context_path,
     build_servicedesk_draft_path,
+    build_servicedesk_draft_subject,
     build_servicedesk_latest_context_path,
     build_servicedesk_latest_draft_path,
+    extract_servicedesk_draft_reply,
+    is_no_requester_reply_recommended,
     read_text_if_exists,
     save_text_draft,
 )
@@ -42,6 +46,7 @@ from providers.base import Provider
 from textual_approval import TextualApprovalHandler
 from textual_approval_screen import ApprovalScreen
 from textual_event_sink import TextualEventSink
+from tool_dispatch import execute_tool_call
 
 
 class WorkCopilotTextualApp(App):
@@ -206,6 +211,58 @@ class WorkCopilotTextualApp(App):
     def _clear_prompt(self) -> None:
         prompt = self.query_one("#prompt-input", Input)
         prompt.value = ""
+
+
+    @work(thread=True)
+    def _save_servicedesk_draft_worker(
+        self,
+        *,
+        request_id: str,
+        subject: str,
+        description: str,
+    ) -> None:
+        approval_handler = TextualApprovalHandler(
+            request_callback=lambda request, approval_event: self.call_from_thread(
+                self.request_textual_approval,
+                request,
+                approval_event,
+            ),
+            response_getter=lambda: self.pending_approval_response,
+        )
+
+        try:
+            result = execute_tool_call(
+                ToolCall(
+                    name="servicedesk_add_request_draft",
+                    args={
+                        "request_id": request_id,
+                        "subject": subject,
+                        "description": description,
+                    },
+                ),
+                self.config.workspace,
+                self.permission_context,
+                approval_handler=approval_handler,
+            )
+
+            if "error" in result.payload:
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"Could not save ServiceDesk draft: {result.payload['error']}",
+                )
+                return
+
+            self.call_from_thread(
+                self._log_system_message,
+                f"ServiceDesk draft saved for request {request_id}.",
+            )
+        except Exception as exc:
+            self.call_from_thread(
+                self._log_system_message,
+                f"ServiceDesk draft save error: {exc}",
+            )
+        finally:
+            self.call_from_thread(self._set_running, False)
 
 
     def request_textual_approval(
@@ -466,6 +523,61 @@ class WorkCopilotTextualApp(App):
                 draft_prompt,
                 save_output_path=str(draft_path),
                 save_latest_path=str(latest_draft_path),
+            )
+            return
+
+        if command == "sdp_save_draft":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp save-draft <request_id>")
+                return
+
+            latest_reply_path = build_servicedesk_latest_draft_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            latest_reply = read_text_if_exists(latest_reply_path)
+
+            if latest_reply is None:
+                self._log_blank()
+                self._log(
+                    f"No local reply draft found for request {request_id}. "
+                    f"Run /sdp draft-reply {request_id} first."
+                )
+                return
+
+            draft_body = extract_servicedesk_draft_reply(latest_reply)
+
+            if draft_body is None:
+                self._log_blank()
+                self._log(
+                    f"Could not find a ## Draft reply section in {latest_reply_path}."
+                )
+                return
+
+            if is_no_requester_reply_recommended(draft_body):
+                self._log_blank()
+                self._log(
+                    "Latest local draft says no requester-facing reply is recommended. "
+                    "No ServiceDesk draft was created."
+                )
+                return
+
+            subject = build_servicedesk_draft_subject(request_id)
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Saving latest local reply as a ServiceDesk draft for request {request_id}."
+            )
+            self._log_system_message(f"Source: {latest_reply_path}")
+
+            self._set_running(True)
+            self._save_servicedesk_draft_worker(
+                request_id=request_id,
+                subject=subject,
+                description=draft_body,
             )
             return
 
