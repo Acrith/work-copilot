@@ -7,10 +7,10 @@ from threading import Event
 from rich.console import RenderableType
 from rich.markdown import Markdown
 from rich.text import Text
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Input, RichLog, Static
+from textual.widgets import Footer, Header, RichLog, Static, TextArea
 
 from agent_types import ToolCall
 from approval import ApprovalRequest, ApprovalResponse
@@ -47,6 +47,44 @@ from textual_approval import TextualApprovalHandler
 from textual_approval_screen import ApprovalScreen
 from textual_event_sink import TextualEventSink
 from tool_dispatch import execute_tool_call
+
+MIN_PROMPT_HEIGHT = 3
+MAX_PROMPT_HEIGHT = 8
+
+
+class PromptTextArea(TextArea):
+    """Chat-style prompt composer.
+
+    Enter submits.
+    Ctrl+J inserts a newline.
+    Shift+Enter inserts a newline if the terminal reports it distinctly.
+    Esc clears the composer.
+    """
+
+    def _on_key(self, event: events.Key) -> None:
+        event_name = getattr(event, "name", "")
+
+        if event.key in {"shift+enter", "ctrl+j"} or event_name in {
+            "shift_enter",
+            "ctrl_j",
+        }:
+            self.insert("\n")
+            self.app.resize_composer()
+            event.prevent_default()
+            event.stop()
+            return
+
+        if event.key == "enter":
+            self.app.submit_composer()
+            event.prevent_default()
+            event.stop()
+            return
+
+        if event.key == "escape":
+            self.app.clear_composer()
+            event.prevent_default()
+            event.stop()
+            return
 
 
 class WorkCopilotTextualApp(App):
@@ -92,15 +130,13 @@ class WorkCopilotTextualApp(App):
         padding: 1;
     }
 
-    #prompt-row {
-        height: 3;
-        border: solid #2b3a4a;
-        background: #121a23;
-        padding: 0 1;
-    }
-
     #prompt-input {
         width: 1fr;
+        height: 3;
+        min-height: 3;
+        max-height: 8;
+        border: solid #2b3a4a;
+        background: #121a23;
     }
 
     .section-title {
@@ -143,56 +179,53 @@ class WorkCopilotTextualApp(App):
         self.pending_approval_response: ApprovalResponse | None = None
         self.pending_approval_event: Event | None = None
 
+    def _prompt(self) -> PromptTextArea:
+        return self.query_one("#prompt-input", PromptTextArea)
 
     def _set_running(self, is_running: bool) -> None:
         self.is_agent_running = is_running
 
-        prompt = self.query_one("#prompt-input", Input)
+        prompt = self._prompt()
         prompt.disabled = is_running
 
         if is_running:
             prompt.placeholder = "Agent is running..."
             self.sub_title = "Running"
         else:
-            prompt.placeholder = "Type /help, /status, /clear, or /exit"
+            prompt.placeholder = (
+                "Type /help, /status, /clear, or /exit. "
+                "Enter submits, Ctrl+J adds a newline."
+            )
             self.sub_title = "Experimental Textual shell"
             prompt.focus()
 
         self._refresh_sidebar()
 
-
     def _log_blank(self) -> None:
         self._log("")
-
 
     def _log(self, message: RenderableType) -> None:
         log = self.query_one("#activity-log", RichLog)
         log.write(message)
 
-
     def _log_markup(self, markup: str) -> None:
         self._log(Text.from_markup(markup))
 
-
     def _log_markdown(self, message: str) -> None:
         self._log(Markdown(message))
-    
-    
+
     def _log_user_message(self, message: str) -> None:
         self._log_blank()
         self._log_markup("[bold #88c0d0]You[/]")
         self._log(message)
-
 
     def _log_assistant_message(self, message: str) -> None:
         self._log_blank()
         self._log_markup("[bold #a3be8c]Work Copilot[/]")
         self._log_markdown(message)
 
-
     def _log_system_message(self, message: str) -> None:
         self._log_markup(f"[#7f8ea3]{message}[/]")
-
 
     def _log_command_lines(self, lines: list[str]) -> None:
         for index, line in enumerate(lines):
@@ -200,18 +233,37 @@ class WorkCopilotTextualApp(App):
                 self._log_markup(f"[bold #88c0d0]{line}[/]")
             elif line.startswith("  /"):
                 command, description = line.split(maxsplit=1)
-                self._log_markup(f"  [#c678dd]{command}[/]    [#d7e1ec]{description}[/]")
+                self._log_markup(
+                    f"  [#c678dd]{command}[/]    [#d7e1ec]{description}[/]"
+                )
             elif ":" in line:
                 label, value = line.split(":", maxsplit=1)
                 self._log_markup(f"  [#7f8ea3]{label}:[/] [#d7e1ec]{value.strip()}[/]")
             else:
                 self._log(line)
 
+    def resize_composer(self) -> None:
+        prompt = self._prompt()
+        line_count = prompt.text.count("\n") + 1
+        height = max(MIN_PROMPT_HEIGHT, min(MAX_PROMPT_HEIGHT, line_count + 2))
+        prompt.styles.height = height
+
+    def clear_composer(self) -> None:
+        prompt = self._prompt()
+        prompt.load_text("")
+        self.resize_composer()
 
     def _clear_prompt(self) -> None:
-        prompt = self.query_one("#prompt-input", Input)
-        prompt.value = ""
+        self.clear_composer()
 
+    def submit_composer(self) -> None:
+        prompt = self._prompt()
+
+        if self.is_agent_running:
+            self._log_system_message("A turn is already running. Please wait.")
+            return
+
+        self._submit_prompt(prompt.text)
 
     @work(thread=True)
     def _save_servicedesk_draft_worker(
@@ -264,7 +316,6 @@ class WorkCopilotTextualApp(App):
         finally:
             self.call_from_thread(self._set_running, False)
 
-
     def request_textual_approval(
         self,
         request: ApprovalRequest,
@@ -279,7 +330,6 @@ class WorkCopilotTextualApp(App):
             complete_callback=self._complete_textual_approval,
         )
         self.push_screen(approval_screen)
-
 
     def _format_approval_panel(self, request: ApprovalRequest) -> str:
         lines = [
@@ -321,7 +371,6 @@ class WorkCopilotTextualApp(App):
 
         return "\n".join(lines)
 
-
     def _complete_textual_approval(self, response: ApprovalResponse) -> None:
         if self.pending_approval_event is None:
             return
@@ -334,7 +383,6 @@ class WorkCopilotTextualApp(App):
 
         self.sub_title = "Running" if self.is_agent_running else "Experimental Textual shell"
         self._refresh_sidebar()
-
 
     @work(thread=True)
     def _run_model_turn_worker(
@@ -395,16 +443,11 @@ class WorkCopilotTextualApp(App):
         finally:
             self.call_from_thread(self._set_running, False)
 
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        user_prompt = event.value.strip()
+    def _submit_prompt(self, user_prompt: str) -> None:
+        user_prompt = user_prompt.strip()
         self._clear_prompt()
 
         if not user_prompt:
-            return
-        
-        if self.is_agent_running:
-            self._log_system_message("A turn is already running. Please wait.")
             return
 
         command = parse_interactive_command(user_prompt)
@@ -446,7 +489,6 @@ class WorkCopilotTextualApp(App):
             self._set_running(True)
             self._run_model_turn_worker(triage_prompt)
             return
-
 
         if command == "sdp_context":
             request_id = parse_sdp_request_id(user_prompt)
@@ -590,7 +632,6 @@ class WorkCopilotTextualApp(App):
         self._set_running(True)
         self._run_model_turn_worker(user_prompt)
 
-
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
 
@@ -599,9 +640,16 @@ class WorkCopilotTextualApp(App):
 
             with Vertical(id="main-area"):
                 yield RichLog(id="activity-log", wrap=True)
-                yield Input(
-                    placeholder="Type /help for more commands or /exit",
+                yield PromptTextArea(
+                    text="",
                     id="prompt-input",
+                    language="markdown",
+                    show_line_numbers=False,
+                    soft_wrap=True,
+                    placeholder=(
+                        "Type /help, /status, /clear, or /exit. "
+                        "Enter submits, Ctrl+J adds a newline."
+                    ),
                 )
 
         yield Footer()
@@ -622,10 +670,15 @@ class WorkCopilotTextualApp(App):
         )
         self._log_blank()
         self._log_markup(
-           "[#a3be8c]Ready.[/] Type [bold]/exit[/] or press [bold]Ctrl+Q[/] to quit."
+            "[#a3be8c]Ready.[/] Type [bold]/exit[/] or press [bold]Ctrl+Q[/] to quit."
         )
 
-        self.query_one("#prompt-input", Input).focus()
+        self.resize_composer()
+        self._prompt().focus()
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        if event.text_area.id == "prompt-input":
+            self.resize_composer()
 
     def _refresh_sidebar(self) -> None:
         run_status = "RUNNING" if self.is_agent_running else "idle"
@@ -654,6 +707,9 @@ class WorkCopilotTextualApp(App):
                     f"[#7f8ea3]Turn index[/]      {self.state.turn_index}",
                     "",
                     "[bold #88c0d0]Controls[/]",
+                    "[#7f8ea3]Enter[/]           Submit",
+                    "[#7f8ea3]Ctrl+J[/]          New line",
+                    "[#7f8ea3]Esc[/]             Clear composer",
                     "[#7f8ea3]Ctrl+Q[/]          Quit",
                 ]
             )
