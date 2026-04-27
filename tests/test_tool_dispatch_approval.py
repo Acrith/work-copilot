@@ -9,7 +9,7 @@ from approval import (
     ApprovalRequest,
     ApprovalResponse,
 )
-from permissions import PermissionContext, PermissionMode, PermissionRuleSet
+from permissions import Decision, PermissionContext, PermissionMode, PermissionRuleSet
 from tool_categories import ToolCategory
 from tool_registry import ToolDefinition
 
@@ -56,7 +56,7 @@ def make_definition(name, handler):
         handler=handler,
         category=category_by_name.get(name, ToolCategory.EXEC),
     )
-    
+
 
 class FakeApprovalHandler:
     def __init__(self, responses):
@@ -417,3 +417,69 @@ def test_execute_ask_tool_without_approval_handler_returns_error(tmp_path):
     )
 
     assert result.payload == {"error": "No approval handler configured for bash"}
+
+
+def test_connector_write_ask_shows_connector_preview_and_executes(
+    monkeypatch,
+    mock_working_directory,
+    permission_context,
+):
+    mocked_tool = MagicMock(return_value={"ok": True})
+    approval_handler = FakeApprovalHandler([ApprovalResponse(ApprovalAction.ALLOW_ONCE)])
+
+    monkeypatch.setattr(
+        tool_dispatch_module,
+        "evaluate_request",
+        lambda ctx, function_name, args: Decision.ASK,
+    )
+    monkeypatch.setattr(
+        tool_dispatch_module,
+        "get_tool_definition",
+        lambda name: make_definition(name, mocked_tool),
+    )
+
+    result = tool_dispatch_module.execute_tool_call(
+        ToolCall(
+            name="servicedesk_add_request_draft",
+            args={
+                "request_id": "55776",
+                "subject": "Re: Test subject",
+                "description": "Hello from draft",
+            },
+        ),
+        mock_working_directory,
+        permission_context,
+        approval_handler=approval_handler,
+    )
+
+    assert result.payload["result"] == {"ok": True}
+
+    assert len(approval_handler.requests) == 1
+    request = approval_handler.requests[0]
+
+    assert request.function_name == "servicedesk_add_request_draft"
+    assert request.args == {
+        "request_id": "55776",
+        "subject": "Re: Test subject",
+        "description": "Hello from draft",
+    }
+    assert request.preview_path is None
+    assert request.preview is not None
+    assert "# ServiceDesk draft reply" in request.preview
+    assert "**Action:** Save draft reply" in request.preview
+    assert "**Ticket:** 55776" in request.preview
+    assert "**Type:** reply" in request.preview
+    assert "## Subject" in request.preview
+    assert "Re: Test subject" in request.preview
+    assert "## Draft body" in request.preview
+    assert "Hello from draft" in request.preview
+    assert "## Safety" in request.preview
+    assert "This will save a draft in ServiceDesk Plus." in request.preview
+    assert "It will not send the reply to the requester." in request.preview
+
+    mocked_tool.assert_called_once_with(
+        request_id="55776",
+        subject="Re: Test subject",
+        description="Hello from draft",
+        working_directory=mock_working_directory,
+    )

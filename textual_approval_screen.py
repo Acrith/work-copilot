@@ -2,13 +2,20 @@
 
 from collections.abc import Callable
 
+from rich.markdown import Markdown
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, Static
 
 from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
+from previews import is_unified_diff_preview
 from textual_diff_view import DiffPreview
+
+
+def should_render_diff_preview(preview: str | None) -> bool:
+    return bool(preview and is_unified_diff_preview(preview))
 
 
 class ApprovalScreen(Screen):
@@ -61,6 +68,18 @@ class ApprovalScreen(Screen):
         color: #7f8ea3;
         padding: 0 1;
     }
+
+    #approval-preview-text {
+        height: 1fr;
+        border: solid #2b3a4a;
+        background: #0d1117;
+        color: #d7e1ec;
+        padding: 1 2;
+    }
+
+    #approval-preview-text.empty {
+        color: #7f8ea3;
+    }
     """
 
     BINDINGS = [
@@ -89,11 +108,28 @@ class ApprovalScreen(Screen):
 
             with Vertical(id="approval-main"):
                 yield Static(self._format_header(), id="approval-header")
-                yield DiffPreview(id="approval-preview")
+
+                if should_render_diff_preview(self.request.preview):
+                    yield DiffPreview(id="approval-preview")
+                else:
+                    preview_text = self.request.preview or "No preview available."
+                    classes = "empty" if not self.request.preview else ""
+                    renderable = (
+                        Text("No preview available.")
+                        if not self.request.preview
+                        else Markdown(preview_text)
+                    )
+                    yield Static(
+                        renderable,
+                        id="approval-preview-text",
+                        classes=classes,
+                    )
+
                 yield Input(
                     placeholder="Type denial feedback and press Enter",
                     id="approval-feedback-input",
                     classes="hidden",
+                    disabled=True,
                 )
                 yield Static("", id="approval-status")
 
@@ -103,11 +139,12 @@ class ApprovalScreen(Screen):
         self.title = "Work Copilot"
         self.sub_title = "Approval request"
 
-        preview = self.query_one("#approval-preview", DiffPreview)
-        preview.render_preview(
-            preview=self.request.preview,
-            preview_path=self.request.preview_path,
-        )
+        if should_render_diff_preview(self.request.preview):
+            preview = self.query_one("#approval-preview", DiffPreview)
+            preview.render_preview(
+                preview=self.request.preview,
+                preview_path=self.request.preview_path,
+            )
 
     def _format_header(self) -> str:
         return "\n".join(
@@ -161,6 +198,7 @@ class ApprovalScreen(Screen):
 
     def action_deny_with_feedback(self) -> None:
         feedback_input = self.query_one("#approval-feedback-input", Input)
+        feedback_input.disabled = False
         feedback_input.value = ""
         feedback_input.remove_class("hidden")
         feedback_input.focus()

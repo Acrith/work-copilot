@@ -145,10 +145,6 @@ def evaluate_request(ctx: PermissionContext, tool_name: str, args: dict[str, Any
     if category is None:
         return Decision.DENY
 
-    # Connector writes are not supported yet. Deny before explicit rules or session approvals.
-    if category == ToolCategory.CONNECTOR_WRITE:
-        return Decision.DENY
-
     # Hard safety rules should override everything, including explicit rules and session approvals.
     if category == ToolCategory.READ and is_sensitive_read_path(target_path):
         return Decision.DENY
@@ -156,13 +152,22 @@ def evaluate_request(ctx: PermissionContext, tool_name: str, args: dict[str, Any
     if category in LOCAL_WRITE_OR_EXEC_CATEGORIES and is_protected_path(target_path):
         return Decision.DENY
 
-    # Explicit workspace rules.
+    # Explicit workspace deny/ask rules.
     if matches_any(tool_name, ctx.rules.deny) or matches_any(tool_key, ctx.rules.deny):
         return Decision.DENY
 
     if matches_any(tool_name, ctx.rules.ask) or matches_any(tool_key, ctx.rules.ask):
         return Decision.ASK
 
+    # Connector writes must require fresh approval.
+    # Explicit/session allow rules should not bypass this.
+    if category == ToolCategory.CONNECTOR_WRITE:
+        if ctx.mode in {PermissionMode.PLAN, PermissionMode.DONT_ASK}:
+            return Decision.DENY
+
+        return Decision.ASK
+
+    # Explicit workspace allow rules.
     if matches_any(tool_name, ctx.rules.allow) or matches_any(tool_key, ctx.rules.allow):
         return Decision.ALLOW
 

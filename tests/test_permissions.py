@@ -369,7 +369,7 @@ def test_connector_read_allowed_in_default_mode(monkeypatch):
     assert decision == Decision.ALLOW
 
 
-def test_connector_write_denied_even_if_session_allowed(monkeypatch):
+def test_connector_write_asks_even_if_session_allowed(monkeypatch):
     monkeypatch.setattr(
         permissions_module,
         "get_tool_category",
@@ -389,7 +389,7 @@ def test_connector_write_denied_even_if_session_allowed(monkeypatch):
         {"request_id": "123"},
     )
 
-    assert decision == Decision.DENY
+    assert decision == Decision.ASK
 
 
 def test_unknown_tool_is_denied():
@@ -411,3 +411,107 @@ def test_explicit_allow_does_not_allow_unknown_tool():
     )
 
     assert evaluate_request(ctx, "totally_fake_tool", {}) == Decision.DENY
+
+
+@pytest.mark.parametrize(
+    "mode, expected",
+    [
+        (PermissionMode.DEFAULT, Decision.ASK),
+        (PermissionMode.ACCEPT_EDITS, Decision.ASK),
+        (PermissionMode.PLAN, Decision.DENY),
+        (PermissionMode.DONT_ASK, Decision.DENY),
+    ],
+)
+def test_connector_write_permission_by_mode(mode, expected):
+    ctx = make_context(mode=mode)
+
+    assert (
+        evaluate_request(
+            ctx,
+            "servicedesk_add_request_draft",
+            {
+                "request_id": "55776",
+                "subject": "Re: Test",
+                "description": "Body",
+            },
+        )
+        == expected
+    )
+
+
+def test_connector_write_explicit_allow_does_not_bypass_approval():
+    ctx = make_context(
+        mode=PermissionMode.DEFAULT,
+        rules=PermissionRuleSet(allow=["servicedesk_add_request_draft"]),
+    )
+
+    assert (
+        evaluate_request(
+            ctx,
+            "servicedesk_add_request_draft",
+            {
+                "request_id": "55776",
+                "subject": "Re: Test",
+                "description": "Body",
+            },
+        )
+        == Decision.ASK
+    )
+
+
+def test_connector_write_session_allow_tool_does_not_bypass_approval():
+    ctx = make_context(mode=PermissionMode.DEFAULT)
+    ctx.session_allow_tools.add("servicedesk_add_request_draft")
+
+    assert (
+        evaluate_request(
+            ctx,
+            "servicedesk_add_request_draft",
+            {
+                "request_id": "55776",
+                "subject": "Re: Test",
+                "description": "Body",
+            },
+        )
+        == Decision.ASK
+    )
+
+
+def test_connector_write_explicit_deny_still_denies():
+    ctx = make_context(
+        mode=PermissionMode.DEFAULT,
+        rules=PermissionRuleSet(deny=["servicedesk_add_request_draft"]),
+    )
+
+    assert (
+        evaluate_request(
+            ctx,
+            "servicedesk_add_request_draft",
+            {
+                "request_id": "55776",
+                "subject": "Re: Test",
+                "description": "Body",
+            },
+        )
+        == Decision.DENY
+    )
+
+
+def test_connector_write_explicit_ask_still_asks():
+    ctx = make_context(
+        mode=PermissionMode.DEFAULT,
+        rules=PermissionRuleSet(ask=["servicedesk_add_request_draft"]),
+    )
+
+    assert (
+        evaluate_request(
+            ctx,
+            "servicedesk_add_request_draft",
+            {
+                "request_id": "55776",
+                "subject": "Re: Test",
+                "description": "Body",
+            },
+        )
+        == Decision.ASK
+    )

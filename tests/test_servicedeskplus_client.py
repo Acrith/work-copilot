@@ -11,6 +11,7 @@ import connectors.servicedeskplus.client as client_module
 from connectors.servicedeskplus.client import (
     ServiceDeskPlusClient,
     ServiceDeskPlusError,
+    plain_text_to_basic_html,
 )
 from connectors.servicedeskplus.config import ServiceDeskPlusConfig
 
@@ -569,3 +570,177 @@ def test_get_conversation_content_requires_content_url():
 
     with pytest.raises(ServiceDeskPlusError, match="content_url is required"):
         client.get_conversation_content("")
+
+
+def test_plain_text_to_basic_html_escapes_and_preserves_line_breaks():
+    result = plain_text_to_basic_html("hello & goodbye\n<script>alert(1)</script>")
+
+    assert result == "hello &amp; goodbye<br />&lt;script&gt;alert(1)&lt;/script&gt;"
+
+
+def test_post_sends_form_encoded_body_and_headers(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(b'{"response_status": {"status": "success"}}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.post(
+        "/api/v3/example",
+        data={"input_data": '{"hello": "world"}'},
+    )
+
+    assert result == {"response_status": {"status": "success"}}
+
+    request = captured["request"]
+    parsed_url = urlparse(request.full_url)
+
+    assert parsed_url.scheme == "https"
+    assert parsed_url.netloc == "hd.exactforestall.com"
+    assert parsed_url.path == "/api/v3/example"
+    assert request.get_method() == "POST"
+    assert captured["timeout"] == 30
+
+    body = request.data.decode("utf-8")
+    parsed_body = parse_qs(body)
+    assert parsed_body["input_data"] == ['{"hello": "world"}']
+
+    headers = {key.lower(): value for key, value in request.header_items()}
+    assert headers["accept"] == "application/vnd.manageengine.sdp.v3+json"
+    assert headers["content-type"] == "application/x-www-form-urlencoded"
+    assert headers["authtoken"] == "secret-token"
+
+
+def test_post_with_input_data_sends_json_input_data(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"ok": true}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.post_with_input_data(
+        "/api/v3/example",
+        {"draft": {"subject": "Test"}},
+    )
+
+    assert result == {"ok": True}
+
+    body = captured["request"].data.decode("utf-8")
+    parsed_body = parse_qs(body)
+    input_data = json.loads(parsed_body["input_data"][0])
+
+    assert input_data == {"draft": {"subject": "Test"}}
+
+
+def test_add_request_draft_posts_expected_payload(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(
+            b'{"draft": {"id": "draft-1"}, "response_status": {"status": "success"}}'
+        )
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.add_request_draft(
+        request_id="55776",
+        subject="Re: Test subject",
+        description="Line 1\nLine <2>",
+    )
+
+    assert result == {
+        "draft": {"id": "draft-1"},
+        "response_status": {"status": "success"},
+    }
+
+    request = captured["request"]
+    parsed_url = urlparse(request.full_url)
+
+    assert parsed_url.scheme == "https"
+    assert parsed_url.netloc == "hd.exactforestall.com"
+    assert parsed_url.path == "/api/v3/requests/55776/drafts"
+    assert request.get_method() == "POST"
+    assert captured["timeout"] == 30
+
+    body = request.data.decode("utf-8")
+    parsed_body = parse_qs(body)
+    input_data = json.loads(parsed_body["input_data"][0])
+
+    assert input_data == {
+        "draft": {
+            "type": "reply",
+            "subject": "Re: Test subject",
+            "description": "Line 1<br />Line &lt;2&gt;",
+        }
+    }
+
+
+def test_add_request_draft_uses_custom_draft_type(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"draft": {"id": "draft-1"}}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    client.add_request_draft(
+        request_id="55776",
+        subject="Test",
+        description="Body",
+        draft_type="forward",
+    )
+
+    body = captured["request"].data.decode("utf-8")
+    parsed_body = parse_qs(body)
+    input_data = json.loads(parsed_body["input_data"][0])
+
+    assert input_data["draft"]["type"] == "forward"
+
+
+def test_add_request_draft_requires_request_id():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
+        client.add_request_draft(
+            request_id="",
+            subject="Test",
+            description="Body",
+        )
+
+
+def test_add_request_draft_requires_subject():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="subject is required"):
+        client.add_request_draft(
+            request_id="55776",
+            subject="   ",
+            description="Body",
+        )
+
+
+def test_add_request_draft_requires_description():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="description is required"):
+        client.add_request_draft(
+            request_id="55776",
+            subject="Test",
+            description="   ",
+        )

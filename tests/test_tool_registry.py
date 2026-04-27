@@ -104,3 +104,14 @@ def test_servicedesk_get_request_conversation_content_is_registered_as_connector
     assert definition.connector == "servicedeskplus"
     assert definition.resource_type == "request_conversation_content"
     assert "content_url" in definition.spec.parameters["required"]
+
+
+def test_servicedesk_add_request_draft_is_registered_as_connector_write():
+    definition = get_tool_definition("servicedesk_add_request_draft")
+
+    assert definition.category == ToolCategory.CONNECTOR_WRITE
+    assert definition.connector == "servicedeskplus"
+    assert definition.resource_type == "request_draft"
+    assert "request_id" in definition.spec.parameters["required"]
+    assert "subject" in definition.spec.parameters["required"]
+    assert "description" in definition.spec.parameters["required"]

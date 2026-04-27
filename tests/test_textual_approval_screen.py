@@ -1,7 +1,7 @@
 # tests/test_textual_approval_screen.py
 
 from approval import ApprovalRequest
-from textual_approval_screen import ApprovalScreen
+from textual_approval_screen import ApprovalScreen, should_render_diff_preview
 
 
 def test_approval_screen_formats_sidebar_with_path_action():
@@ -71,3 +71,25 @@ def test_approval_screen_formats_header_without_path():
     assert "Approval request" in header
     assert "bash" in header
     assert "not available" in header
+
+
+def test_should_render_diff_preview_for_unified_diff():
+    preview = "--- old\n+++ new\n@@ -1 +1 @@\n-old\n+new\n"
+
+    assert should_render_diff_preview(preview) is True
+
+
+def test_should_not_render_diff_preview_for_connector_preview():
+    preview = (
+        "ServiceDesk draft reply\n\n"
+        "Action: Save draft reply\n"
+        "Ticket: 55931\n"
+        "Type: reply\n"
+    )
+
+    assert should_render_diff_preview(preview) is False
+
+
+def test_should_not_render_diff_preview_for_empty_preview():
+    assert should_render_diff_preview(None) is False
+    assert should_render_diff_preview("") is False
