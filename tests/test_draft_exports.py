@@ -6,6 +6,7 @@ from draft_exports import (
     build_servicedesk_latest_context_path,
     build_servicedesk_latest_draft_path,
     build_servicedesk_output_dir,
+    read_text_if_exists,
     safe_filename_part,
     save_text_draft,
 )
@@ -93,3 +94,16 @@ def test_save_text_draft_creates_parent_directory(tmp_path):
 
     assert result == path
     assert path.read_text(encoding="utf-8") == "hello"
+
+
+def test_read_text_if_exists_returns_none_for_missing_file(tmp_path):
+    path = tmp_path / "missing.md"
+
+    assert read_text_if_exists(path) is None
+
+
+def test_read_text_if_exists_reads_existing_file(tmp_path):
+    path = tmp_path / "context.md"
+    path.write_text("saved context", encoding="utf-8")
+
+    assert read_text_if_exists(path) == "saved context"
