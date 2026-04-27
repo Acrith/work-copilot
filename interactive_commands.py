@@ -117,6 +117,16 @@ SERVICEDESK_DRAFT_REPLY_TONE_GUIDANCE = (
     "- Keep replies concise. Provide just enough detail for clarity.\n\n"
 )
 
+SERVICEDESK_DRAFT_REPLY_LANGUAGE_GUIDANCE = (
+    "Language guidance:\n"
+    "- Write the requester-facing draft reply in the same language as the requester-facing ticket conversation when clear.\n"
+    "- If the requester wrote in Polish, draft the reply in Polish.\n"
+    "- If the requester wrote in English, draft the reply in English.\n"
+    "- If the conversation contains both Polish and English, prefer the language used by the requester in the latest requester-facing message.\n"
+    "- If the requester language is unclear, use English only if the ticket content or company context does not clearly indicate Polish.\n"
+    "- Do not switch languages mid-reply unless the existing conversation clearly does that.\n\n"
+)
+
 def format_allowed_labels(labels: list[str]) -> str:
     return ", ".join(f"`{label}`" for label in labels)
 
@@ -326,6 +336,7 @@ def build_servicedesk_draft_reply_prompt(
         f"{context_instruction}"
         f"{SERVICEDESK_CONTEXT_WORKFLOW}"
         f"{SERVICEDESK_DRAFT_REPLY_TONE_GUIDANCE}"
+        f"{SERVICEDESK_DRAFT_REPLY_LANGUAGE_GUIDANCE}"
         "Determine whether a requester-facing reply is actually recommended. If no reply is "
         "recommended, do not invent one.\n\n"
         "Use one of the allowed labels exactly. If none fits safely, use `unclear` and "
