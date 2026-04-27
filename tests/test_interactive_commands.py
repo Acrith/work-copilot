@@ -203,21 +203,16 @@ def test_build_servicedesk_draft_reply_prompt_is_read_only():
     assert "Do not claim attachment contents were inspected" in prompt
 
 
-def test_build_servicedesk_draft_reply_prompt_includes_reply_intent_labels():
+def test_build_servicedesk_draft_reply_prompt_includes_reply_decision_labels():
     prompt = build_servicedesk_draft_reply_prompt("55478")
 
+    assert "Reply recommended:" in prompt
     assert "Detected reply intent:" in prompt
-    assert "Confidence:" in prompt
+    assert "Allowed reply_recommended labels:" in prompt
     assert "Allowed reply_intent labels:" in prompt
-    assert "`ask_info`" in prompt
-    assert "`confirm_resolution`" in prompt
-    assert "`completed`" in prompt
-    assert "`follow_up`" in prompt
-    assert "`explain_limitation`" in prompt
-    assert "`handoff_or_escalate`" in prompt
-    assert "`no_reply_needed`" in prompt
-    assert "`unclear`" in prompt
-    assert "Use one of the allowed labels exactly" in prompt
+    assert "`no_reply_recommended`" in prompt
+    assert "No requester-facing reply recommended at this time." in prompt
+    assert "do not force a follow-up message" in prompt
 
 
 def test_parse_sdp_context_command():
@@ -255,6 +250,10 @@ def test_build_servicedesk_context_prompt_includes_allowed_labels():
     assert "`risky_manual`" in prompt
     assert "`unclear`" in prompt
 
+    assert "Allowed reply_recommended labels:" in prompt
+    assert "`yes`" in prompt
+    assert "`no`" in prompt
+
     assert "Allowed reply_intent labels:" in prompt
     assert "`ask_info`" in prompt
     assert "`confirm_resolution`" in prompt
@@ -262,17 +261,23 @@ def test_build_servicedesk_context_prompt_includes_allowed_labels():
     assert "`follow_up`" in prompt
     assert "`explain_limitation`" in prompt
     assert "`handoff_or_escalate`" in prompt
-    assert "`no_reply_needed`" in prompt
-
-    assert "Allowed confidence labels:" in prompt
-    assert "`low`" in prompt
-    assert "`medium`" in prompt
-    assert "`high`" in prompt
-
-    assert "Allowed automation_candidate labels:" in prompt
-    assert "`partial`" in prompt
-
-    assert "Allowed risk_level labels:" in prompt
-    assert "`risky`" in prompt
+    assert "`no_reply_recommended`" in prompt
 
     assert "Use one of the allowed labels exactly" in prompt
+
+
+def test_build_servicedesk_context_prompt_includes_chronology_rules():
+    prompt = build_servicedesk_context_prompt("55853")
+
+    assert "Analyze the ticket chronologically" in prompt
+    assert "Do not list information as missing if a later conversation entry" in prompt
+    assert "Resolved earlier questions" in prompt
+    assert "Use `Resolved earlier questions`" in prompt
+
+
+def test_build_servicedesk_draft_reply_prompt_includes_chronology_rules():
+    prompt = build_servicedesk_draft_reply_prompt("55853")
+
+    assert "Analyze the ticket chronologically" in prompt
+    assert "Do not list information as missing if a later conversation entry" in prompt
+    assert "Do not base the draft on stale missing-information requests" in prompt
