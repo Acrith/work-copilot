@@ -18,6 +18,7 @@ from draft_exports import (
     build_servicedesk_draft_path,
     build_servicedesk_latest_context_path,
     build_servicedesk_latest_draft_path,
+    read_text_if_exists,
     save_text_draft,
 )
 from interactive_commands import (
@@ -428,7 +429,16 @@ class WorkCopilotTextualApp(App):
                 self._log("Usage: /sdp draft-reply <request_id>")
                 return
 
-            draft_prompt = build_servicedesk_draft_reply_prompt(request_id)
+            latest_context_path = build_servicedesk_latest_context_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            saved_context = read_text_if_exists(latest_context_path)
+
+            draft_prompt = build_servicedesk_draft_reply_prompt(
+                request_id,
+                saved_context=saved_context,
+            )
             draft_path = build_servicedesk_draft_path(
                 workspace=self.config.workspace,
                 request_id=request_id,
@@ -439,9 +449,18 @@ class WorkCopilotTextualApp(App):
             )
 
             self._log_user_message(user_prompt)
-            self._log_system_message(
-                f"Drafting ServiceDesk reply for request {request_id}."
-            )
+
+            if saved_context is not None:
+                self._log_system_message(
+                    f"Drafting ServiceDesk reply for request {request_id} using saved context."
+                )
+                self._log_system_message(f"Saved context: {latest_context_path}")
+            else:
+                self._log_system_message(
+                    f"Drafting ServiceDesk reply for request {request_id}."
+                )
+                self._log_system_message("No saved context found; ServiceDesk context may be read.")
+
             self._set_running(True)
             self._run_model_turn_worker(
                 draft_prompt,

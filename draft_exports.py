@@ -74,3 +74,10 @@ def save_text_draft(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def read_text_if_exists(path: Path) -> str | None:
+    if not path.exists():
+        return None
+
+    return path.read_text(encoding="utf-8")
