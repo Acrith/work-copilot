@@ -110,13 +110,46 @@ def extract_markdown_section(markdown: str, heading: str) -> str | None:
     return section or None
 
 
-def extract_servicedesk_draft_reply(markdown: str) -> str | None:
-    return extract_markdown_section(markdown, "Draft reply")
+def extract_servicedesk_request_subject(context_text: str | None) -> str | None:
+    if context_text is None:
+        return None
+
+    for line in context_text.splitlines():
+        stripped = line.strip()
+
+        for prefix in (
+            "request_subject:",
+            "Request subject:",
+            "- request_subject:",
+            "- Request subject:",
+        ):
+            if stripped.startswith(prefix):
+                subject = stripped.removeprefix(prefix).strip()
+                if subject and subject.lower() not in {"unknown", "unclear", "not found"}:
+                    return subject
+
+    return None
 
 
 def is_no_requester_reply_recommended(text: str) -> bool:
     return text.strip().rstrip(".") == NO_REQUESTER_REPLY_RECOMMENDED.rstrip(".")
 
 
-def build_servicedesk_draft_subject(request_id: str) -> str:
+def extract_servicedesk_draft_reply(draft_text: str) -> str | None:
+    return extract_markdown_section(draft_text, "Draft reply")
+
+
+def build_servicedesk_draft_subject(
+    request_id: str,
+    original_subject: str | None = None,
+) -> str:
+    if original_subject is not None:
+        subject = original_subject.strip()
+
+        if subject:
+            if subject.lower().startswith("re:"):
+                return subject
+
+            return f"Re: {subject}"
+
     return f"Re: ServiceDesk request {request_id}"

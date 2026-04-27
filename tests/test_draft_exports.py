@@ -10,6 +10,7 @@ from draft_exports import (
     build_servicedesk_output_dir,
     extract_markdown_section,
     extract_servicedesk_draft_reply,
+    extract_servicedesk_request_subject,
     is_no_requester_reply_recommended,
     read_text_if_exists,
     safe_filename_part,
@@ -162,5 +163,36 @@ def test_is_no_requester_reply_recommended():
     assert not is_no_requester_reply_recommended("Please confirm this works.")
 
 
-def test_build_servicedesk_draft_subject():
+def test_build_servicedesk_draft_subject_falls_back_to_request_id():
     assert build_servicedesk_draft_subject("55776") == "Re: ServiceDesk request 55776"
+
+
+def test_build_servicedesk_draft_subject_uses_original_subject():
+    assert (
+        build_servicedesk_draft_subject("55776", original_subject="VPN access")
+        == "Re: VPN access"
+    )
+
+
+def test_build_servicedesk_draft_subject_does_not_duplicate_re_prefix():
+    assert (
+        build_servicedesk_draft_subject("55776", original_subject="Re: VPN access")
+        == "Re: VPN access"
+    )
+
+
+def test_extract_servicedesk_request_subject_from_metadata():
+    context = """
+# ServiceDesk request context
+
+## Metadata
+
+- request_id: 55776
+- request_subject: VPN access
+
+## Current state
+
+needs_work
+"""
+
+    assert extract_servicedesk_request_subject(context) == "VPN access"

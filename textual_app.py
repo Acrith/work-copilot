@@ -21,6 +21,7 @@ from draft_exports import (
     build_servicedesk_latest_context_path,
     build_servicedesk_latest_draft_path,
     extract_servicedesk_draft_reply,
+    extract_servicedesk_request_subject,
     is_no_requester_reply_recommended,
     read_text_if_exists,
     save_text_draft,
@@ -607,7 +608,16 @@ class WorkCopilotTextualApp(App):
                 )
                 return
 
-            subject = build_servicedesk_draft_subject(request_id)
+            latest_context_path = build_servicedesk_latest_context_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            latest_context = read_text_if_exists(latest_context_path)
+            original_subject = extract_servicedesk_request_subject(latest_context)
+            subject = build_servicedesk_draft_subject(
+                request_id,
+                original_subject=original_subject,
+            )
 
             self._log_user_message(user_prompt)
             self._log_system_message(
