@@ -3,6 +3,7 @@ from typing import Any, Callable
 
 from agent_types import ToolSpec
 from connectors.servicedeskplus.tools import (
+    servicedesk_add_request_draft,
     servicedesk_get_request,
     servicedesk_get_request_attachments,
     servicedesk_get_request_conversation_content,
@@ -551,6 +552,43 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
         category=ToolCategory.CONNECTOR_READ,
         connector="servicedeskplus",
         resource_type="request_conversation_content",
+    ),
+    "servicedesk_add_request_draft": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_add_request_draft",
+            description=(
+                "Creates a draft reply in ServiceDesk Plus for a request. "
+                "This saves a draft only; it does not send the reply to the requester. "
+                "This is a connector write tool and requires approval."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "description": "ServiceDesk Plus request ID.",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Draft reply subject.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Draft reply body text.",
+                    },
+                    "draft_type": {
+                        "type": "string",
+                        "description": "Draft type. Defaults to reply.",
+                        "default": "reply",
+                    },
+                },
+                "required": ["request_id", "subject", "description"],
+            },
+        ),
+        handler=servicedesk_add_request_draft,
+        category=ToolCategory.CONNECTOR_WRITE,
+        connector="servicedeskplus",
+        resource_type="request_draft",
     ),
 }
 

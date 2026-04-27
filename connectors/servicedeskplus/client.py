@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from html import escape
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
@@ -12,6 +13,15 @@ from connectors.servicedeskplus.config import ServiceDeskPlusConfig
 
 class ServiceDeskPlusError(RuntimeError):
     pass
+
+
+def plain_text_to_basic_html(text: str) -> str:
+    lines = text.splitlines()
+
+    if not lines:
+        return ""
+
+    return "<br />".join(escape(line) for line in lines)
 
 
 @dataclass(frozen=True)
@@ -229,3 +239,79 @@ class ServiceDeskPlusClient:
             raise ServiceDeskPlusError("content_url must point to a ServiceDesk API path.")
 
         return self.get(path)
+
+    def post(self, path: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+        url = f"{self._base_url()}/{path.lstrip('/')}"
+        body = urlencode(data or {}).encode("utf-8")
+
+        request = Request(
+            url,
+            data=body,
+            headers=self._headers(),
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=30) as response:
+                response_body = response.read().decode("utf-8")
+        except HTTPError as error:
+            details = error.read().decode("utf-8", errors="replace")
+            raise ServiceDeskPlusError(
+                f"ServiceDesk Plus API returned HTTP {error.code}: {details}"
+            ) from error
+        except URLError as error:
+            raise ServiceDeskPlusError(
+                f"Could not connect to ServiceDesk Plus: {error.reason}"
+            ) from error
+
+        if not response_body:
+            return {}
+
+        try:
+            return json.loads(response_body)
+        except json.JSONDecodeError as error:
+            raise ServiceDeskPlusError("ServiceDesk Plus returned invalid JSON.") from error
+
+
+    def post_with_input_data(
+        self,
+        path: str,
+        input_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self.post(
+            path,
+            data={
+                "input_data": json.dumps(input_data),
+            },
+        )
+
+
+    def add_request_draft(
+        self,
+        *,
+        request_id: str,
+        subject: str,
+        description: str,
+        draft_type: str = "reply",
+    ) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        if not subject.strip():
+            raise ServiceDeskPlusError("subject is required.")
+
+        if not description.strip():
+            raise ServiceDeskPlusError("description is required.")
+
+        input_data = {
+            "draft": {
+                "type": draft_type,
+                "subject": subject,
+                "description": plain_text_to_basic_html(description),
+            }
+        }
+
+        return self.post_with_input_data(
+            f"/api/v3/requests/{request_id}/drafts",
+            input_data,
+        )

@@ -172,3 +172,28 @@ def servicedesk_get_request_conversation_content(
         return client.get_conversation_content(content_url=content_url)
     except ServiceDeskPlusError as error:
         return {"error": str(error)}
+
+
+def servicedesk_add_request_draft(
+    request_id: str,
+    subject: str,
+    description: str,
+    draft_type: str = "reply",
+    working_directory: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    config = load_servicedeskplus_config()
+
+    if not config.enabled:
+        return {"error": "ServiceDesk Plus connector is disabled."}
+
+    try:
+        client = ServiceDeskPlusClient(config)
+        return client.add_request_draft(
+            request_id=request_id,
+            subject=subject,
+            description=description,
+            draft_type=draft_type,
+        )
+    except ServiceDeskPlusError as error:
+        return {"error": str(error)}

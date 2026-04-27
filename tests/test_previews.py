@@ -1,4 +1,9 @@
-from previews import ParsedDiffLine, build_write_preview, parse_unified_diff
+from previews import (
+    ParsedDiffLine,
+    build_connector_write_preview,
+    build_write_preview,
+    parse_unified_diff,
+)
 
 
 def create_file(path, content=""):
@@ -182,3 +187,37 @@ def test_parse_unified_diff_multi_line_replace():
     assert lines[6] == ParsedDiffLine(kind="add", text="line2_added", old_lineno=None, new_lineno=2)
     assert lines[7] == ParsedDiffLine(kind="add", text="line3_added", old_lineno=None, new_lineno=3)
     assert lines[8] == ParsedDiffLine(kind="context", text="line4", old_lineno=4, new_lineno=4)
+
+
+def test_build_connector_write_preview_for_servicedesk_draft():
+    preview = build_connector_write_preview(
+        "servicedesk_add_request_draft",
+        {
+            "request_id": "55776",
+            "subject": "Re: Test subject",
+            "description": "Hello from draft",
+            "draft_type": "reply",
+        },
+    )
+
+    assert preview is not None
+    assert "ServiceDesk draft reply" in preview
+    assert "Action: Save draft reply" in preview
+    assert "Ticket: 55776" in preview
+    assert "Type: reply" in preview
+    assert "Subject:" in preview
+    assert "Re: Test subject" in preview
+    assert "Draft body:" in preview
+    assert "Hello from draft" in preview
+    assert "It will not send the reply" in preview
+
+
+def test_build_connector_write_preview_returns_none_for_unknown_tool():
+    preview = build_connector_write_preview(
+        "some_other_tool",
+        {
+            "request_id": "55776",
+        },
+    )
+
+    assert preview is None

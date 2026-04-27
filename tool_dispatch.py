@@ -7,7 +7,11 @@ from permissions import (
     evaluate_request,
     extract_target_path,
 )
-from previews import build_update_preview, build_write_preview
+from previews import (
+    build_connector_write_preview,
+    build_update_preview,
+    build_write_preview,
+)
 from tool_registry import get_tool_definition
 
 
@@ -83,6 +87,9 @@ def execute_tool_call(
                 args.get("old_text", ""),
                 args.get("new_text", ""),
             )
+
+        else:
+            preview = build_connector_write_preview(function_name, args)
 
         approval = approval_handler.request_approval(
             ApprovalRequest(
