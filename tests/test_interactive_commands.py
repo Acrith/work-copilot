@@ -203,6 +203,23 @@ def test_build_servicedesk_draft_reply_prompt_is_read_only():
     assert "Do not claim attachment contents were inspected" in prompt
 
 
+def test_build_servicedesk_draft_reply_prompt_includes_reply_intent_labels():
+    prompt = build_servicedesk_draft_reply_prompt("55478")
+
+    assert "Detected reply intent:" in prompt
+    assert "Confidence:" in prompt
+    assert "Allowed reply_intent labels:" in prompt
+    assert "`ask_info`" in prompt
+    assert "`confirm_resolution`" in prompt
+    assert "`completed`" in prompt
+    assert "`follow_up`" in prompt
+    assert "`explain_limitation`" in prompt
+    assert "`handoff_or_escalate`" in prompt
+    assert "`no_reply_needed`" in prompt
+    assert "`unclear`" in prompt
+    assert "Use one of the allowed labels exactly" in prompt
+
+
 def test_parse_sdp_context_command():
     assert parse_interactive_command("/sdp context 55478") == "sdp_context"
 
@@ -223,3 +240,39 @@ def test_build_servicedesk_context_prompt_is_read_only():
     assert "Do not send replies" in prompt
     assert "Do not execute commands" in prompt
     assert "Do not claim attachment contents were inspected" in prompt
+
+
+def test_build_servicedesk_context_prompt_includes_allowed_labels():
+    prompt = build_servicedesk_context_prompt("55478")
+
+    assert "Allowed current_state labels:" in prompt
+    assert "`not_yet_processed`" in prompt
+    assert "`needs_work`" in prompt
+    assert "`waiting_for_requester`" in prompt
+    assert "`waiting_for_internal`" in prompt
+    assert "`ready_to_close`" in prompt
+    assert "`blocked`" in prompt
+    assert "`risky_manual`" in prompt
+    assert "`unclear`" in prompt
+
+    assert "Allowed reply_intent labels:" in prompt
+    assert "`ask_info`" in prompt
+    assert "`confirm_resolution`" in prompt
+    assert "`completed`" in prompt
+    assert "`follow_up`" in prompt
+    assert "`explain_limitation`" in prompt
+    assert "`handoff_or_escalate`" in prompt
+    assert "`no_reply_needed`" in prompt
+
+    assert "Allowed confidence labels:" in prompt
+    assert "`low`" in prompt
+    assert "`medium`" in prompt
+    assert "`high`" in prompt
+
+    assert "Allowed automation_candidate labels:" in prompt
+    assert "`partial`" in prompt
+
+    assert "Allowed risk_level labels:" in prompt
+    assert "`risky`" in prompt
+
+    assert "Use one of the allowed labels exactly" in prompt

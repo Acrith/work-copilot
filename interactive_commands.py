@@ -28,6 +28,51 @@ COMMAND_HELP = [
     ("/exit", "Exit interactive mode"),
 ]
 
+CURRENT_STATE_LABELS = [
+    "not_yet_processed",
+    "needs_work",
+    "waiting_for_requester",
+    "waiting_for_internal",
+    "ready_to_close",
+    "blocked",
+    "risky_manual",
+    "unclear",
+]
+
+REPLY_INTENT_LABELS = [
+    "ask_info",
+    "confirm_resolution",
+    "completed",
+    "follow_up",
+    "explain_limitation",
+    "handoff_or_escalate",
+    "no_reply_needed",
+    "unclear",
+]
+
+CONFIDENCE_LABELS = [
+    "low",
+    "medium",
+    "high",
+]
+
+AUTOMATION_CANDIDATE_LABELS = [
+    "no",
+    "partial",
+    "yes",
+]
+
+RISK_LEVEL_LABELS = [
+    "low",
+    "medium",
+    "high",
+    "risky",
+]
+
+
+def format_allowed_labels(labels: list[str]) -> str:
+    return ", ".join(f"`{label}`" for label in labels)
+
 
 def parse_interactive_command(user_input: str) -> InteractiveCommand:
     stripped = user_input.strip()
@@ -212,10 +257,18 @@ def build_servicedesk_draft_reply_prompt(request_id: str) -> str:
         "Return a concise draft suitable for the requester. If the situation is unclear, "
         "draft a question asking for the missing information instead of pretending the issue "
         "is resolved.\n\n"
+        "Detect the reply intent automatically. Use one of the allowed labels exactly. "
+        "If none fits safely, use `unclear` and explain why in Safety notes.\n\n"
+        "Allowed reply_intent labels:\n"
+        f"{format_allowed_labels(REPLY_INTENT_LABELS)}\n\n"
+        "Allowed confidence labels:\n"
+        f"{format_allowed_labels(CONFIDENCE_LABELS)}\n\n"
         "Use this output structure:\n\n"
         "# ServiceDesk reply draft\n\n"
         f"Ticket: {request_id}\n"
-        "Reply type: public requester reply\n\n"
+        "Reply type: public requester reply\n"
+        "Detected reply intent: <one allowed reply_intent label>\n"
+        "Confidence: <one allowed confidence label>\n\n"
         "## Draft reply\n\n"
         "<write the reply text here>\n\n"
         "## Internal reasoning\n\n"
@@ -244,24 +297,45 @@ def build_servicedesk_context_prompt(request_id: str) -> str:
         "fetch the conversation content.\n\n"
         "Return a concise but useful context summary. Focus on what happened, current state, "
         "who is waiting on whom, and the safest next action.\n\n"
+        "Use one of the allowed labels exactly. If none fits safely, use `unclear` and "
+        "explain why in Safety notes.\n\n"
+        "Allowed current_state labels:\n"
+        f"{format_allowed_labels(CURRENT_STATE_LABELS)}\n\n"
+        "Allowed reply_intent labels:\n"
+        f"{format_allowed_labels(REPLY_INTENT_LABELS)}\n\n"
+        "Allowed confidence labels:\n"
+        f"{format_allowed_labels(CONFIDENCE_LABELS)}\n\n"
+        "Allowed automation_candidate labels:\n"
+        f"{format_allowed_labels(AUTOMATION_CANDIDATE_LABELS)}\n\n"
+        "Allowed risk_level labels:\n"
+        f"{format_allowed_labels(RISK_LEVEL_LABELS)}\n\n"
         "Use this output structure:\n\n"
         "# ServiceDesk request context\n\n"
         f"Ticket: {request_id}\n\n"
         "## Current state\n\n"
-        "Choose one: not yet processed, needs work, waiting for requester, ready to close, "
-        "blocked, risky/manual, or unclear.\n\n"
+        "<one allowed current_state label>\n\n"
+        "## Confidence\n\n"
+        "<one allowed confidence label>\n\n"
+        "## Possible reply intent\n\n"
+        "<one allowed reply_intent label>\n\n"
         "## Summary\n\n"
         "<summarize the request and relevant conversation history>\n\n"
         "## Latest known activity\n\n"
         "<summarize the newest meaningful requester/technician activity>\n\n"
         "## Suggested next action\n\n"
         "<recommend the safest next action>\n\n"
-        "## Possible reply intent\n\n"
-        "Choose one if applicable: ask-info, confirm-resolution, completed, follow-up, "
-        "reject-or-explain, or unclear.\n\n"
+        "## Missing information\n\n"
+        "- <list missing details, or write `none`>\n\n"
+        "## Automation candidate\n\n"
+        "<one allowed automation_candidate label>\n\n"
+        "## Risk level\n\n"
+        "<one allowed risk_level label>\n\n"
         "## Context inspected\n\n"
-        "List which context was inspected: request details, notes, attachment metadata, "
-        "conversations, conversation content.\n\n"
+        "- request details: yes/no\n"
+        "- notes: yes/no\n"
+        "- attachment metadata: yes/no\n"
+        "- conversations: yes/no\n"
+        "- conversation content: yes/no\n\n"
         "## Safety notes\n\n"
         "<mention uncertainty, missing information, risky assumptions, or attachments that "
         "exist but were not inspected>\n\n"
