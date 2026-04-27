@@ -201,15 +201,17 @@ def test_build_connector_write_preview_for_servicedesk_draft():
     )
 
     assert preview is not None
-    assert "ServiceDesk draft reply" in preview
-    assert "Action: Save draft reply" in preview
-    assert "Ticket: 55776" in preview
-    assert "Type: reply" in preview
-    assert "Subject:" in preview
+    assert "# ServiceDesk draft reply" in preview
+    assert "**Action:** Save draft reply" in preview
+    assert "**Ticket:** 55776" in preview
+    assert "**Type:** reply" in preview
+    assert "## Subject" in preview
     assert "Re: Test subject" in preview
-    assert "Draft body:" in preview
+    assert "## Draft body" in preview
     assert "Hello from draft" in preview
-    assert "It will not send the reply" in preview
+    assert "## Safety" in preview
+    assert "This will save a draft in ServiceDesk Plus." in preview
+    assert "It will not send the reply to the requester." in preview
 
 
 def test_build_connector_write_preview_returns_none_for_unknown_tool():

@@ -465,14 +465,17 @@ def test_connector_write_ask_shows_connector_preview_and_executes(
     }
     assert request.preview_path is None
     assert request.preview is not None
-    assert "ServiceDesk draft reply" in request.preview
-    assert "Action: Save draft reply" in request.preview
-    assert "Ticket: 55776" in request.preview
-    assert "Subject:" in request.preview
+    assert "# ServiceDesk draft reply" in request.preview
+    assert "**Action:** Save draft reply" in request.preview
+    assert "**Ticket:** 55776" in request.preview
+    assert "**Type:** reply" in request.preview
+    assert "## Subject" in request.preview
     assert "Re: Test subject" in request.preview
-    assert "Draft body:" in request.preview
+    assert "## Draft body" in request.preview
     assert "Hello from draft" in request.preview
-    assert "It will not send the reply" in request.preview
+    assert "## Safety" in request.preview
+    assert "This will save a draft in ServiceDesk Plus." in request.preview
+    assert "It will not send the reply to the requester." in request.preview
 
     mocked_tool.assert_called_once_with(
         request_id="55776",

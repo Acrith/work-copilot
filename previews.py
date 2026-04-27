@@ -161,7 +161,10 @@ def summarize_diff(diff_text: str) -> tuple[int, int]:
     return additions, removals
 
 
-def build_connector_write_preview(tool_name: str, args: dict[str, object]) -> str | None:
+def build_connector_write_preview(
+    tool_name: str,
+    args: dict[str, object],
+) -> str | None:
     if tool_name == "servicedesk_add_request_draft":
         request_id = args.get("request_id", "")
         subject = args.get("subject", "")
@@ -170,19 +173,26 @@ def build_connector_write_preview(tool_name: str, args: dict[str, object]) -> st
 
         return "\n".join(
             [
-                "ServiceDesk draft reply",
+                "# ServiceDesk draft reply",
                 "",
-                "Action: Save draft reply",
-                f"Ticket: {request_id}",
-                f"Type: {draft_type}",
+                f"**Action:** Save draft reply",
+                f"**Ticket:** {request_id}",
+                f"**Type:** {draft_type}",
                 "",
-                "Subject:",
+                "## Subject",
+                "",
                 str(subject),
                 "",
-                "Draft body:",
+                "## Draft body",
+                "",
                 str(description),
                 "",
-                "This will save a draft in ServiceDesk Plus. It will not send the reply.",
+                "---",
+                "",
+                "## Safety",
+                "",
+                "This will save a draft in ServiceDesk Plus.",
+                "It will not send the reply to the requester.",
             ]
         )
 
