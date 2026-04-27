@@ -1,6 +1,7 @@
 from previews import (
     ParsedDiffLine,
     build_connector_write_preview,
+    build_exec_preview,
     build_write_preview,
     parse_unified_diff,
 )
@@ -220,6 +221,38 @@ def test_build_connector_write_preview_returns_none_for_unknown_tool():
         {
             "request_id": "55776",
         },
+    )
+
+    assert preview is None
+
+
+def test_build_exec_preview_for_bash():
+    preview = build_exec_preview(
+        "bash",
+        {
+            "command": "uv run pytest",
+            "cwd": ".",
+            "timeout_seconds": 120,
+        },
+        "/workspace",
+    )
+
+    assert preview is not None
+    assert "# Shell command" in preview
+    assert "```bash" in preview
+    assert "uv run pytest" in preview
+    assert "## Working directory" in preview
+    assert "`." in preview
+    assert "## Timeout" in preview
+    assert "`120s`" in preview
+    assert "This command will execute locally if approved." in preview
+
+
+def test_build_exec_preview_returns_none_for_unknown_exec_tool():
+    preview = build_exec_preview(
+        "some_other_exec_tool",
+        {"command": "echo nope"},
+        "/workspace",
     )
 
     assert preview is None

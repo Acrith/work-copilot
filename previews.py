@@ -197,3 +197,43 @@ def build_connector_write_preview(
         )
 
     return None
+
+
+def build_exec_preview(
+    tool_name: str,
+    args: dict[str, object],
+    working_directory: str,
+) -> str | None:
+    if tool_name == "bash":
+        command = str(args.get("command", ""))
+        cwd = args.get("cwd") or "."
+        timeout_seconds = args.get("timeout_seconds")
+        if timeout_seconds is None:
+            timeout_seconds = 30
+
+        return "\n".join(
+            [
+                "# Shell command",
+                "",
+                "## Command",
+                "",
+                "```bash",
+                command,
+                "```",
+                "",
+                "## Working directory",
+                "",
+                f"`{cwd}`",
+                "",
+                "## Timeout",
+                "",
+                f"`{timeout_seconds}s`",
+                "",
+                "## Safety",
+                "",
+                "This command will execute locally if approved.",
+                "Review the command before allowing it.",
+            ]
+        )
+
+    return None

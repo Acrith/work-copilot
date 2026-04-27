@@ -9,9 +9,11 @@ from permissions import (
 )
 from previews import (
     build_connector_write_preview,
+    build_exec_preview,
     build_update_preview,
     build_write_preview,
 )
+from tool_categories import ToolCategory
 from tool_registry import get_tool_definition
 
 
@@ -87,6 +89,9 @@ def execute_tool_call(
                 args.get("old_text", ""),
                 args.get("new_text", ""),
             )
+
+        elif tool_definition.category == ToolCategory.EXEC:
+            preview = build_exec_preview(function_name, args, working_directory)
 
         else:
             preview = build_connector_write_preview(function_name, args)

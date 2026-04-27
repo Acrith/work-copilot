@@ -28,7 +28,7 @@ def permission_context(mock_working_directory):
     )
 
 
-def make_definition(name, handler):
+def make_definition(name, handler, category=None):
     category_by_name = {
         "get_file_content": ToolCategory.READ,
         "get_files_info": ToolCategory.READ,
@@ -41,6 +41,7 @@ def make_definition(name, handler):
         "run_python_file": ToolCategory.EXEC,
         "run_tests": ToolCategory.EXEC,
         "bash": ToolCategory.EXEC,
+        "servicedesk_add_request_draft": ToolCategory.CONNECTOR_WRITE,
     }
 
     return ToolDefinition(
@@ -54,7 +55,7 @@ def make_definition(name, handler):
             },
         ),
         handler=handler,
-        category=category_by_name.get(name, ToolCategory.EXEC),
+        category=category or category_by_name.get(name, ToolCategory.EXEC),
     )
 
 
@@ -417,6 +418,55 @@ def test_execute_ask_tool_without_approval_handler_returns_error(tmp_path):
     )
 
     assert result.payload == {"error": "No approval handler configured for bash"}
+
+
+def test_bash_ask_shows_exec_preview_and_executes(
+    monkeypatch,
+    mock_working_directory,
+    permission_context,
+):
+    mocked_tool = MagicMock(return_value={"ok": True})
+    approval_handler = FakeApprovalHandler([ApprovalResponse(ApprovalAction.ALLOW_ONCE)])
+
+    monkeypatch.setattr(
+        tool_dispatch_module,
+        "get_tool_definition",
+        lambda name: make_definition(name, mocked_tool),
+    )
+
+    result = tool_dispatch_module.execute_tool_call(
+        ToolCall(
+            name="bash",
+            args={
+                "command": "uv run pytest",
+                "cwd": ".",
+                "timeout_seconds": 120,
+            },
+        ),
+        mock_working_directory,
+        permission_context,
+        approval_handler=approval_handler,
+    )
+
+    assert result.payload["result"] == {"ok": True}
+    assert len(approval_handler.requests) == 1
+
+    request = approval_handler.requests[0]
+    assert request.function_name == "bash"
+    assert request.preview_path is None
+    assert request.preview is not None
+    assert "# Shell command" in request.preview
+    assert "uv run pytest" in request.preview
+    assert "## Working directory" in request.preview
+    assert "## Timeout" in request.preview
+    assert "This command will execute locally if approved." in request.preview
+
+    mocked_tool.assert_called_once_with(
+        command="uv run pytest",
+        cwd=".",
+        timeout_seconds=120,
+        working_directory=mock_working_directory,
+    )
 
 
 def test_connector_write_ask_shows_connector_preview_and_executes(
