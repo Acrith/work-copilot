@@ -14,6 +14,7 @@ InteractiveCommand = Literal[
     "status",
     "sdp_context",
     "sdp_draft_reply",
+    "sdp_save_draft",
     "sdp_triage",
     "unknown",
 ]
@@ -23,8 +24,9 @@ COMMAND_HELP = [
     ("/status", "Show current session settings"),
     ("/clear", "Reset provider/session state"),
     ("/sdp context <id>", "Summarize ServiceDesk ticket context and save it locally"),
-    ("/sdp triage <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
     ("/sdp draft-reply <id>", "Draft a requester reply and save it locally"),
+    ("/sdp save-draft <id>", "Save latest local reply as a ServiceDesk draft"),
+    ("/sdp triage <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
     ("/exit", "Exit interactive mode"),
 ]
 
@@ -145,6 +147,9 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand:
 
         if len(parts) >= 2 and parts[1].lower() in {"draft-reply", "draft_reply", "reply"}:
             return "sdp_draft_reply"
+
+        if len(parts) >= 2 and parts[1].lower() in {"save-draft", "save_draft"}:
+            return "sdp_save_draft"
 
         if len(parts) >= 2 and parts[1].lower() == "triage":
             return "sdp_triage"

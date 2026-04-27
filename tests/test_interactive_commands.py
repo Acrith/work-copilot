@@ -68,6 +68,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/clear" in help_text
     assert "/sdp triage <limit>" in help_text
     assert "/sdp draft-reply <id>" in help_text
+    assert "/sdp save-draft <id>" in help_text
     assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
@@ -297,3 +298,11 @@ def test_build_servicedesk_draft_reply_prompt_uses_saved_context():
     assert "Call ServiceDesk tools only if the saved context" in prompt
     assert "<saved_servicedesk_context>" in prompt
     assert "ready_to_close" in prompt
+
+
+def test_parse_sdp_save_draft_command():
+    assert parse_interactive_command("/sdp save-draft 55776") == "sdp_save_draft"
+
+
+def test_parse_sdp_save_draft_alias():
+    assert parse_interactive_command("/sdp save_draft 55776") == "sdp_save_draft"

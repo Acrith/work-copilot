@@ -1,11 +1,16 @@
 from datetime import UTC, datetime
 
 from draft_exports import (
+    NO_REQUESTER_REPLY_RECOMMENDED,
     build_servicedesk_context_path,
     build_servicedesk_draft_path,
+    build_servicedesk_draft_subject,
     build_servicedesk_latest_context_path,
     build_servicedesk_latest_draft_path,
     build_servicedesk_output_dir,
+    extract_markdown_section,
+    extract_servicedesk_draft_reply,
+    is_no_requester_reply_recommended,
     read_text_if_exists,
     safe_filename_part,
     save_text_draft,
@@ -107,3 +112,55 @@ def test_read_text_if_exists_reads_existing_file(tmp_path):
     path.write_text("saved context", encoding="utf-8")
 
     assert read_text_if_exists(path) == "saved context"
+
+
+def test_extract_markdown_section_extracts_named_section():
+    markdown = """# Title
+
+## Draft reply
+
+Hello requester.
+
+Line two.
+
+## Internal reasoning
+
+Reasoning here.
+"""
+
+    assert extract_markdown_section(markdown, "Draft reply") == (
+        "Hello requester.\n\nLine two."
+    )
+
+
+def test_extract_markdown_section_returns_none_when_missing():
+    markdown = "# Title\n\n## Other\n\nNo draft here."
+
+    assert extract_markdown_section(markdown, "Draft reply") is None
+
+
+def test_extract_servicedesk_draft_reply():
+    markdown = """# ServiceDesk reply draft
+
+## Draft reply
+
+Please confirm this works.
+
+## Safety notes
+
+None.
+"""
+
+    assert extract_servicedesk_draft_reply(markdown) == "Please confirm this works."
+
+
+def test_is_no_requester_reply_recommended():
+    assert is_no_requester_reply_recommended(NO_REQUESTER_REPLY_RECOMMENDED)
+    assert is_no_requester_reply_recommended(
+        "No requester-facing reply recommended at this time"
+    )
+    assert not is_no_requester_reply_recommended("Please confirm this works.")
+
+
+def test_build_servicedesk_draft_subject():
+    assert build_servicedesk_draft_subject("55776") == "Re: ServiceDesk request 55776"
