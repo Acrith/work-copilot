@@ -1,6 +1,7 @@
 # tests/test_interactive_commands.py
 
 from interactive_commands import (
+    build_servicedesk_context_prompt,
     build_servicedesk_draft_reply_prompt,
     build_servicedesk_triage_prompt,
     format_interactive_help,
@@ -67,6 +68,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/clear" in help_text
     assert "/sdp triage <limit>" in help_text
     assert "/sdp draft-reply <id>" in help_text
+    assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
 
@@ -193,6 +195,28 @@ def test_build_servicedesk_draft_reply_prompt_is_read_only():
 
     assert "request 55478" in prompt
     assert "Draft reply" in prompt
+    assert "Use only read-only ServiceDesk tools" in prompt
+    assert "Do not update ServiceDesk" in prompt
+    assert "Do not add notes" in prompt
+    assert "Do not send replies" in prompt
+    assert "Do not execute commands" in prompt
+    assert "Do not claim attachment contents were inspected" in prompt
+
+
+def test_parse_sdp_context_command():
+    assert parse_interactive_command("/sdp context 55478") == "sdp_context"
+
+
+def test_parse_sdp_context_aliases():
+    assert parse_interactive_command("/sdp summary 55478") == "sdp_context"
+    assert parse_interactive_command("/sdp summarize 55478") == "sdp_context"
+
+
+def test_build_servicedesk_context_prompt_is_read_only():
+    prompt = build_servicedesk_context_prompt("55478")
+
+    assert "request 55478" in prompt
+    assert "ServiceDesk context summary" in prompt
     assert "Use only read-only ServiceDesk tools" in prompt
     assert "Do not update ServiceDesk" in prompt
     assert "Do not add notes" in prompt

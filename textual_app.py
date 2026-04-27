@@ -13,9 +13,14 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from approval import ApprovalRequest, ApprovalResponse
-from draft_exports import build_servicedesk_draft_path, save_text_draft
+from draft_exports import (
+    build_servicedesk_context_path,
+    build_servicedesk_draft_path,
+    save_text_draft,
+)
 from interactive_commands import (
     build_interactive_help_renderable,
+    build_servicedesk_context_prompt,
     build_servicedesk_draft_reply_prompt,
     build_servicedesk_triage_prompt,
     format_interactive_status,
@@ -275,7 +280,7 @@ class WorkCopilotTextualApp(App):
     def _run_model_turn_worker(
         self,
         user_prompt: str,
-        draft_output_path: str | None = None,
+        save_output_path: str | None = None,
     ) -> None:
         log = self.query_one("#activity-log", RichLog)
         event_sink = TextualEventSink(
@@ -302,11 +307,11 @@ class WorkCopilotTextualApp(App):
                 approval_handler=approval_handler,
             )
 
-            if final_text is not None and draft_output_path is not None:
-                saved_path = save_text_draft(Path(draft_output_path), final_text)
+            if final_text is not None and save_output_path is not None:
+                saved_path = save_text_draft(Path(save_output_path), final_text)
                 self.call_from_thread(
                     self._log_system_message,
-                    f"Draft saved to: {saved_path}",
+                    f"Output saved to: {saved_path}",
                 )
 
             if final_text is None:
@@ -374,6 +379,32 @@ class WorkCopilotTextualApp(App):
             self._run_model_turn_worker(triage_prompt)
             return
 
+
+        if command == "sdp_context":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp context <request_id>")
+                return
+
+            context_prompt = build_servicedesk_context_prompt(request_id)
+            context_path = build_servicedesk_context_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Preparing ServiceDesk context summary for request {request_id}."
+            )
+            self._set_running(True)
+            self._run_model_turn_worker(
+                context_prompt,
+                save_output_path=str(context_path),
+            )
+            return
+
         if command == "sdp_draft_reply":
             request_id = parse_sdp_request_id(user_prompt)
 
@@ -395,7 +426,7 @@ class WorkCopilotTextualApp(App):
             self._set_running(True)
             self._run_model_turn_worker(
                 draft_prompt,
-                draft_output_path=str(draft_path),
+                save_output_path=str(draft_path)
             )
             return
 

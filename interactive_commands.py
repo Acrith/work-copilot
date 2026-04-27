@@ -12,6 +12,7 @@ InteractiveCommand = Literal[
     "clear",
     "help",
     "status",
+    "sdp_context",
     "sdp_draft_reply",
     "sdp_triage",
     "unknown",
@@ -21,6 +22,7 @@ COMMAND_HELP = [
     ("/help", "Show this help"),
     ("/status", "Show current session settings"),
     ("/clear", "Reset provider/session state"),
+    ("/sdp context <id>", "Summarize ServiceDesk ticket context and save it locally"),
     ("/sdp triage <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
     ("/sdp draft-reply <id>", "Draft a requester reply and save it locally"),
     ("/exit", "Exit interactive mode"),
@@ -54,11 +56,14 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand:
         return "unknown"
 
     if command == "/sdp":
-        if len(parts) >= 2 and parts[1].lower() == "triage":
-            return "sdp_triage"
+        if len(parts) >= 2 and parts[1].lower() in {"context", "summary", "summarize"}:
+            return "sdp_context"
 
         if len(parts) >= 2 and parts[1].lower() in {"draft-reply", "draft_reply", "reply"}:
             return "sdp_draft_reply"
+
+        if len(parts) >= 2 and parts[1].lower() == "triage":
+            return "sdp_triage"
 
         return "unknown"
 
@@ -217,6 +222,49 @@ def build_servicedesk_draft_reply_prompt(request_id: str) -> str:
         "<briefly explain why this reply is appropriate>\n\n"
         "## Safety notes\n\n"
         "<mention uncertainties, missing information, or risky assumptions>\n\n"
+        "Important rules:\n"
+        "- Use only read-only ServiceDesk tools.\n"
+        "- Do not update ServiceDesk.\n"
+        "- Do not add notes.\n"
+        "- Do not send replies.\n"
+        "- Do not execute commands.\n"
+        "- Do not claim attachment contents were inspected."
+    )
+
+
+def build_servicedesk_context_prompt(request_id: str) -> str:
+    return (
+        f"Prepare a ServiceDesk context summary for request {request_id}.\n\n"
+        "Use this workflow:\n"
+        "1. Read the request details.\n"
+        "2. Read request notes.\n"
+        "3. Read attachment metadata. Do not download or inspect attachment contents.\n"
+        "4. Read request conversations.\n"
+        "5. When conversation entries include content_url values and the content is needed, "
+        "fetch the conversation content.\n\n"
+        "Return a concise but useful context summary. Focus on what happened, current state, "
+        "who is waiting on whom, and the safest next action.\n\n"
+        "Use this output structure:\n\n"
+        "# ServiceDesk request context\n\n"
+        f"Ticket: {request_id}\n\n"
+        "## Current state\n\n"
+        "Choose one: not yet processed, needs work, waiting for requester, ready to close, "
+        "blocked, risky/manual, or unclear.\n\n"
+        "## Summary\n\n"
+        "<summarize the request and relevant conversation history>\n\n"
+        "## Latest known activity\n\n"
+        "<summarize the newest meaningful requester/technician activity>\n\n"
+        "## Suggested next action\n\n"
+        "<recommend the safest next action>\n\n"
+        "## Possible reply intent\n\n"
+        "Choose one if applicable: ask-info, confirm-resolution, completed, follow-up, "
+        "reject-or-explain, or unclear.\n\n"
+        "## Context inspected\n\n"
+        "List which context was inspected: request details, notes, attachment metadata, "
+        "conversations, conversation content.\n\n"
+        "## Safety notes\n\n"
+        "<mention uncertainty, missing information, risky assumptions, or attachments that "
+        "exist but were not inspected>\n\n"
         "Important rules:\n"
         "- Use only read-only ServiceDesk tools.\n"
         "- Do not update ServiceDesk.\n"
