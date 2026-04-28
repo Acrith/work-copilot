@@ -1,0 +1,124 @@
+id: exchange.archive.enable_auto_expanding
+family: exchange.archive
+name: Enable Exchange Online auto-expanding archive for mailbox
+version: 1
+status: draft_only
+risk_level: high
+
+description: >
+  Prepares a runbook for enabling auto-expanding archive for a specific Exchange
+  Online mailbox when the standard archive mailbox is already enabled and has
+  reached, or is approaching, archive capacity limits. This skill is mailbox-scoped
+  only and does not cover tenant-wide or organization-level archive settings.
+
+when_to_use:
+  - Standard Exchange Online archive is already enabled for the mailbox.
+  - User reports archive mailbox capacity limits or archive quota warnings.
+  - Initial inspection confirms archive is enabled but archive capacity is insufficient.
+  - Ticket explicitly requests auto-expanding archive for a specific mailbox.
+  - Archive mailbox is full or close to full and auto-expanding archive is the intended remediation.
+
+when_not_to_use:
+  - Standard archive is not enabled for the mailbox; use exchange.archive.enable first.
+  - Ticket asks only to enable the standard archive.
+  - Ticket asks to change retention policies.
+  - Ticket asks for mailbox deletion or cleanup.
+  - Issue is related to primary mailbox size, not archive mailbox size.
+  - Ticket is a tenant-wide or organization-level Exchange archive configuration request.
+  - Ticket asks only to inspect archive status; use exchange.mailbox.inspect instead.
+
+required_inputs:
+  - name: mailbox_address
+    description: Primary email address or User Principal Name (UPN) of the mailbox.
+    required: true
+  - name: affected_user_or_owner
+    description: Name of the user or mailbox owner for whom auto-expanding archive is being considered.
+    required: true
+  - name: current_archive_status
+    description: Confirmation that the standard archive is already enabled for the mailbox.
+    required: true
+  - name: auto_expanding_archive_status
+    description: Current auto-expanding archive status if known.
+    required: false
+  - name: archive_size_or_quota_symptom
+    description: Description of the archive capacity issue, such as archive full, quota exceeded, or archive quota warning.
+    required: true
+  - name: approval_status
+    description: Confirmation that enabling auto-expanding archive is authorized by the requester, mailbox owner, manager, or internal process.
+    required: true
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for tracking and audit purposes.
+    required: true
+
+derived_outputs:
+  - auto_expanding_archive_plan
+  - mailbox_confirmation_summary
+  - archive_prerequisite_check
+  - approval_summary
+  - execution_checklist
+  - post_change_verification_plan
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_auto_expanding_archive_plan
+  - powershell_execution_checklist
+
+systems:
+  - Exchange Online
+  - Microsoft 365
+
+data_sensitivity:
+  - personal_data
+  - audit_information
+  - mailbox_metadata
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+approval_requirements:
+  - requester, mailbox owner, manager, or internal-process authorization
+  - target mailbox confirmation
+  - confirmation that standard archive is already enabled
+  - confirmation that archive capacity, not primary mailbox capacity, is the issue
+  - confirmation that auto-expanding archive is not already enabled for the mailbox
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_powershell_execution_checklist
+
+forbidden_actions_now:
+  - enable_auto_expanding_archive
+  - enable_archive
+  - modify_organization_settings
+  - change_retention_policy
+  - modify_mailbox
+  - delete_mail
+  - grant_permissions
+  - remove_permissions
+  - create_mailbox
+  - disable_mailbox
+
+current_manual_adapter:
+  type: manual_review_and_exchange_online_admin
+  notes: >
+    Current handling involves a human technician manually confirming that the
+    mailbox has a standard archive enabled, that the archive mailbox is full or
+    near quota, and that auto-expanding archive is the intended mailbox-scoped
+    remediation.
+
+future_tool_bindings:
+  inspect:
+    - exchange.mailbox.get_properties
+    - exchange.mailbox.get_statistics
+    - exchange.mailbox.get_archive_status
+  prepare:
+    - exchange.archive.prepare_enable_auto_expanding_parameters
+  execute:
+    - exchange.archive.enable_auto_expanding
+
+automation_readiness: partial

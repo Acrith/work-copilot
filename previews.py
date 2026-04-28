@@ -37,8 +37,25 @@ def build_write_preview(working_directory: str, file_path: str, new_content: str
         return f'Preview unavailable: "{file_path}" is a directory.'
 
     if not os.path.exists(target):
-        added = "\n".join(f"+ {line}" for line in new_content.splitlines())
-        return f'New file: "{file_path}"\n' + (added or "+ <empty file>")
+        new_lines = new_content.splitlines()
+
+        if not new_lines:
+            return "\n".join(
+                [
+                    "--- /dev/null",
+                    f"+++ {file_path} (proposed)",
+                    "@@ -0,0 +0,0 @@",
+                ]
+            )
+
+        diff = difflib.unified_diff(
+            [],
+            new_lines,
+            fromfile="/dev/null",
+            tofile=f"{file_path} (proposed)",
+            lineterm="",
+        )
+        return "\n".join(diff)
 
     try:
         with open(target, "r", encoding="utf-8") as f:

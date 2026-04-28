@@ -1,0 +1,133 @@
+id: active_directory.group.remove_member
+family: active_directory.group
+name: Remove user from Active Directory group
+version: 1
+status: draft_only
+
+description: >
+  Prepares a runbook for removing a user from a specific Active Directory group.
+  In the current workflow, this is mainly used to revoke NAS/file-share access
+  granted through AD groups or to remove users from distribution groups used for
+  mailing. The skill covers only the membership removal and validation checklist,
+  not broad access reviews, direct NAS ACL changes, or mailbox-level permissions.
+
+when_to_use:
+  - Ticket asks to remove a user from a specific named AD group
+  - Ticket asks to revoke NAS or file-share access through AD group removal
+  - Ticket asks to remove a user from a distribution group or mailing group
+  - Ticket asks for a time-bound access revocation to be executed on a specific date
+  - Ticket names the target group or provides enough context to identify the group
+
+when_not_to_use:
+  - Ticket asks to create a new account
+  - Ticket asks to block or disable the account itself
+  - Ticket asks to add a user to a group
+  - Ticket asks to change mailbox-level permissions directly, such as Full Access or Send As
+  - Ticket is a broad access review rather than a concrete membership removal request
+  - Ticket asks for direct Synology/NAS ACL changes outside AD group membership
+  - Ticket asks to remove all access as part of full offboarding without naming specific groups or current required removals
+
+required_inputs:
+  - name: target_user
+    description: User account that should be removed from the group.
+    required: true
+  - name: group_name
+    description: Target Active Directory group name, if known.
+    required: true
+  - name: group_purpose
+    description: Whether the group is for NAS/file-share access, distribution mailing, or another clearly identified purpose.
+    required: true
+  - name: requested_resource
+    description: File share, NAS folder, distribution list, or resource that the group controls.
+    required: false
+  - name: business_justification
+    description: Reason for the access or membership removal.
+    required: true
+  - name: requester_or_manager_authorization
+    description: Confirmation that the membership removal is authorized.
+    required: true
+  - name: resource_or_group_owner_approval
+    description: Approval from the data owner, group owner, mailbox/list owner, or other responsible approver when required.
+    required: false
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for tracking and audit purposes.
+    required: true
+  - name: effective_date
+    description: Optional date when removal should take effect.
+    required: false
+
+derived_outputs:
+  - group_membership_removal_plan
+  - group_purpose_classification
+  - authorization_summary
+  - entitlement_revoke_checklist
+  - audit_log_entry
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_removal_plan
+  - change_checklist
+
+systems:
+  - Active Directory
+  - File share
+  - NAS
+  - Microsoft 365
+  - Exchange Online
+
+data_sensitivity:
+  - personal_data
+  - access_rights
+  - audit_information
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+risk_level: high
+
+approval_requirements:
+  - requester or manager authorization
+  - target user identity confirmation
+  - exact group confirmation
+  - group purpose confirmation
+  - resource or group owner approval when required
+  - local policy confirmation when the group is role-bound or sensitive
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_change_checklist
+
+forbidden_actions_now:
+  - remove_group_member
+  - add_group_member
+  - create_account
+  - block_account
+  - modify_mailbox_permissions
+  - modify_file_permissions
+  - modify_synology_permissions
+
+current_manual_adapter:
+  type: manual_review_and_queue
+  notes: >
+    Current handling is a human-reviewed membership removal. For NAS or file-share
+    requests, access should be revoked through the appropriate AD group when that
+    is the approved access model. Direct Synology or manual ACL changes are outside
+    this skill. Distribution group membership removal should be validated as a
+    mailing/list membership change, not as mailbox permissions.
+
+future_tool_bindings:
+  inspect:
+    - active_directory.user.lookup
+    - active_directory.group.lookup
+    - active_directory.group.membership.inspect
+  prepare:
+    - active_directory.group.prepare_remove_member_parameters
+  execute:
+    - active_directory.group.remove_member
+
+automation_readiness: partial

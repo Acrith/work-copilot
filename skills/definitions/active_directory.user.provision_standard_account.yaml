@@ -1,0 +1,182 @@
+id: active_directory.user.provision_standard_account
+family: active_directory.user
+name: Provision standard Active Directory user account
+version: 1
+status: draft_only
+
+description: >
+  Prepares a plan to provision a standard company user account in Active Directory
+  using the organization's country, branch, and department mapping. The current
+  manual implementation uses an Excel queue consumed by a PowerShell script, but
+  the skill itself is not tied to Excel.
+
+when_to_use:
+  - Ticket asks to create a new user account
+  - Ticket asks to create a new employee/domain account
+  - Ticket asks to create an email/account for a new worker
+  - Ticket contains onboarding account provisioning details
+  - Ticket mentions "utworzenie konta", "nowe konto", or similar account creation request
+
+when_not_to_use:
+  - Ticket is only about ordering hardware or accessories
+  - Ticket is only about software installation for an existing user
+  - Ticket is only about adding an existing user to a group
+  - Ticket is only about mailbox permissions for an existing mailbox
+  - Ticket is about disabling, blocking, or offboarding an existing account
+
+required_inputs:
+  - name: first_name
+    description: User given name
+    required: true
+
+  - name: last_name
+    description: User surname
+    required: true
+
+  - name: display_name
+    description: Display name for the account. By default it is first_name + last_name unless another display format is requested.
+    required: true
+
+  - name: sam_account_name
+    description: Proposed SAM account name. By default it is based on first_name and last_name using the organization's account naming convention.
+    required: true
+
+  - name: user_principal_name
+    description: Proposed UPN/email address. By default it is based on sam_account_name and the organization's email domain.
+    required: true
+
+  - name: country
+    description: Country used for AD country attributes and OU mapping.
+    required: true
+
+  - name: branch_or_company_code
+    description: Branch/company code such as ExF, QSR, StR, StW, SI, MVC, or Default. Required for Poland.
+    required: false
+
+  - name: department_code
+    description: Department code used for department name, approval text, and department groups. Required for Poland.
+    required: false
+
+  - name: job_title_native
+    description: Job title in native language. If only one title is provided, use job_title_native and ignore job_title_english.
+    required: true
+
+  - name: job_title_english
+    description: Job title in English language, if provided.
+    required: false
+
+  - name: manager_identifier
+    description: AD manager identifier if manager assignment is required.
+    required: false
+
+  - name: mobile_or_business_phone
+    description: Business/mobile phone used for two-factor authentication setup. Required when the account must be 2FA-ready at provisioning time.
+    required: true
+
+  - name: office_phone
+    description: Office phone to main company branch if provided.
+    required: false
+
+  - name: proxy_addresses
+    description: Additional proxy addresses if needed.
+    required: false
+
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for reporting and 1Password note.
+    required: true
+
+  - name: initial_password_required_by_current_script
+    description: Initial password is required by the current PowerShell script, but should be generated or handled securely by the technician/tooling, not requested in the ServiceDesk ticket.
+    required: false
+
+derived_outputs:
+  - ou_path
+  - country_code_attributes
+  - office_or_site
+  - department_name
+  - approval_description
+  - branch_groups
+  - department_groups
+  - proxy_addresses
+  - report_entry
+  - credential_vault_entry
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_provisioning_plan
+  - excel_queue_row_draft
+  - powershell_execution_checklist
+
+systems:
+  - Active Directory
+  - 1Password
+  - File share
+  - Excel report
+  - Microsoft 365
+  - Exchange Online
+
+data_sensitivity:
+  - personal_data
+  - credentials
+  - access_rights
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+risk_level: high
+
+approval_requirements:
+  - requester or manager authorization
+  - target user identity confirmation
+  - country/branch/department confirmation
+  - naming convention confirmation
+  - group assignment confirmation
+  - secure initial password generation and handling confirmation
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_excel_queue_row
+  - draft_powershell_checklist
+
+forbidden_actions_now:
+  - create_account
+  - run_powershell_script
+  - modify_groups
+  - assign_manager
+  - store_password
+  - update_report
+  - send_credentials
+
+current_manual_adapter:
+  type: excel_queue_and_powershell_script
+  queue_file: ToCreate.xlsx
+  script_behavior:
+    - imports queued users from Excel
+    - resolves country, branch, and department mapping
+    - creates AD user
+    - adds branch and department groups
+    - assigns manager when provided
+    - adds proxy addresses when provided
+    - stores credential in 1Password
+    - updates account creation report
+
+future_tool_bindings:
+  inspect:
+    - active_directory.user.lookup
+    - active_directory.group.lookup
+    - active_directory.org_mapping.resolve
+  prepare:
+    - active_directory.user.prepare_create_parameters
+    - active_directory.user.prepare_excel_queue_row
+  execute:
+    - active_directory.user.create
+    - active_directory.group.add_member
+    - onepassword.item.create_login
+    - account_creation_report.append_entry
+
+automation_readiness: partial

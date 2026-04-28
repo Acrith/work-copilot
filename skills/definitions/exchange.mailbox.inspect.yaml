@@ -1,0 +1,109 @@
+id: exchange.mailbox.inspect
+family: exchange.mailbox
+name: Inspect Exchange Online mailbox
+version: 1
+status: draft_only
+
+description: >
+  Prepares a read-only inspection plan for a specific Exchange Online mailbox.
+  This skill covers checking mailbox identity, mailbox size/quota symptoms,
+  archive status, auto-expanding archive status if visible, retention/archive
+  policy state, and basic mailbox configuration. It can recommend a more specific
+  follow-up skill such as exchange.archive.enable or
+  exchange.archive.enable_auto_expanding.
+
+when_to_use:
+  - Ticket mentions mailbox size, quota warnings, archive status, retention policy, or mailbox configuration.
+  - Ticket asks for mailbox status, mailbox condition, or mailbox settings to be checked.
+  - Ticket requires initial mailbox investigation before deciding whether a specific mailbox modification is needed.
+  - Ticket is a general mailbox inquiry for one specific mailbox.
+
+when_not_to_use:
+  - Ticket asks to create a new mailbox.
+  - Ticket asks to enable, disable, or delete a mailbox.
+  - Ticket asks to modify mailbox permissions directly.
+  - Ticket asks to delete mailbox contents or perform cleanup actions.
+  - Ticket is a broad Exchange Online environment health check.
+  - Ticket clearly asks for a specific modification such as enabling archive; in that case use the specific skill and treat mailbox inspection as a prerequisite.
+
+required_inputs:
+  - name: mailbox_address
+    description: Mailbox email address or User Principal Name (UPN) to inspect.
+    required: true
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for tracking.
+    required: true
+  - name: symptom_description
+    description: Brief description of the observed symptom, such as quota warning, missing archive, or mailbox configuration concern.
+    required: false
+
+derived_outputs:
+  - mailbox_identity_details
+  - mailbox_status_report
+  - mailbox_size_or_quota_summary
+  - archive_status
+  - auto_expanding_archive_status
+  - retention_policy_details
+  - follow_up_skill_recommendation
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_inspection_plan
+  - mailbox_inspection_checklist
+
+systems:
+  - Exchange Online
+  - Microsoft 365
+
+data_sensitivity:
+  - personal_data
+  - audit_information
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+risk_level: low
+
+approval_requirements:
+  - target mailbox confirmation
+  - scope of inspection confirmation
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_mailbox_inspection_checklist
+
+forbidden_actions_now:
+  - enable_archive
+  - enable_auto_expanding_archive
+  - change_retention_policy
+  - grant_permissions
+  - remove_permissions
+  - delete_mail
+  - modify_mailbox
+  - create_mailbox
+  - disable_mailbox
+
+current_manual_adapter:
+  type: manual_review_and_investigation
+  notes: >
+    Current handling involves a human technician manually inspecting mailbox
+    properties, archive state, quota/size information, and policy configuration
+    in Exchange Online admin tools or PowerShell, then reporting findings and
+    recommending next steps.
+
+future_tool_bindings:
+  inspect:
+    - exchange.mailbox.get_properties
+    - exchange.mailbox.get_statistics
+    - exchange.mailbox.get_archive_status
+    - exchange.mailbox.get_retention_policy
+  prepare:
+    - exchange.mailbox.prepare_inspection_report_parameters
+  execute: []
+
+automation_readiness: partial

@@ -153,3 +153,20 @@ def build_servicedesk_draft_subject(
             return f"Re: {subject}"
 
     return f"Re: ServiceDesk request {request_id}"
+
+
+def build_servicedesk_skill_plan_path(*, workspace: str, request_id: str) -> Path:
+    output_dir = build_servicedesk_output_dir(
+        workspace=workspace,
+        request_id=request_id,
+    )
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return output_dir / f"skill_plan_{timestamp}.md"
+
+
+def build_servicedesk_latest_skill_plan_path(*, workspace: str, request_id: str) -> Path:
+    output_dir = build_servicedesk_output_dir(
+        workspace=workspace,
+        request_id=request_id,
+    )
+    return output_dir / "latest_skill_plan.md"
