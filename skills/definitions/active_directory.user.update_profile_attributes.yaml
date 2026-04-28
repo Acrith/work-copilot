@@ -1,0 +1,172 @@
+id: active_directory.user.update_profile_attributes
+family: active_directory.user
+name: Update Active Directory user profile attributes
+version: 1
+status: draft_only
+risk_level: medium
+
+description: >
+  Prepares a runbook for updating profile and contact attributes of an existing
+  Active Directory user account. This skill covers changes such as first name,
+  surname, display name, job title, department/profile fields, office phone,
+  mobile/business phone, manager attribute, and related profile/signature review
+  when the request is about correcting or updating an existing user's visible
+  account information.
+
+when_to_use:
+  - Ticket asks to update an existing user's first name, surname, or display name.
+  - Ticket asks to change an existing user's job title, department, or office/site.
+  - Ticket asks to update an existing user's contact information such as office phone or mobile/business phone.
+  - Ticket asks to change an existing user's manager in Active Directory.
+  - Ticket mentions updating an existing user's "footprint", profile, contact card, or email signature details.
+  - Ticket is for correcting or updating visible account information for an existing user.
+
+when_not_to_use:
+  - Ticket asks to create a new user account; use active_directory.user.provision_standard_account.
+  - Ticket asks to disable or block an existing user account; use active_directory.user.block_on_closure_date.
+  - Ticket asks to add or remove a user from an Active Directory group.
+  - Ticket asks to modify mailbox permissions.
+  - Ticket is for password reset or sign-in troubleshooting.
+  - Ticket asks to rename/change the login, SAM account name, UPN, or primary email address as the main task.
+  - Ticket is for a broad account administration task beyond profile/contact attributes.
+  - Ticket asks to modify an email signature system explicitly outside AD/profile attributes without specifying the account attributes to update.
+
+required_inputs:
+  - name: target_user
+    description: Existing user account, UPN, email address, or SAMAccountName to update.
+    required: true
+  - name: requested_attribute_changes
+    description: Clear list or description of the profile/contact attributes that need to be changed.
+    required: true
+  - name: approval_status
+    description: Confirmation that the requested changes are authorized.
+    required: true
+  - name: requester_or_manager_authorization
+    description: Confirmation that the request is approved by the requester, manager, or responsible business owner.
+    required: true
+  - name: identity_confirmation
+    description: Confirmation of the target user's identity to prevent unintended changes.
+    required: true
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for tracking and audit purposes.
+    required: true
+  - name: first_name
+    description: New given name for the user, if applicable.
+    required: false
+  - name: last_name
+    description: New surname for the user, if applicable.
+    required: false
+  - name: display_name
+    description: New display name for the user, if applicable.
+    required: false
+  - name: job_title_native
+    description: New job title in native language, if applicable.
+    required: false
+  - name: job_title_english
+    description: New job title in English, if applicable.
+    required: false
+  - name: office_phone
+    description: New office telephone number, if applicable.
+    required: false
+  - name: mobile_or_business_phone
+    description: New mobile or business phone number, if applicable.
+    required: false
+  - name: manager_identifier
+    description: Identifier, UPN, or account name of the new manager, if manager change is requested.
+    required: false
+  - name: department
+    description: New department name or department-related profile value, if applicable.
+    required: false
+  - name: office_or_site
+    description: New office or site location, if applicable.
+    required: false
+  - name: signature_or_profile_scope
+    description: Description of where profile/signature review is needed, if the request mentions footprint, signature, contact card, or related visible profile data.
+    required: false
+  - name: effective_date
+    description: Optional date when the attribute changes should take effect.
+    required: false
+
+derived_outputs:
+  - attribute_change_plan
+  - identity_confirmation_summary
+  - approval_summary
+  - attribute_mapping_summary
+  - signature_profile_review_plan
+  - audit_log_entry
+  - post_change_verification_plan
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_attribute_update_plan
+  - change_checklist
+
+systems:
+  - Active Directory
+  - Microsoft 365
+  - Exchange Online
+
+data_sensitivity:
+  - personal_data
+  - profile_data
+  - audit_information
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+approval_requirements:
+  - requester or manager authorization
+  - target user identity confirmation
+  - confirmation of specific attribute changes
+  - confirmation before changing manager, department, or other business-critical profile fields
+  - verification of signature/profile system scope if "footprint" or signature is mentioned
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_change_checklist
+
+forbidden_actions_now:
+  - update_user_attributes
+  - rename_user
+  - change_sam_account_name
+  - change_upn
+  - change_primary_email_address
+  - modify_manager
+  - update_signature_profile
+  - create_account
+  - disable_account
+  - block_account
+  - add_group_member
+  - remove_group_member
+  - grant_full_access
+  - revoke_full_access
+  - reset_password
+  - delete_mail
+  - modify_mailbox
+
+current_manual_adapter:
+  type: manual_review_and_active_directory_admin
+  notes: >
+    Current handling involves a human technician manually confirming the target
+    account and requested profile/contact changes, then updating user attributes
+    in Active Directory or the relevant admin interface. Related profile,
+    footprint, or signature updates in other systems are handled manually only
+    after confirming which system is in scope.
+
+future_tool_bindings:
+  inspect:
+    - active_directory.user.lookup
+    - active_directory.user.get_attributes
+  prepare:
+    - active_directory.user.prepare_update_attributes_parameters
+    - user_profile.signature.prepare_review
+  execute:
+    - active_directory.user.update_attributes
+    - active_directory.user.set_manager
+
+automation_readiness: partial

@@ -1,0 +1,121 @@
+id: exchange.archive.enable
+family: exchange.archive
+name: Enable Exchange Online archive
+version: 1
+status: draft_only
+risk_level: medium
+
+description: >
+  Prepares a runbook for enabling an Exchange Online archive mailbox for a
+  specific user mailbox when an archive is needed and not already enabled. This
+  skill depends on knowing or inspecting the current mailbox/archive state. It
+  does not cover auto-expanding archive, retention policy changes, mailbox
+  permissions, or mailbox cleanup/deletion.
+
+when_to_use:
+  - Ticket explicitly asks to enable an archive mailbox for a user.
+  - User reports mailbox size or quota issues where enabling archive is the identified solution.
+  - Initial inspection via exchange.mailbox.inspect indicates archive is not enabled but needed.
+  - Technician needs a checklist for enabling standard mailbox archive after confirming the mailbox state.
+
+when_not_to_use:
+  - Ticket asks to enable auto-expanding archive; use exchange.archive.enable_auto_expanding instead.
+  - Archive is already enabled and the issue is archive capacity or quota.
+  - Ticket asks to change retention policies.
+  - Ticket asks to modify mailbox permissions.
+  - Ticket asks for mailbox deletion or cleanup.
+  - Ticket is a general mailbox inquiry without a clear need for archive.
+  - Ticket asks only to inspect archive status; use exchange.mailbox.inspect instead.
+
+required_inputs:
+  - name: mailbox_address
+    description: Primary email address or User Principal Name (UPN) of the mailbox.
+    required: true
+  - name: affected_user_or_owner
+    description: Name of the user or mailbox owner for whom the archive is being enabled.
+    required: true
+  - name: reason_for_archive
+    description: Business justification or reason for enabling the archive, such as storage limits, mailbox cleanup, or retention handling.
+    required: true
+  - name: current_archive_status
+    description: Current archive status of the mailbox, such as not_enabled or enabled.
+    required: true
+  - name: approval_status
+    description: Confirmation that enabling the archive is authorized by the requester, mailbox owner, manager, or internal process.
+    required: true
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for tracking and audit purposes.
+    required: true
+  - name: mailbox_size_or_quota_symptom
+    description: Optional mailbox size, quota warning, or related symptom that explains why archive is needed.
+    required: false
+
+derived_outputs:
+  - archive_enable_plan
+  - mailbox_confirmation_summary
+  - archive_status_confirmation
+  - approval_summary
+  - execution_checklist
+  - post_change_verification_plan
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_archive_enable_plan
+  - powershell_execution_checklist
+
+systems:
+  - Exchange Online
+  - Microsoft 365
+
+data_sensitivity:
+  - personal_data
+  - audit_information
+  - mailbox_metadata
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+approval_requirements:
+  - requester, mailbox owner, manager, or internal-process authorization
+  - target mailbox confirmation
+  - confirmation standard archive is not already enabled
+  - confirmation archive enablement is the intended remediation
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_powershell_execution_checklist
+
+forbidden_actions_now:
+  - enable_archive
+  - enable_auto_expanding_archive
+  - change_retention_policy
+  - modify_mailbox
+  - delete_mail
+  - grant_permissions
+  - remove_permissions
+  - create_mailbox
+  - disable_mailbox
+
+current_manual_adapter:
+  type: manual_review_and_exchange_online_admin
+  notes: >
+    Current handling involves a human technician manually confirming mailbox and
+    archive status, enabling the archive in Exchange Online admin tools or
+    PowerShell, and verifying archive status after the change.
+
+future_tool_bindings:
+  inspect:
+    - exchange.mailbox.get_properties
+    - exchange.mailbox.get_statistics
+    - exchange.mailbox.get_archive_status
+  prepare:
+    - exchange.archive.prepare_enable_parameters
+  execute:
+    - exchange.archive.enable
+
+automation_readiness: partial

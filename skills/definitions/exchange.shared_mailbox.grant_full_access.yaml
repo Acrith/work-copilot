@@ -1,0 +1,128 @@
+id: exchange.shared_mailbox.grant_full_access
+family: exchange.shared_mailbox
+name: Grant Exchange Online shared mailbox Full Access
+version: 1
+status: draft_only
+risk_level: high
+
+description: >
+  Prepares a runbook for granting Full Access permissions to a specific Exchange
+  Online shared mailbox for a specific target user. This skill covers Full Access
+  only. It does not grant Send As or Send on Behalf permissions.
+
+when_to_use:
+  - Ticket explicitly asks to grant Full Access to a shared mailbox for a user.
+  - User needs read/write access to shared mailbox content or calendar.
+  - Initial inspection identifies a need for Full Access permissions.
+  - Ticket asks to add a user to a shared mailbox and the requested permission is clearly Full Access.
+
+when_not_to_use:
+  - Ticket asks for Send As permissions; use a dedicated Send As skill.
+  - Ticket asks for Send on Behalf permissions; use a dedicated Send on Behalf skill.
+  - Ticket is about adding a user to a distribution group or AD file-share group.
+  - Ticket is for generic mailbox troubleshooting; use exchange.mailbox.inspect.
+  - Ticket is about mailbox archiving or retention issues.
+  - Ticket asks to create or delete a shared mailbox.
+  - Full Access is already granted to the target user.
+  - Ticket asks for mailbox owner/delegate changes but does not specify the permission type.
+
+required_inputs:
+  - name: shared_mailbox_address
+    description: Primary email address of the target shared mailbox.
+    required: true
+  - name: target_user
+    description: User Principal Name (UPN), primary email address, or account identifier of the user who should receive Full Access.
+    required: true
+  - name: permission_type
+    description: Type of permission to grant. Must be Full Access for this skill.
+    required: true
+  - name: requester_or_approver
+    description: Name or email of the person authorizing the permission grant.
+    required: true
+  - name: approval_status
+    description: Confirmation that the permission grant is authorized.
+    required: true
+  - name: mailbox_owner_approval
+    description: Confirmation of approval from the shared mailbox owner if required and different from requester.
+    required: false
+  - name: automapping_preference
+    description: Whether Outlook automapping should be enabled, disabled, or left at the default behavior if relevant.
+    required: false
+  - name: helpdesk_request_id
+    description: ServiceDesk request ID for tracking and audit purposes.
+    required: true
+
+derived_outputs:
+  - permission_grant_plan
+  - approval_summary
+  - target_confirmation_summary
+  - automapping_note
+  - audit_log_entry
+  - post_change_verification_plan
+
+output_artifacts:
+  - missing_information_checklist
+  - requester_reply_draft
+  - internal_permission_plan
+  - change_checklist
+
+systems:
+  - Exchange Online
+  - Microsoft 365
+
+data_sensitivity:
+  - personal_data
+  - access_rights
+  - audit_information
+  - mailbox_metadata
+
+execution_mode:
+  current: manual
+  future: approval_gated_typed_tools
+
+approval_requirements:
+  - requester or manager authorization
+  - target user identity confirmation
+  - shared mailbox identity confirmation
+  - explicit Full Access permission confirmation
+  - mailbox owner approval when required by policy
+
+allowed_actions_now:
+  - classify
+  - identify_missing_information
+  - draft_requester_reply
+  - draft_internal_plan
+  - draft_change_checklist
+
+forbidden_actions_now:
+  - grant_full_access
+  - revoke_full_access
+  - grant_send_as
+  - grant_send_on_behalf
+  - modify_mailbox_permissions
+  - create_mailbox
+  - delete_mailbox
+  - enable_archive
+  - enable_auto_expanding_archive
+  - change_retention_policy
+  - delete_mail
+  - modify_mailbox
+
+current_manual_adapter:
+  type: manual_review_and_exchange_online_admin
+  notes: >
+    Current handling involves a human technician manually confirming the shared
+    mailbox, target user, approval, and requested permission type, then granting
+    Full Access in Exchange Online admin tools or PowerShell and verifying the
+    resulting permission state.
+
+future_tool_bindings:
+  inspect:
+    - exchange.shared_mailbox.get_properties
+    - exchange.shared_mailbox.get_full_access_permissions
+  prepare:
+    - exchange.shared_mailbox.prepare_grant_full_access_parameters
+  execute:
+    - exchange.shared_mailbox.grant_full_access
+
+automation_readiness: partial
