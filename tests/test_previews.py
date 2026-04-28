@@ -3,6 +3,7 @@ from previews import (
     build_connector_write_preview,
     build_exec_preview,
     build_write_preview,
+    is_unified_diff_preview,
     parse_unified_diff,
 )
 
@@ -45,15 +46,20 @@ def test_build_write_preview_new_file(tmp_path):
 
     preview = build_write_preview(str(tmp_path), "new_file.txt", new_content)
 
-    assert 'New file: "new_file.txt"' in preview
-    assert "Hello, new file!" in preview
+    assert is_unified_diff_preview(preview)
+    assert "--- /dev/null" in preview
+    assert "+++ new_file.txt (proposed)" in preview
+    assert "@@ -0,0 +1 @@" in preview
+    assert "+Hello, new file!" in preview
 
 
 def test_build_write_preview_new_empty_file(tmp_path):
     preview = build_write_preview(str(tmp_path), "empty_new_file.txt", "")
 
-    assert 'New file: "empty_new_file.txt"' in preview
-    assert "<empty file>" in preview
+    assert is_unified_diff_preview(preview)
+    assert "--- /dev/null" in preview
+    assert "+++ empty_new_file.txt (proposed)" in preview
+    assert "@@ -0,0 +0,0 @@" in preview
 
 
 def test_build_write_preview_path_is_directory(tmp_path):
@@ -256,3 +262,28 @@ def test_build_exec_preview_returns_none_for_unknown_exec_tool():
     )
 
     assert preview is None
+
+
+def test_build_write_preview_new_yaml_file_is_unified_diff(tmp_path):
+    new_content = "\n".join(
+        [
+            "id: active_directory.group.add_member",
+            "family: active_directory.group",
+            "required_inputs:",
+            "  - name: target_user",
+            "    required: true",
+        ]
+    )
+
+    preview = build_write_preview(
+        str(tmp_path),
+        "skills/definitions/active_directory.group.add_member.yaml",
+        new_content,
+    )
+
+    assert is_unified_diff_preview(preview)
+    assert "--- /dev/null" in preview
+    assert "+++ skills/definitions/active_directory.group.add_member.yaml (proposed)" in preview
+    assert "+id: active_directory.group.add_member" in preview
+    assert "+required_inputs:" in preview
+    assert "+  - name: target_user" in preview

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from rich.markdown import Markdown
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, Static
 
@@ -69,12 +69,17 @@ class ApprovalScreen(Screen):
         padding: 0 1;
     }
 
-    #approval-preview-text {
+    #approval-preview-scroll {
         height: 1fr;
         border: solid #2b3a4a;
         background: #0d1117;
-        color: #d7e1ec;
         padding: 1 2;
+        overflow-y: auto;
+    }
+
+    #approval-preview-text {
+        height: auto;
+        color: #d7e1ec;
     }
 
     #approval-preview-text.empty {
@@ -119,11 +124,13 @@ class ApprovalScreen(Screen):
                         if not self.request.preview
                         else Markdown(preview_text)
                     )
-                    yield Static(
-                        renderable,
-                        id="approval-preview-text",
-                        classes=classes,
-                    )
+
+                    with VerticalScroll(id="approval-preview-scroll"):
+                        yield Static(
+                            renderable,
+                            id="approval-preview-text",
+                            classes=classes,
+                        )
 
                 yield Input(
                     placeholder="Type denial feedback and press Enter",
