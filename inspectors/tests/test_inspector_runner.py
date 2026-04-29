@@ -38,11 +38,20 @@ def test_mock_exchange_mailbox_inspector_returns_read_only_result():
     assert result.target is request.target
     assert result.status == InspectorStatus.OK
     assert result.ok is True
-    assert "Mock mailbox inspection completed" in result.summary
-    assert any(fact.key == "mailbox_exists" for fact in result.facts)
-    assert any(fact.key == "archive_status" for fact in result.facts)
+    assert result.summary == "Mailbox metadata inspected for user@example.com."
+
+    facts = {fact.key: fact.value for fact in result.facts}
+
+    assert facts["mailbox_exists"] is True
+    assert facts["recipient_type"] == "UserMailbox"
+    assert facts["archive_status"] == "disabled"
+    assert facts["auto_expanding_archive_status"] == "not_applicable"
+
     assert "Mailbox content not inspected" in result.limitations
+    assert "Attachments not inspected" in result.limitations
     assert "No permission changes performed" in result.limitations
+    assert "No archive or retention changes performed" in result.limitations
+    assert "No ServiceDesk writes performed" in result.limitations
 
 
 def test_create_mock_inspector_registry_registers_mailbox_inspector():
@@ -83,8 +92,15 @@ def test_run_inspector_and_save_writes_registered_result(tmp_path):
         "metadata": {"source": "test"},
     }
     assert payload["status"] == "ok"
+    assert payload["summary"] == "Mailbox metadata inspected for user@example.com."
     assert payload["facts"]
     assert payload["limitations"]
+
+    facts = {fact["key"]: fact["value"] for fact in payload["facts"]}
+
+    assert facts["mailbox_exists"] is True
+    assert facts["archive_status"] == "disabled"
+    assert facts["recipient_type"] == "UserMailbox"
 
 
 def test_run_inspector_and_save_writes_unknown_inspector_error(tmp_path):
@@ -151,3 +167,21 @@ def test_run_inspector_and_save_calls_handler_after_request_id_validation(tmp_pa
         )
 
     assert called is False
+
+
+def test_mock_exchange_mailbox_inspector_uses_real_inspection_shape():
+    request = make_mailbox_request()
+
+    result = inspect_mock_exchange_mailbox(request)
+    payload = result.to_dict()
+
+    assert payload["summary"] == "Mailbox metadata inspected for user@example.com."
+    assert {
+        "key": "archive_status",
+        "value": "disabled",
+        "source": "read_only_exchange_metadata",
+    } in payload["facts"]
+    assert {
+        "label": "primary_smtp_address",
+        "value": "user@example.com",
+    } in payload["evidence"]

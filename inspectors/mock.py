@@ -1,59 +1,33 @@
-from inspectors.models import (
-    InspectorEvidence,
-    InspectorFact,
-    InspectorRequest,
-    InspectorResult,
-    InspectorStatus,
+from inspectors.exchange_mailbox import (
+    ExchangeMailboxSnapshot,
+    MockExchangeMailboxInspectorClient,
+    inspect_exchange_mailbox,
 )
+from inspectors.models import InspectorRequest, InspectorResult
 from inspectors.registry import InspectorRegistry
 
 
 def inspect_mock_exchange_mailbox(request: InspectorRequest) -> InspectorResult:
     mailbox_address = str(request.inputs.get("mailbox_address") or request.target.id)
 
-    return InspectorResult(
-        inspector=request.inspector,
-        target=request.target,
-        status=InspectorStatus.OK,
-        summary=f"Mock mailbox inspection completed for {mailbox_address}.",
-        facts=[
-            InspectorFact(
-                key="mailbox_exists",
-                value=True,
-                source="mock_inspector",
-            ),
-            InspectorFact(
-                key="recipient_type",
-                value="UserMailbox",
-                source="mock_inspector",
-            ),
-            InspectorFact(
-                key="archive_status",
-                value="disabled",
-                source="mock_inspector",
-            ),
-            InspectorFact(
-                key="auto_expanding_archive_status",
-                value="not_applicable",
-                source="mock_inspector",
-            ),
-        ],
-        evidence=[
-            InspectorEvidence(
-                label="mailbox_address",
-                value=mailbox_address,
+    client = MockExchangeMailboxInspectorClient(
+        {
+            mailbox_address: ExchangeMailboxSnapshot(
+                mailbox_address=mailbox_address,
+                display_name="Mock Mailbox User",
+                primary_smtp_address=mailbox_address,
+                recipient_type="UserMailbox",
+                mailbox_size="mock_unknown",
+                item_count=None,
+                archive_status="disabled",
+                auto_expanding_archive_status="not_applicable",
+                retention_policy="mock_unknown",
+                quota_warning_status="mock_unknown",
             )
-        ],
-        limitations=[
-            "Mock inspector only; no external system inspected",
-            "Mailbox content not inspected",
-            "No permission changes performed",
-            "No archive or retention changes performed",
-        ],
-        recommendations=[
-            "exchange.archive.enable may be relevant if archive is required",
-        ],
+        }
     )
+
+    return inspect_exchange_mailbox(request, client)
 
 
 def create_mock_inspector_registry() -> InspectorRegistry:
