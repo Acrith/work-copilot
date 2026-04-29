@@ -115,6 +115,17 @@ The real client must never invoke commands or APIs that mutate state, including 
 - `Remove-*`
 - any ServiceDesk write operation
 
+## Mailbox creation boundary
+
+In this environment, standard user mailboxes are normally created by provisioning
+an Active Directory account and allowing identity synchronization/licensing to
+create the Microsoft 365 mailbox. Exchange mailbox creation is not part of the
+initial inspector/executor roadmap.
+
+Mailbox creation, if ever needed, must be modeled as a separate high-risk skill
+and must not be bundled into mailbox inspection, archive enablement, or shared
+mailbox permission workflows.
+
 ## Authentication and secrets
 
 The real client must not hardcode secrets.
