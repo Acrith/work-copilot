@@ -1,0 +1,254 @@
+# Inspectors
+
+Inspectors are a read-only architecture for gathering structured facts about a system or resource before any action is planned for execution. They are intentionally narrower than skills and far narrower than future executors.
+
+## What inspectors are
+
+An inspector is a deterministic, read-only discovery component that returns structured facts, observations, and limitations about a target. Its purpose is to improve planning quality by making more of the environment visible without performing any mutation.
+
+In Work Copilot, inspectors are the first future architecture designed specifically for safe, read-only technical analysis. They are not a generic plugin system and they are not a replacement for skills.
+
+## How inspectors differ from skills and future executors
+
+### Inspectors
+
+- Read-only only
+- Gather facts and shape planning context
+- Return structured results
+- Never change external systems
+- Never write to ServiceDesk
+
+### Skills
+
+- Define a task-oriented ability or plannable operational action
+- May depend on inspector facts to decide whether they are appropriate
+- Describe what kind of work the assistant can plan
+- Remain draft-only until explicit execution tooling exists
+
+### Future executors
+
+- Perform actual work in external systems
+- May create, update, or delete data
+- Must be approval-gated when they can mutate anything
+- Are downstream of both planning and inspection
+
+Inspectors sit between skill planning and execution. Skills identify the operational work and required inputs; inspectors gather read-only technical facts that help determine whether the planned work is safe, relevant, or technically possible.
+
+## Why inspectors must be read-only
+
+Inspectors must be read-only because their job is to reduce uncertainty without introducing risk.
+
+Read-only behavior is required so that:
+
+- planning can safely probe the environment
+- repeated inspection never changes state
+- inspection can be run before write approval is needed
+- outputs remain reproducible and auditable
+- the system can separate evidence gathering from execution
+
+If an operation can modify a mailbox, a ServiceDesk request, a permission set, an archive policy, or any other external state, it is not an inspector.
+
+## How inspectors fit into the workflow
+
+The intended workflow is:
+
+1. `/sdp context <id>`
+   - collects ServiceDesk context summaries and request details
+   - remains focused on request understanding
+
+2. `/sdp skill-plan <id>`
+   - produces structured skill planning output
+   - extracts inputs, evidence, and handoff details
+   - may identify that more technical facts are needed
+
+3. future `/sdp inspect-skill <id>`
+   - invokes one or more inspectors to gather read-only technical facts
+   - enriches planning with environment-specific observations
+   - does not execute changes
+
+4. future `/sdp execute-skill <id>`
+   - runs approved, action-capable work only when appropriate
+   - may rely on previous inspector results and skill plans
+   - remains separate from inspection
+
+Inspectors should be thought of as the evidence-gathering layer between planning and execution.
+
+## Initial target inspector
+
+The initial future inspector target is:
+
+- `exchange.mailbox.inspect`
+
+This inspector is intended to support mailbox-related planning only through read-only structural facts.
+
+### Example relationship
+
+- `exchange.mailbox.inspect` supports `exchange.archive.enable`
+- `exchange.mailbox.inspect` supports `exchange.archive.enable_auto_expanding`
+
+The inspector should help determine whether those skills are likely applicable, what prerequisites may exist, and what risks or constraints should be noted.
+
+## Safety guarantees
+
+All inspectors must preserve the following guarantees:
+
+- no external modifications
+- no ServiceDesk writes
+- no mailbox content inspection
+- no attachment inspection
+- no permission changes
+- no archive/retention changes
+- no authentication secrets in inspector outputs or logs
+
+These guarantees define the boundary of the architecture. An inspector may observe metadata, configuration shape, capability flags, or other non-sensitive facts, but it must not read user content, inspect attachments, mutate any environment, or expose credentials.
+
+## Suggested permission category for future inspectors
+
+Future inspectors should use a dedicated tool category such as:
+
+- `INSPECT_READ`
+
+Alternatively, inspectors can initially be registered as `CONNECTOR_READ` or `READ` depending on whether they access an external system or local data. If inspectors grow into a distinct workflow, a dedicated `INSPECT_READ` category can make policy and UI behavior clearer.
+
+The category must communicate that the operation is bounded to discovery only.
+
+## Proposed structured result schema
+
+Inspector output should be structured so that both humans and downstream automation can consume it.
+
+Proposed schema:
+
+```json
+{
+  "inspector": "exchange.mailbox.inspect",
+  "target": {
+    "type": "mailbox",
+    "id": "example@contoso.com"
+  },
+  "status": "ok",
+  "summary": "Mailbox is archive-capable and eligible for archive enablement.",
+  "facts": [
+    {
+      "key": "archive_capable",
+      "value": true,
+      "source": "read_only_metadata"
+    },
+    {
+      "key": "auto_expanding_archive_supported",
+      "value": true,
+      "source": "read_only_metadata"
+    }
+  ],
+  "evidence": [
+    {
+      "label": "mailbox_policy",
+      "value": "archive_supported"
+    }
+  ],
+  "limitations": [
+    "Mailbox content not inspected",
+    "No permission changes performed"
+  ],
+  "recommendations": [
+    "exchange.archive.enable appears feasible",
+    "exchange.archive.enable_auto_expanding appears feasible"
+  ],
+  "partial": false,
+  "errors": []
+}
+```
+
+Notes:
+
+- `status` should use one of: `ok`, `partial`, or `error`
+- `facts` should carry normalized key/value observations
+- `evidence` should capture the minimal supporting metadata used to derive facts
+- `limitations` should clearly state what was not inspected
+- `recommendations` should remain advisory, not executable
+- `partial` should indicate whether any useful information was produced despite issues
+- `errors` should contain machine-readable problem details
+
+## Proposed error and partial-result behavior
+
+Inspectors should prefer partial results over hard failure when they can safely return useful facts.
+
+Guidelines:
+
+- return `status: ok` when the inspection completed normally
+- return `status: partial` when some facts were collected but gaps remain
+- return `status: error` when no safe or useful result can be produced
+- include structured errors instead of only free-form text
+- preserve any safely collected facts even when the result is partial
+- never broaden scope to compensate for missing data
+
+A partial inspector result is acceptable when it helps planning and does not create false confidence.
+
+## Saving inspector results locally
+
+Inspector results should be saved locally under:
+
+- `.work_copilot/servicedesk/<request_id>/`
+
+Recommended organization:
+
+- `inspectors/`
+  - per-inspector JSON result files
+- `inspector_evidence/`
+  - optional supporting metadata snapshots
+- `skill_plan/`
+  - future links from inspector outputs back into skill planning
+
+Example file naming:
+
+- `.work_copilot/servicedesk/<request_id>/inspectors/exchange.mailbox.inspect.json`
+
+Local storage should make it easy to:
+
+- replay planning decisions
+- inspect what evidence was gathered
+- link later skill plans to earlier discoveries
+- preserve a compact audit trail without mutating ServiceDesk
+
+## Feeding inspector facts back into skill plans
+
+Inspector facts should later be consumable by skill planning as structured input.
+
+Examples of how this could work:
+
+- skill-plan generation can include inspector facts as evidence
+- skill eligibility can be refined using inspector-derived capabilities
+- handoff sections can cite specific inspector observations
+- executor selection can be gated by inspector facts when relevant
+
+The goal is to make the planner better informed without collapsing planning and execution into one step.
+
+## Future phased roadmap
+
+1. Design only
+   - define the inspector architecture and result shape
+   - document boundaries, guarantees, and naming conventions
+
+2. Typed result models
+   - add explicit data models for inspector requests and responses
+   - validate schema consistency
+
+3. Mock inspector tests
+   - add tests for inspection flow and result handling
+   - keep execution mocked and deterministic
+
+4. Read-only Exchange mailbox inspector
+   - implement `exchange.mailbox.inspect`
+   - preserve strict read-only behavior
+
+5. Skill-plan and inspector integration
+   - feed inspector facts into skill planning
+   - improve evidence and handoff generation
+
+6. Approval-gated executors much later
+   - implement actual external mutations only after planning and inspection are mature
+   - keep approval boundaries explicit and separate
+
+## Summary
+
+Inspectors are the read-only evidence layer for future planning. They help Work Copilot understand technical reality without changing it, and they create a safe bridge from ServiceDesk context and skill plans toward later executor-based workflows.
+```
