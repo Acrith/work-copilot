@@ -1,3 +1,11 @@
+from inspectors.exchange_mailbox import (
+    ExchangeMailboxInspectionError,
+    ExchangeMailboxInspectorClient,
+    ExchangeMailboxNotFoundError,
+    ExchangeMailboxSnapshot,
+    MockExchangeMailboxInspectorClient,
+    inspect_exchange_mailbox,
+)
 from inspectors.mock import (
     create_mock_inspector_registry,
     inspect_mock_exchange_mailbox,
@@ -55,4 +63,10 @@ __all__ = [
     "parse_extracted_inputs",
     "parse_suggested_inspector_tools",
     "select_supported_inspector_tool",
+    "ExchangeMailboxInspectionError",
+    "ExchangeMailboxInspectorClient",
+    "ExchangeMailboxNotFoundError",
+    "ExchangeMailboxSnapshot",
+    "MockExchangeMailboxInspectorClient",
+    "inspect_exchange_mailbox",
 ]
