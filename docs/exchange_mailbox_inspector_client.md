@@ -158,6 +158,22 @@ Supported backend modes:
 
 The `/sdp inspect-skill` workflow should remain mock-only until the real runner is intentionally wired through this configuration gate.
 
+## Real runner boundary
+
+The future real Exchange Online PowerShell runner must remain behind the Exchange
+inspector runtime configuration gate.
+
+A real runner must require:
+
+- `backend = exchange_online_powershell`
+- `allow_real_external_calls = true`
+- read-only command validation before execution
+- non-empty executable path
+- positive timeout
+
+The first runner implementation should validate command safety before invoking
+any subprocess. Mutation-shaped commands must be rejected before execution.
+
 ## Output and logging rules
 
 Inspector output may include mailbox metadata required for planning.
