@@ -26,6 +26,12 @@ from inspectors.exchange_online_powershell import (
     ExchangeOnlinePowerShellConfig,
     ExchangeOnlinePowerShellMailboxClient,
 )
+from inspectors.exchange_powershell_runner import (
+    ExchangePowerShellExecutionError,
+    ExchangePowerShellRunnerConfig,
+    ExchangePowerShellSubprocessRunner,
+    validate_exchange_powershell_runner_config,
+)
 from inspectors.mock import (
     create_mock_inspector_registry,
     inspect_mock_exchange_mailbox,
@@ -103,4 +109,8 @@ __all__ = [
     "ExchangeInspectorRuntimeConfig",
     "load_exchange_inspector_runtime_config",
     "validate_exchange_inspector_runtime_config",
+    "ExchangePowerShellExecutionError",
+    "ExchangePowerShellRunnerConfig",
+    "ExchangePowerShellSubprocessRunner",
+    "validate_exchange_powershell_runner_config",
 ]
