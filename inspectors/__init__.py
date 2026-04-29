@@ -39,6 +39,11 @@ from inspectors.exchange_powershell_script import (
     decode_exchange_command_payload,
     encode_exchange_command_payload,
 )
+from inspectors.factory import (
+    ConfiguredInspectorRegistry,
+    create_configured_inspector_registry,
+    create_configured_inspector_registry_from_env,
+)
 from inspectors.mock import (
     create_mock_inspector_registry,
     inspect_mock_exchange_mailbox,
@@ -125,4 +130,7 @@ __all__ = [
     "build_exchange_powershell_script",
     "decode_exchange_command_payload",
     "encode_exchange_command_payload",
+    "ConfiguredInspectorRegistry",
+    "create_configured_inspector_registry",
+    "create_configured_inspector_registry_from_env",
 ]

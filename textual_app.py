@@ -28,7 +28,8 @@ from draft_exports import (
     read_text_if_exists,
     save_text_draft,
 )
-from inspectors.mock import create_mock_inspector_registry
+from inspectors.exchange_config import ExchangeInspectorConfigError
+from inspectors.factory import create_configured_inspector_registry_from_env
 from inspectors.runner import run_inspector_and_save
 from inspectors.skill_plan import (
     build_inspector_request_from_skill_plan,
@@ -748,17 +749,47 @@ class WorkCopilotTextualApp(App):
                 self._log(f"Could not build inspector request: {exc}")
                 return
 
-            registry = create_mock_inspector_registry()
+            try:
+                configured_registry = create_configured_inspector_registry_from_env()
+            except ExchangeInspectorConfigError as exc:
+                self._log_blank()
+                self._log(f"Exchange inspector configuration error: {exc}")
+                return
+
+            if configured_registry.registry.get(inspector_id) is None:
+                self._log_blank()
+
+                if configured_registry.is_disabled:
+                    self._log(
+                        "Exchange inspector backend is disabled. "
+                        "Set WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND=mock to use mock inspection."
+                    )
+                else:
+                    self._log(
+                        f"Inspector {inspector_id} is not registered for the current backend."
+                    )
+
+                return
+
             output = run_inspector_and_save(
-                registry=registry,
+                registry=configured_registry.registry,
                 request=inspector_request,
                 workspace=self.config.workspace,
             )
 
             self._log_user_message(user_prompt)
-            self._log_system_message(
-                "Running mock inspector only. No external systems were contacted."
-            )
+
+            if configured_registry.uses_real_external_backend:
+                self._log_system_message(
+                    "Running real Exchange read-only inspector. "
+                    "External Exchange Online will be contacted."
+                )
+            else:
+                self._log_system_message(
+                    "Running mock inspector only. No external systems were contacted."
+                )
+
+            self._log_system_message(f"Inspector backend: {configured_registry.exchange_backend.value}")
             self._log_system_message(f"Inspector: {inspector_id}")
             self._log_system_message(f"Result: {output.result.status.value}")
             self._log_system_message(f"Summary: {output.result.summary}")
