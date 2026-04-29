@@ -7,6 +7,13 @@ from inspectors.exchange_command_runner import (
     is_read_only_exchange_command,
     validate_read_only_exchange_command,
 )
+from inspectors.exchange_config import (
+    ExchangeInspectorBackend,
+    ExchangeInspectorConfigError,
+    ExchangeInspectorRuntimeConfig,
+    load_exchange_inspector_runtime_config,
+    validate_exchange_inspector_runtime_config,
+)
 from inspectors.exchange_mailbox import (
     ExchangeMailboxInspectionError,
     ExchangeMailboxInspectorClient,
@@ -91,4 +98,9 @@ __all__ = [
     "MockExchangePowerShellCommandRunner",
     "is_read_only_exchange_command",
     "validate_read_only_exchange_command",
+    "ExchangeInspectorBackend",
+    "ExchangeInspectorConfigError",
+    "ExchangeInspectorRuntimeConfig",
+    "load_exchange_inspector_runtime_config",
+    "validate_exchange_inspector_runtime_config",
 ]
