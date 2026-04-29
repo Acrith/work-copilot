@@ -70,6 +70,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/sdp triage <limit>" in help_text
     assert "/sdp draft-reply <id>" in help_text
     assert "/sdp save-draft <id>" in help_text
+    assert "/sdp inspect-skill" in help_text
     assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
@@ -352,3 +353,7 @@ def test_build_servicedesk_skill_plan_prompt_distinguishes_current_issue_from_hi
     assert "Missing information needed now" in prompt
     assert "not_needed_now" in prompt
     assert "Do not ask the requester for missing skill information unless it is needed" in prompt
+
+
+def test_parse_sdp_inspect_skill_command():
+    assert parse_interactive_command("/sdp inspect-skill 55948") == "sdp_inspect_skill"
