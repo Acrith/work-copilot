@@ -134,6 +134,30 @@ Future authentication should be explicit and environment/config driven. Secrets 
 
 The first real adapter should be disabled by default until configuration and safety checks are in place.
 
+## Runtime safety configuration
+
+Real Exchange inspection must remain disabled unless explicitly configured.
+
+Default behavior:
+
+- backend: `mock`
+- real external calls: disabled
+
+Future real Exchange Online PowerShell inspection should require both settings:
+
+- `WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND=exchange_online_powershell`
+- `WORK_COPILOT_ALLOW_REAL_EXCHANGE_INSPECTOR=true`
+
+This double opt-in prevents a partial or accidental configuration from enabling real external system calls.
+
+Supported backend modes:
+
+- `mock`
+- `disabled`
+- `exchange_online_powershell`
+
+The `/sdp inspect-skill` workflow should remain mock-only until the real runner is intentionally wired through this configuration gate.
+
 ## Output and logging rules
 
 Inspector output may include mailbox metadata required for planning.
