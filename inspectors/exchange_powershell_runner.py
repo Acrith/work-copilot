@@ -1,3 +1,5 @@
+import json
+import subprocess
 from dataclasses import dataclass
 
 from inspectors.exchange_command_runner import (
@@ -11,6 +13,7 @@ from inspectors.exchange_config import (
     ExchangeInspectorConfigError,
     ExchangeInspectorRuntimeConfig,
 )
+from inspectors.exchange_powershell_script import build_exchange_powershell_invocation
 
 
 class ExchangePowerShellExecutionError(RuntimeError):
@@ -25,11 +28,7 @@ class ExchangePowerShellRunnerConfig:
 
 
 class ExchangePowerShellSubprocessRunner(ExchangePowerShellCommandRunner):
-    """Skeleton for future real Exchange Online PowerShell command execution.
-
-    This class intentionally does not execute PowerShell yet. It only defines the
-    configuration and safety gate for future implementation.
-    """
+    """Runs allowlisted read-only Exchange Online PowerShell inspector commands."""
 
     def __init__(self, config: ExchangePowerShellRunnerConfig) -> None:
         validate_exchange_powershell_runner_config(config)
@@ -38,8 +37,71 @@ class ExchangePowerShellSubprocessRunner(ExchangePowerShellCommandRunner):
     def run(self, command: ExchangePowerShellCommand) -> ExchangePowerShellCommandResult:
         validate_read_only_exchange_command(command)
 
-        raise ExchangePowerShellExecutionError(
-            "Real Exchange PowerShell execution is not implemented yet."
+        invocation = build_exchange_powershell_invocation(
+            command,
+            executable=self.config.executable,
+        )
+
+        try:
+            completed = subprocess.run(
+                invocation.argv,
+                capture_output=True,
+                text=True,
+                timeout=self.config.timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return ExchangePowerShellCommandResult(
+                command=command.name,
+                ok=False,
+                error=(
+                    "Exchange PowerShell command timed out after "
+                    f"{self.config.timeout_seconds} seconds."
+                ),
+            )
+        except OSError as exc:
+            return ExchangePowerShellCommandResult(
+                command=command.name,
+                ok=False,
+                error=f"Could not start Exchange PowerShell executable: {exc}",
+            )
+
+        if completed.returncode != 0:
+            return ExchangePowerShellCommandResult(
+                command=command.name,
+                ok=False,
+                error=_format_process_error(completed),
+            )
+
+        stdout = completed.stdout.strip()
+
+        if not stdout:
+            return ExchangePowerShellCommandResult(
+                command=command.name,
+                ok=True,
+                data=None,
+            )
+
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            return ExchangePowerShellCommandResult(
+                command=command.name,
+                ok=False,
+                error="Exchange PowerShell returned invalid JSON output.",
+            )
+
+        if not _is_supported_json_data(data):
+            return ExchangePowerShellCommandResult(
+                command=command.name,
+                ok=False,
+                error="Exchange PowerShell returned unsupported JSON data shape.",
+            )
+
+        return ExchangePowerShellCommandResult(
+            command=command.name,
+            ok=True,
+            data=data,
         )
 
 
@@ -67,3 +129,40 @@ def validate_exchange_powershell_runner_config(
         raise ExchangeInspectorConfigError(
             "Exchange PowerShell runner timeout must be greater than zero."
         )
+
+
+def _is_supported_json_data(value: object) -> bool:
+    if value is None:
+        return True
+
+    if isinstance(value, dict):
+        return True
+
+    if isinstance(value, list):
+        return all(isinstance(item, dict) for item in value)
+
+    return False
+
+
+def _format_process_error(completed: subprocess.CompletedProcess[str]) -> str:
+    stderr = (completed.stderr or "").strip()
+    stdout = (completed.stdout or "").strip()
+
+    if stderr:
+        details = stderr
+    elif stdout:
+        details = stdout
+    else:
+        details = "No error output."
+
+    return (
+        f"Exchange PowerShell command failed with exit code {completed.returncode}: "
+        f"{_truncate(details)}"
+    )
+
+
+def _truncate(value: str, *, limit: int = 2000) -> str:
+    if len(value) <= limit:
+        return value
+
+    return value[:limit] + "...<truncated>"
