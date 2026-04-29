@@ -32,6 +32,13 @@ from inspectors.exchange_powershell_runner import (
     ExchangePowerShellSubprocessRunner,
     validate_exchange_powershell_runner_config,
 )
+from inspectors.exchange_powershell_script import (
+    ExchangePowerShellInvocation,
+    build_exchange_powershell_invocation,
+    build_exchange_powershell_script,
+    decode_exchange_command_payload,
+    encode_exchange_command_payload,
+)
 from inspectors.mock import (
     create_mock_inspector_registry,
     inspect_mock_exchange_mailbox,
@@ -113,4 +120,9 @@ __all__ = [
     "ExchangePowerShellRunnerConfig",
     "ExchangePowerShellSubprocessRunner",
     "validate_exchange_powershell_runner_config",
+    "ExchangePowerShellInvocation",
+    "build_exchange_powershell_invocation",
+    "build_exchange_powershell_script",
+    "decode_exchange_command_payload",
+    "encode_exchange_command_payload",
 ]
