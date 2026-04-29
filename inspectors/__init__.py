@@ -1,3 +1,7 @@
+from inspectors.mock import (
+    create_mock_inspector_registry,
+    inspect_mock_exchange_mailbox,
+)
 from inspectors.models import (
     InspectorError,
     InspectorEvidence,
@@ -12,6 +16,7 @@ from inspectors.registry import (
     InspectorRegistry,
     create_default_inspector_registry,
 )
+from inspectors.runner import InspectorRunOutput, run_inspector_and_save
 from inspectors.storage import (
     build_inspector_output_dir,
     build_inspector_result_path,
@@ -34,4 +39,8 @@ __all__ = [
     "build_inspector_result_path",
     "read_inspector_result_payload",
     "save_inspector_result",
+    "InspectorRunOutput",
+    "create_mock_inspector_registry",
+    "inspect_mock_exchange_mailbox",
+    "run_inspector_and_save",
 ]
