@@ -6,6 +6,10 @@ from inspectors.exchange_mailbox import (
     MockExchangeMailboxInspectorClient,
     inspect_exchange_mailbox,
 )
+from inspectors.exchange_online_powershell import (
+    ExchangeOnlinePowerShellConfig,
+    ExchangeOnlinePowerShellMailboxClient,
+)
 from inspectors.mock import (
     create_mock_inspector_registry,
     inspect_mock_exchange_mailbox,
@@ -69,4 +73,6 @@ __all__ = [
     "ExchangeMailboxSnapshot",
     "MockExchangeMailboxInspectorClient",
     "inspect_exchange_mailbox",
+    "ExchangeOnlinePowerShellConfig",
+    "ExchangeOnlinePowerShellMailboxClient",
 ]
