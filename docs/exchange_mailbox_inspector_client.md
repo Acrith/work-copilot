@@ -192,6 +192,37 @@ A real runner must require:
 The first runner implementation should validate command safety before invoking
 any subprocess. Mutation-shaped commands must be rejected before execution.
 
+## Exchange PowerShell authentication config
+
+The planned real Exchange Online PowerShell backend should use explicit auth
+configuration and should remain disabled by default.
+
+Supported planned auth modes:
+
+- `disabled`
+- `app_certificate_thumbprint`
+- `app_certificate_file`
+
+Initial unattended automation should prefer app-only certificate auth over
+delegated interactive user login.
+
+Required environment variables for thumbprint-based auth:
+
+- `WORK_COPILOT_EXCHANGE_AUTH_MODE=app_certificate_thumbprint`
+- `WORK_COPILOT_EXCHANGE_APP_ID=<app/client id>`
+- `WORK_COPILOT_EXCHANGE_ORGANIZATION=<tenant>.onmicrosoft.com`
+- `WORK_COPILOT_EXCHANGE_CERTIFICATE_THUMBPRINT=<certificate thumbprint>`
+
+Required environment variables for certificate-file auth:
+
+- `WORK_COPILOT_EXCHANGE_AUTH_MODE=app_certificate_file`
+- `WORK_COPILOT_EXCHANGE_APP_ID=<app/client id>`
+- `WORK_COPILOT_EXCHANGE_ORGANIZATION=<tenant>.onmicrosoft.com`
+- `WORK_COPILOT_EXCHANGE_CERTIFICATE_PATH=<path to certificate>`
+
+Auth config values must not be written to inspector JSON, run logs, stdout,
+stderr, approval previews, or ServiceDesk.
+
 ## Output and logging rules
 
 Inspector output may include mailbox metadata required for planning.
