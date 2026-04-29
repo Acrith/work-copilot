@@ -67,6 +67,8 @@ include = [
     "connectors*",
     "skills",
     "skills*",
+    "inspectors",
+    "inspectors*",
 ]
 
 [dependency-groups]
