@@ -158,6 +158,24 @@ Supported backend modes:
 
 The `/sdp inspect-skill` workflow should remain mock-only until the real runner is intentionally wired through this configuration gate.
 
+## Inspector registry backend selection
+
+The `/sdp inspect-skill` workflow should use a config-aware inspector registry.
+
+Default behavior remains mock-only:
+
+- `WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND=mock`
+- `WORK_COPILOT_ALLOW_REAL_EXCHANGE_INSPECTOR=false`
+
+Supported backend behavior:
+
+- `mock`: registers the mock `exchange.mailbox.inspect` inspector
+- `disabled`: registers no Exchange inspector
+- `exchange_online_powershell`: registers the real read-only Exchange inspector only when real external calls are explicitly allowed
+
+Real Exchange mode must visibly log that external Exchange Online will be contacted.
+Mock mode must visibly log that no external systems were contacted.
+
 ## Real runner boundary
 
 The future real Exchange Online PowerShell runner must remain behind the Exchange
