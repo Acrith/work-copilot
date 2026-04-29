@@ -1,3 +1,11 @@
+from inspectors.exchange_auth_config import (
+    ExchangePowerShellAuthConfig,
+    ExchangePowerShellAuthConfigError,
+    ExchangePowerShellAuthMode,
+    load_exchange_powershell_auth_config,
+    redacted_exchange_powershell_auth_config,
+    validate_exchange_powershell_auth_config,
+)
 from inspectors.exchange_command_runner import (
     ExchangeCommandValidationError,
     ExchangePowerShellCommand,
@@ -133,4 +141,10 @@ __all__ = [
     "ConfiguredInspectorRegistry",
     "create_configured_inspector_registry",
     "create_configured_inspector_registry_from_env",
+    "ExchangePowerShellAuthConfig",
+    "ExchangePowerShellAuthConfigError",
+    "ExchangePowerShellAuthMode",
+    "load_exchange_powershell_auth_config",
+    "redacted_exchange_powershell_auth_config",
+    "validate_exchange_powershell_auth_config",
 ]
