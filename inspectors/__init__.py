@@ -1,3 +1,12 @@
+from inspectors.exchange_command_runner import (
+    ExchangeCommandValidationError,
+    ExchangePowerShellCommand,
+    ExchangePowerShellCommandResult,
+    ExchangePowerShellCommandRunner,
+    MockExchangePowerShellCommandRunner,
+    is_read_only_exchange_command,
+    validate_read_only_exchange_command,
+)
 from inspectors.exchange_mailbox import (
     ExchangeMailboxInspectionError,
     ExchangeMailboxInspectorClient,
@@ -75,4 +84,11 @@ __all__ = [
     "inspect_exchange_mailbox",
     "ExchangeOnlinePowerShellConfig",
     "ExchangeOnlinePowerShellMailboxClient",
+    "ExchangeCommandValidationError",
+    "ExchangePowerShellCommand",
+    "ExchangePowerShellCommandResult",
+    "ExchangePowerShellCommandRunner",
+    "MockExchangePowerShellCommandRunner",
+    "is_read_only_exchange_command",
+    "validate_read_only_exchange_command",
 ]
