@@ -168,3 +168,11 @@ def _first_present_input_value(
 
 def _clean_markdown_value(value: str) -> str:
     return value.strip().strip("`").strip()
+
+
+def select_supported_inspector_tool(suggested_tools: list[str]) -> str | None:
+    for tool in suggested_tools:
+        if tool in SUPPORTED_INSPECTOR_IDS:
+            return tool
+
+    return None

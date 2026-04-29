@@ -6,6 +6,7 @@ from inspectors.skill_plan import (
     build_inspector_request_from_skill_plan,
     parse_extracted_inputs,
     parse_suggested_inspector_tools,
+    select_supported_inspector_tool,
 )
 
 
@@ -185,3 +186,25 @@ def test_build_exchange_mailbox_inspector_request_requires_mailbox_input():
             skill_plan_text=skill_plan,
             inspector_id="exchange.mailbox.inspect",
         )
+
+
+def test_select_supported_inspector_tool_returns_first_supported_tool():
+    selected = select_supported_inspector_tool(
+        [
+            "active_directory.user.lookup",
+            "exchange.mailbox.inspect",
+        ]
+    )
+
+    assert selected == "exchange.mailbox.inspect"
+
+
+def test_select_supported_inspector_tool_returns_none_when_no_supported_tool():
+    selected = select_supported_inspector_tool(
+        [
+            "active_directory.user.lookup",
+            "exchange.shared_mailbox.get_full_access_permissions",
+        ]
+    )
+
+    assert selected is None

@@ -22,6 +22,7 @@ from inspectors.skill_plan import (
     build_inspector_request_from_skill_plan,
     parse_extracted_inputs,
     parse_suggested_inspector_tools,
+    select_supported_inspector_tool,
 )
 from inspectors.storage import (
     build_inspector_output_dir,
@@ -53,4 +54,5 @@ __all__ = [
     "build_inspector_request_from_skill_plan",
     "parse_extracted_inputs",
     "parse_suggested_inspector_tools",
+    "select_supported_inspector_tool",
 ]

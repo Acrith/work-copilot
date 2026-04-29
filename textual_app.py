@@ -28,6 +28,13 @@ from draft_exports import (
     read_text_if_exists,
     save_text_draft,
 )
+from inspectors.mock import create_mock_inspector_registry
+from inspectors.runner import run_inspector_and_save
+from inspectors.skill_plan import (
+    build_inspector_request_from_skill_plan,
+    parse_suggested_inspector_tools,
+    select_supported_inspector_tool,
+)
 from interactive_commands import (
     build_interactive_help_renderable,
     build_servicedesk_context_prompt,
@@ -689,6 +696,73 @@ class WorkCopilotTextualApp(App):
                 save_output_path=str(skill_plan_path),
                 save_latest_path=str(latest_skill_plan_path),
             )
+            return
+
+        if command == "sdp_inspect_skill":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp inspect-skill <request_id>")
+                return
+
+            latest_skill_plan_path = build_servicedesk_latest_skill_plan_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            latest_skill_plan = read_text_if_exists(latest_skill_plan_path)
+
+            if latest_skill_plan is None:
+                self._log_blank()
+                self._log(
+                    f"No local skill plan found for request {request_id}. "
+                    f"Run /sdp skill-plan {request_id} first."
+                )
+                return
+
+            suggested_tools = parse_suggested_inspector_tools(latest_skill_plan)
+            inspector_id = select_supported_inspector_tool(suggested_tools)
+
+            if inspector_id is None:
+                self._log_blank()
+                self._log(
+                    "No supported inspector found in the latest skill plan. "
+                    "Currently supported mock inspector: exchange.mailbox.inspect."
+                )
+
+                if suggested_tools:
+                    self._log(f"Suggested inspectors were: {', '.join(suggested_tools)}")
+                else:
+                    self._log("The skill plan did not suggest any inspector tools.")
+
+                return
+
+            try:
+                inspector_request = build_inspector_request_from_skill_plan(
+                    request_id=request_id,
+                    skill_plan_text=latest_skill_plan,
+                    inspector_id=inspector_id,
+                )
+            except ValueError as exc:
+                self._log_blank()
+                self._log(f"Could not build inspector request: {exc}")
+                return
+
+            registry = create_mock_inspector_registry()
+            output = run_inspector_and_save(
+                registry=registry,
+                request=inspector_request,
+                workspace=self.config.workspace,
+            )
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                "Running mock inspector only. No external systems were contacted."
+            )
+            self._log_system_message(f"Inspector: {inspector_id}")
+            self._log_system_message(f"Result: {output.result.status.value}")
+            self._log_system_message(f"Summary: {output.result.summary}")
+            self._log_system_message(f"Inspector result saved to: {output.saved_path}")
             return
 
         if command == "unknown":
