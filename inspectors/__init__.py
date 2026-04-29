@@ -17,6 +17,12 @@ from inspectors.registry import (
     create_default_inspector_registry,
 )
 from inspectors.runner import InspectorRunOutput, run_inspector_and_save
+from inspectors.skill_plan import (
+    SkillPlanInput,
+    build_inspector_request_from_skill_plan,
+    parse_extracted_inputs,
+    parse_suggested_inspector_tools,
+)
 from inspectors.storage import (
     build_inspector_output_dir,
     build_inspector_result_path,
@@ -43,4 +49,8 @@ __all__ = [
     "create_mock_inspector_registry",
     "inspect_mock_exchange_mailbox",
     "run_inspector_and_save",
+    "SkillPlanInput",
+    "build_inspector_request_from_skill_plan",
+    "parse_extracted_inputs",
+    "parse_suggested_inspector_tools",
 ]
