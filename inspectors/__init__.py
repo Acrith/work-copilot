@@ -42,9 +42,12 @@ from inspectors.exchange_powershell_runner import (
 )
 from inspectors.exchange_powershell_script import (
     ExchangePowerShellInvocation,
+    build_exchange_connect_preamble,
     build_exchange_powershell_invocation,
     build_exchange_powershell_script,
+    decode_exchange_auth_payload,
     decode_exchange_command_payload,
+    encode_exchange_auth_payload,
     encode_exchange_command_payload,
 )
 from inspectors.factory import (
@@ -147,4 +150,7 @@ __all__ = [
     "load_exchange_powershell_auth_config",
     "redacted_exchange_powershell_auth_config",
     "validate_exchange_powershell_auth_config",
+    "build_exchange_connect_preamble",
+    "decode_exchange_auth_payload",
+    "encode_exchange_auth_payload",
 ]
