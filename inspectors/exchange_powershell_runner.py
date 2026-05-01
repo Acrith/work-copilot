@@ -2,6 +2,11 @@ import json
 import subprocess
 from dataclasses import dataclass
 
+from inspectors.exchange_auth_config import (
+    ExchangePowerShellAuthConfig,
+    ExchangePowerShellAuthConfigError,
+    validate_exchange_powershell_auth_config,
+)
 from inspectors.exchange_command_runner import (
     ExchangePowerShellCommand,
     ExchangePowerShellCommandResult,
@@ -25,6 +30,7 @@ class ExchangePowerShellRunnerConfig:
     runtime_config: ExchangeInspectorRuntimeConfig
     executable: str = "pwsh"
     timeout_seconds: int = 60
+    auth_config: ExchangePowerShellAuthConfig | None = None
 
 
 class ExchangePowerShellSubprocessRunner(ExchangePowerShellCommandRunner):
@@ -40,6 +46,7 @@ class ExchangePowerShellSubprocessRunner(ExchangePowerShellCommandRunner):
         invocation = build_exchange_powershell_invocation(
             command,
             executable=self.config.executable,
+            auth_config=self.config.auth_config,
         )
 
         try:
@@ -119,6 +126,18 @@ def validate_exchange_powershell_runner_config(
         raise ExchangeInspectorConfigError(
             "Exchange PowerShell runner requires real external calls to be explicitly allowed."
         )
+
+    if config.auth_config is None:
+        raise ExchangeInspectorConfigError(
+            "Exchange PowerShell runner requires Exchange PowerShell auth config."
+        )
+
+    try:
+        validate_exchange_powershell_auth_config(config.auth_config)
+    except ExchangePowerShellAuthConfigError as exc:
+        raise ExchangeInspectorConfigError(
+            f"Invalid Exchange PowerShell auth config: {exc}"
+        ) from exc
 
     if not config.executable.strip():
         raise ExchangeInspectorConfigError(

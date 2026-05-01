@@ -1,6 +1,14 @@
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from inspectors.exchange_auth_config import (
+    ExchangePowerShellAuthConfig,
+    ExchangePowerShellAuthConfigError,
+    ExchangePowerShellAuthMode,
+    load_exchange_powershell_auth_config,
+    validate_exchange_powershell_auth_config,
+)
 from inspectors.exchange_config import (
     ExchangeInspectorBackend,
     ExchangeInspectorConfigError,
@@ -44,6 +52,7 @@ def create_configured_inspector_registry(
     runtime_config: ExchangeInspectorRuntimeConfig,
     powershell_executable: str = "pwsh",
     powershell_timeout_seconds: int = 60,
+    auth_config: ExchangePowerShellAuthConfig | None = None,
 ) -> ConfiguredInspectorRegistry:
     if runtime_config.backend == ExchangeInspectorBackend.DISABLED:
         return ConfiguredInspectorRegistry(
@@ -61,12 +70,14 @@ def create_configured_inspector_registry(
 
     if runtime_config.backend == ExchangeInspectorBackend.EXCHANGE_ONLINE_POWERSHELL:
         registry = InspectorRegistry()
+        resolved_auth_config = auth_config or _load_required_exchange_auth_config()
 
         runner = ExchangePowerShellSubprocessRunner(
             ExchangePowerShellRunnerConfig(
                 runtime_config=runtime_config,
                 executable=powershell_executable,
                 timeout_seconds=powershell_timeout_seconds,
+                auth_config=resolved_auth_config,
             )
         )
         client = ExchangeOnlinePowerShellMailboxClient(
@@ -91,12 +102,16 @@ def create_configured_inspector_registry(
 
 
 def create_configured_inspector_registry_from_env(
-    environ: dict[str, str] | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> ConfiguredInspectorRegistry:
     if environ is None:
-        environ = dict(os.environ)
+        environ = os.environ
 
     runtime_config = load_exchange_inspector_runtime_config(environ)
+
+    auth_config = None
+    if runtime_config.backend == ExchangeInspectorBackend.EXCHANGE_ONLINE_POWERSHELL:
+        auth_config = _load_required_exchange_auth_config(environ)
 
     return create_configured_inspector_registry(
         runtime_config=runtime_config,
@@ -108,7 +123,33 @@ def create_configured_inspector_registry_from_env(
             environ.get("WORK_COPILOT_EXCHANGE_POWERSHELL_TIMEOUT_SECONDS", "60"),
             setting_name="WORK_COPILOT_EXCHANGE_POWERSHELL_TIMEOUT_SECONDS",
         ),
+        auth_config=auth_config,
     )
+
+
+def _load_required_exchange_auth_config(
+    environ: Mapping[str, str] | None = None,
+) -> ExchangePowerShellAuthConfig:
+    try:
+        auth_config = load_exchange_powershell_auth_config(environ)
+    except ExchangePowerShellAuthConfigError as exc:
+        raise ExchangeInspectorConfigError(
+            f"Invalid Exchange PowerShell auth config: {exc}"
+        ) from exc
+
+    if auth_config.mode == ExchangePowerShellAuthMode.DISABLED:
+        raise ExchangeInspectorConfigError(
+            "Real Exchange inspector backend requires Exchange PowerShell auth config."
+        )
+
+    try:
+        validate_exchange_powershell_auth_config(auth_config)
+    except ExchangePowerShellAuthConfigError as exc:
+        raise ExchangeInspectorConfigError(
+            f"Invalid Exchange PowerShell auth config: {exc}"
+        ) from exc
+
+    return auth_config
 
 
 def _parse_positive_int(value: str, *, setting_name: str) -> int:

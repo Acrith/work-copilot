@@ -2,6 +2,10 @@ import subprocess
 
 import pytest
 
+from inspectors.exchange_auth_config import (
+    ExchangePowerShellAuthConfig,
+    ExchangePowerShellAuthMode,
+)
 from inspectors.exchange_command_runner import ExchangePowerShellCommand
 from inspectors.exchange_config import (
     ExchangeInspectorBackend,
@@ -26,12 +30,28 @@ def make_runtime_config(
     )
 
 
-def make_runner(*, executable: str = "pwsh", timeout_seconds: int = 60):
+def make_auth_config() -> ExchangePowerShellAuthConfig:
+    return ExchangePowerShellAuthConfig(
+        mode=ExchangePowerShellAuthMode.APP_CERTIFICATE_FILE,
+        app_id="app-id",
+        organization="example.onmicrosoft.com",
+        certificate_path="/secure/cert.pfx",
+        certificate_password_env_var="WORK_COPILOT_EXCHANGE_CERTIFICATE_PASSWORD",
+    )
+
+
+def make_runner(
+    *,
+    executable: str = "pwsh",
+    timeout_seconds: int = 60,
+    auth_config: ExchangePowerShellAuthConfig | None = None,
+):
     return ExchangePowerShellSubprocessRunner(
         ExchangePowerShellRunnerConfig(
             runtime_config=make_runtime_config(),
             executable=executable,
             timeout_seconds=timeout_seconds,
+            auth_config=auth_config or make_auth_config(),
         )
     )
 
@@ -39,6 +59,7 @@ def make_runner(*, executable: str = "pwsh", timeout_seconds: int = 60):
 def test_validate_exchange_powershell_runner_config_allows_explicit_real_backend():
     config = ExchangePowerShellRunnerConfig(
         runtime_config=make_runtime_config(),
+        auth_config=make_auth_config(),
     )
 
     validate_exchange_powershell_runner_config(config)
@@ -50,6 +71,7 @@ def test_exchange_powershell_runner_requires_exchange_backend():
             backend=ExchangeInspectorBackend.MOCK,
             allow_real_external_calls=True,
         ),
+        auth_config=make_auth_config(),
     )
 
     with pytest.raises(
@@ -64,6 +86,7 @@ def test_exchange_powershell_runner_requires_real_external_calls_allowed():
         runtime_config=make_runtime_config(
             allow_real_external_calls=False,
         ),
+        auth_config=make_auth_config(),
     )
 
     with pytest.raises(
@@ -73,10 +96,24 @@ def test_exchange_powershell_runner_requires_real_external_calls_allowed():
         ExchangePowerShellSubprocessRunner(config)
 
 
+def test_exchange_powershell_runner_requires_auth_config():
+    config = ExchangePowerShellRunnerConfig(
+        runtime_config=make_runtime_config(),
+        auth_config=None,
+    )
+
+    with pytest.raises(
+        ExchangeInspectorConfigError,
+        match="auth config",
+    ):
+        ExchangePowerShellSubprocessRunner(config)
+
+
 def test_exchange_powershell_runner_rejects_empty_executable():
     config = ExchangePowerShellRunnerConfig(
         runtime_config=make_runtime_config(),
         executable="   ",
+        auth_config=make_auth_config(),
     )
 
     with pytest.raises(
@@ -90,6 +127,7 @@ def test_exchange_powershell_runner_rejects_non_positive_timeout():
     config = ExchangePowerShellRunnerConfig(
         runtime_config=make_runtime_config(),
         timeout_seconds=0,
+        auth_config=make_auth_config(),
     )
 
     with pytest.raises(
@@ -142,6 +180,32 @@ def test_exchange_powershell_runner_runs_allowlisted_command(monkeypatch):
     assert captured["text"] is True
     assert captured["timeout"] == 42
     assert captured["check"] is False
+
+
+def test_exchange_powershell_runner_includes_auth_connect_preamble(monkeypatch):
+    captured = {}
+
+    def fake_run(argv, capture_output, text, timeout, check):
+        captured["argv"] = argv
+
+        return subprocess.CompletedProcess(argv, 0, "{}", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    runner = make_runner()
+    runner.run(
+        ExchangePowerShellCommand(
+            name="Get-EXOMailbox",
+            parameters={"Identity": "user@example.com"},
+        )
+    )
+
+    command_script = " ".join(captured["argv"])
+
+    assert "Import-Module ExchangeOnlineManagement" in command_script
+    assert "Connect-ExchangeOnline" in command_script
+    assert "-CertificateFilePath $auth.certificate_path" in command_script
+    assert "-CertificatePassword $certificatePassword" in command_script
 
 
 def test_exchange_powershell_runner_uses_configured_executable(monkeypatch):

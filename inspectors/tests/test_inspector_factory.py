@@ -11,6 +11,26 @@ from inspectors.factory import (
 )
 
 
+def make_auth_env() -> dict[str, str]:
+    return {
+        "WORK_COPILOT_EXCHANGE_AUTH_MODE": "app_certificate_file",
+        "WORK_COPILOT_EXCHANGE_APP_ID": "app-id",
+        "WORK_COPILOT_EXCHANGE_ORGANIZATION": "example.onmicrosoft.com",
+        "WORK_COPILOT_EXCHANGE_CERTIFICATE_PATH": "/secure/cert.pfx",
+        "WORK_COPILOT_EXCHANGE_CERTIFICATE_PASSWORD_ENV_VAR": (
+            "WORK_COPILOT_EXCHANGE_CERTIFICATE_PASSWORD"
+        ),
+    }
+
+
+def make_real_exchange_env() -> dict[str, str]:
+    return {
+        "WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND": "exchange_online_powershell",
+        "WORK_COPILOT_ALLOW_REAL_EXCHANGE_INSPECTOR": "true",
+        **make_auth_env(),
+    }
+
+
 def test_create_configured_inspector_registry_uses_mock_backend_by_default():
     configured = create_configured_inspector_registry_from_env({})
 
@@ -43,17 +63,26 @@ def test_create_configured_inspector_registry_rejects_real_backend_without_doubl
             {
                 "WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND": "exchange_online_powershell",
                 "WORK_COPILOT_ALLOW_REAL_EXCHANGE_INSPECTOR": "false",
+                **make_auth_env(),
+            }
+        )
+
+
+def test_create_configured_inspector_registry_rejects_real_backend_without_auth_config():
+    with pytest.raises(
+        ExchangeInspectorConfigError,
+        match="auth",
+    ):
+        create_configured_inspector_registry_from_env(
+            {
+                "WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND": "exchange_online_powershell",
+                "WORK_COPILOT_ALLOW_REAL_EXCHANGE_INSPECTOR": "true",
             }
         )
 
 
 def test_create_configured_inspector_registry_registers_real_backend_with_double_opt_in():
-    configured = create_configured_inspector_registry_from_env(
-        {
-            "WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND": "exchange_online_powershell",
-            "WORK_COPILOT_ALLOW_REAL_EXCHANGE_INSPECTOR": "true",
-        }
-    )
+    configured = create_configured_inspector_registry_from_env(make_real_exchange_env())
 
     assert configured.exchange_backend == ExchangeInspectorBackend.EXCHANGE_ONLINE_POWERSHELL
     assert configured.allow_real_external_calls is True
@@ -64,8 +93,7 @@ def test_create_configured_inspector_registry_registers_real_backend_with_double
 def test_create_configured_inspector_registry_passes_custom_runner_settings():
     configured = create_configured_inspector_registry_from_env(
         {
-            "WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND": "exchange_online_powershell",
-            "WORK_COPILOT_ALLOW_REAL_EXCHANGE_INSPECTOR": "true",
+            **make_real_exchange_env(),
             "WORK_COPILOT_EXCHANGE_POWERSHELL_EXECUTABLE": "/usr/bin/pwsh",
             "WORK_COPILOT_EXCHANGE_POWERSHELL_TIMEOUT_SECONDS": "120",
         }
