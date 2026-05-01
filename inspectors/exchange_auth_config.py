@@ -20,6 +20,7 @@ class ExchangePowerShellAuthConfig:
     organization: str | None = None
     certificate_thumbprint: str | None = None
     certificate_path: str | None = None
+    certificate_password_env_var: str | None = None
 
     @property
     def is_enabled(self) -> bool:
@@ -52,6 +53,9 @@ def load_exchange_powershell_auth_config(
         certificate_path=_empty_to_none(
             environ.get("WORK_COPILOT_EXCHANGE_CERTIFICATE_PATH")
         ),
+        certificate_password_env_var=_empty_to_none(
+            environ.get("WORK_COPILOT_EXCHANGE_CERTIFICATE_PASSWORD_ENV_VAR")
+        ),
     )
     validate_exchange_powershell_auth_config(config)
 
@@ -79,12 +83,22 @@ def validate_exchange_powershell_auth_config(
                 "app_certificate_thumbprint auth."
             )
 
+        if config.certificate_password_env_var:
+            raise ExchangePowerShellAuthConfigError(
+                "Do not set WORK_COPILOT_EXCHANGE_CERTIFICATE_PASSWORD_ENV_VAR when using "
+                "app_certificate_thumbprint auth."
+            )
+
         return
 
     if config.mode == ExchangePowerShellAuthMode.APP_CERTIFICATE_FILE:
         _require_value(
             config.certificate_path,
             "WORK_COPILOT_EXCHANGE_CERTIFICATE_PATH",
+        )
+        _require_value(
+            config.certificate_password_env_var,
+            "WORK_COPILOT_EXCHANGE_CERTIFICATE_PASSWORD_ENV_VAR",
         )
 
         if config.certificate_thumbprint:
@@ -109,6 +123,9 @@ def redacted_exchange_powershell_auth_config(
         "organization_configured": bool(config.organization),
         "certificate_thumbprint_configured": bool(config.certificate_thumbprint),
         "certificate_path_configured": bool(config.certificate_path),
+        "certificate_password_env_var_configured": bool(
+            config.certificate_password_env_var
+        ),
     }
 
 
