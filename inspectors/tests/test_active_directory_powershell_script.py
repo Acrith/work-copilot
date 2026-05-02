@@ -59,6 +59,34 @@ def test_build_active_directory_powershell_script_imports_active_directory_modul
     assert "Import-Module ActiveDirectory -ErrorAction Stop" in script
 
 
+def test_build_active_directory_powershell_script_forces_utf8_stdout_before_module_import():
+    script = build_active_directory_powershell_script(
+        ActiveDirectoryCommand(
+            name="Get-ADUser",
+            parameters={"Identity": "user@example.com"},
+        )
+    )
+
+    utf8_setup = "New-Object System.Text.UTF8Encoding $false"
+    console_encoding = "[Console]::OutputEncoding = $utf8NoBom"
+    output_encoding = "$OutputEncoding = $utf8NoBom"
+
+    assert utf8_setup in script
+    assert console_encoding in script
+    assert output_encoding in script
+
+    import_index = script.index("Import-Module ActiveDirectory -ErrorAction Stop")
+    utf8_setup_index = script.index(utf8_setup)
+    console_encoding_index = script.index(console_encoding)
+    output_encoding_index = script.index(output_encoding)
+
+    # The UTF-8 stdout setup must run before Import-Module so the module's
+    # own load-time output (if any) is also captured under UTF-8.
+    assert utf8_setup_index < import_index
+    assert console_encoding_index < import_index
+    assert output_encoding_index < import_index
+
+
 def test_build_active_directory_powershell_script_uses_base64_payload():
     command = ActiveDirectoryCommand(
         name="Get-ADUser",

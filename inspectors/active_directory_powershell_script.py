@@ -115,6 +115,12 @@ def build_active_directory_powershell_script(
 
     lines = [
         "$ErrorActionPreference = 'Stop'",
+        # Force UTF-8 (no BOM) on stdout so WSL Python can decode the JSON
+        # output without UnicodeDecodeError on legacy/non-ASCII bytes from
+        # Windows PowerShell 5.1's default code page.
+        "$utf8NoBom = New-Object System.Text.UTF8Encoding $false",
+        "[Console]::OutputEncoding = $utf8NoBom",
+        "$OutputEncoding = $utf8NoBom",
         "Import-Module ActiveDirectory -ErrorAction Stop",
         f"$payloadBase64 = '{payload_base64}'",
         "$payloadJson = [System.Text.Encoding]::UTF8.GetString("
