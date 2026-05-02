@@ -413,6 +413,157 @@ def test_build_servicedesk_skill_plan_prompt_distinguishes_current_issue_from_hi
     assert "Do not ask the requester for missing skill information unless it is needed" in prompt
 
 
+def test_build_servicedesk_skill_plan_prompt_requires_clean_identifier_values_for_inspector_inputs():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="60020",
+        saved_context=(
+            "# ServiceDesk request context\n\n"
+            "Surname change for Agata Piątek (agata.piatek@example.com).\n"
+        ),
+        skill_definitions_text="## active_directory.user.update_attributes\n",
+    )
+
+    # The clean-identifier rule block must be present and explicitly
+    # bound to the inspector-bound input fields the request builders
+    # consume.
+    assert "Clean identifier rule for inspector-bound" in prompt
+    for inspector_field in (
+        "`target_user`",
+        "`target_user_email`",
+        "`user_principal_name`",
+        "`sam_account_name`",
+        "`mailbox_address`",
+        "`target_group`",
+        "`group_name`",
+    ):
+        assert inspector_field in prompt
+
+    # Explicit ban on wrapping identifiers with display names, labels,
+    # parentheses, prefixes, or trailing notes.
+    assert (
+        "MUST be clean machine identifiers only" in prompt
+    )
+    assert (
+        "Do not wrap identifiers with display names, labels, comments, "
+        "parentheses, surrounding quotes, prefixes like `user:` / "
+        "`mailbox:` / `group:`, or trailing notes." in prompt
+    )
+
+    # Good and bad examples that the smoke test discovered must both be
+    # present so the model has them as anchors.
+    assert "Good: `agata.piatek@exactforestall.com`" in prompt
+    assert "Good: `agata.piatek`" in prompt
+    assert "Bad: `Agata Piątek (agata.piatek@exactforestall.com)`" in prompt
+    assert "Bad: `user: agata.piatek@exactforestall.com`" in prompt
+
+    # Human-readable display-name + email combinations must land in
+    # identity_confirmation or evidence, never in inspector-bound value
+    # fields.
+    assert "`identity_confirmation`" in prompt
+    assert "or into the `evidence:` line of the inspector-bound bullet" in prompt
+    assert "never into" in prompt
+    for forbidden_landing_field in (
+        "`target_user`",
+        "`target_user_email`",
+        "`mailbox_address`",
+        "`target_group`",
+        "`group_name`",
+    ):
+        assert forbidden_landing_field in prompt
+
+    # Requester-vs-target / per-system preferences still apply.
+    assert "for AD, prefer SAM/account-style identifiers" in prompt
+    assert (
+        "for Exchange, mailbox/email identifiers remain expected." in prompt
+    )
+
+
+def test_build_servicedesk_skill_plan_prompt_distinguishes_ad_lookup_vs_canonical_modification_identifiers():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="60030",
+        saved_context=(
+            "# ServiceDesk request context\n\n"
+            "Please update surname for agata.piatek@example.com.\n"
+        ),
+        skill_definitions_text=(
+            "## active_directory.user.update_profile_attributes\n"
+        ),
+    )
+
+    assert (
+        "Active Directory lookup vs canonical-modification identifier "
+        "rules:" in prompt
+    )
+
+    # Lookup vs canonical-modification distinction is named and the two
+    # canonical AD modification identifiers are explicit.
+    assert "AD lookup identifiers used to *find* the right AD object" in prompt
+    assert (
+        "AD canonical modification identifiers used to *modify* the "
+        "right AD object: `sam_account_name` and `distinguished_name`"
+        in prompt
+    )
+    assert "`target_user_email`" in prompt
+    assert "`user_principal_name`" in prompt
+    assert (
+        "valid inputs to `active_directory.user.inspect`" in prompt
+    )
+
+    # Read-only AD inspection-only requests still allow target_user as a
+    # clean SAM/account-style identifier.
+    assert (
+        "For read-only AD inspection-only requests" in prompt
+    )
+    assert (
+        "`target_user` may still be a clean SAM/account-style "
+        "identifier when the request body provides one directly." in prompt
+    )
+
+    # Write-shaped / manual-update AD skills must follow the lookup-then-
+    # canonical-target flow.
+    assert (
+        "For Active Directory write-shaped or manual-update skills "
+        in prompt
+    )
+    assert "`active_directory.user.update_profile_attributes`" in prompt
+
+    # Email/UPN must be extracted as target_user_email / user_principal_name
+    # — not as target_user — when the AD target is a modification skill.
+    assert (
+        "If only an email or UPN is available in the request, extract "
+        "it as `target_user_email` or `user_principal_name`, NOT as "
+        "`target_user`." in prompt
+    )
+
+    # sam_account_name / distinguished_name should be marked missing and
+    # surfaced in Missing information needed now when not directly given.
+    assert (
+        "list them as separate `Extracted inputs` bullets with "
+        "`status: missing` and `needed_now: yes`" in prompt
+    )
+    assert (
+        "call them out under `Missing information needed now`" in prompt
+    )
+
+    # Suggest active_directory.user.inspect when enough lookup info is
+    # present, so the inspector resolves the canonical AD identifiers.
+    assert (
+        "suggest `active_directory.user.inspect` under `Suggested "
+        "inspector tools` so the inspector resolves the canonical "
+        "`sam_account_name` / `distinguished_name`." in prompt
+    )
+
+    # Internal work plan / Proposed next action must require using the
+    # inspector result's canonical identifier before any manual ADUC
+    # change.
+    assert (
+        "`Internal work plan` and `Proposed next action` MUST direct "
+        "the technician to use the inspector result's "
+        "`sam_account_name` / `distinguished_name` as the canonical AD "
+        "target before any manual ADUC update." in prompt
+    )
+
+
 def test_build_servicedesk_skill_plan_prompt_capability_classification_label_set():
     prompt = build_servicedesk_skill_plan_prompt(
         request_id="55853",
