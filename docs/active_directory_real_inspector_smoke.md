@@ -13,6 +13,131 @@ never be used to mutate Active Directory. See
 [`active_directory_inspector_client.md`](active_directory_inspector_client.md)
 for the broader design and the explicit list of forbidden operations.
 
+## Lessons learned from the first successful smoke test
+
+These are recorded after the first end-to-end successful smoke test
+against a real on-prem AD domain. They are practical hints, not new
+rules — the safety contract above is unchanged.
+
+- **VPN / domain connectivity matters.** `Import-Module ActiveDirectory`
+  can succeed on a workstation that is not currently reachable to a
+  domain controller (the module loads from the local RSAT install).
+  Cmdlets like `Get-ADUser`, `Get-ADGroup`, and
+  `Get-ADPrincipalGroupMembership` will then fail at call time with
+  domain-unreachable errors rather than at import time. If the smoke
+  test fails after `Import-Module` succeeds, check that the workstation
+  has a working domain connection (corporate network, VPN, or
+  domain-joined session) before debugging Work Copilot.
+- **Use Windows-side `powershell.exe` from WSL by default.** The Linux
+  `pwsh` package does not ship the `ActiveDirectory` module and cannot
+  satisfy `Import-Module ActiveDirectory`. Work Copilot's default
+  `WORK_COPILOT_AD_POWERSHELL_EXECUTABLE=powershell.exe` is correct;
+  only override it with a Windows-side path (for example
+  `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`) when
+  WSL interop cannot resolve `powershell.exe` directly.
+- **Identity intent differs by system.** Active Directory inspectors
+  generally prefer SAM/account-style identifiers (for example
+  `name.surname`, distinguished name, or `sAMAccountName`). Exchange /
+  mailbox inspectors generally prefer SMTP / email identifiers (for
+  example `name.surname@contoso.com`). When the requester email and
+  the target are different, only treat the email as the inspection
+  target if the request body explicitly says so. Work Copilot's
+  skill-plan prompt enforces this, and the AD user/membership clients
+  also resolve email/UPN inputs through `Get-ADUser -LDAPFilter "(|(userPrincipalName=...)(mail=...))"`
+  rather than passing them as `-Identity` directly.
+- **Combined inspection reports are expected when multiple inspectors
+  run.** With three AD inspectors selected (user, group,
+  group_membership), `/sdp inspection-report <id>` produces one
+  combined report containing per-inspector sections plus an overall
+  status. Single-inspector runs still produce the familiar
+  single-section report.
+- **Combined draft notes use nested Markdown bullets.** For combined
+  reports, `/sdp draft-note <id>` is expected to render `Findings:`
+  with nested groupings:
+
+  ```text
+  Findings:
+  - User:
+    - User exists: yes
+    - ...
+  - Group:
+    - Group exists: yes
+    - ...
+  - Membership:
+    - User identifier: ...
+    - Is member: yes
+  ```
+
+  This keeps Rich/Textual Markdown rendering clean and avoids the
+  "User: Group: Membership:" inline collapsing that flat top-level
+  labels produce.
+- **Group scope and category render as readable enum names.** Expect
+  values like `Global`, `Universal`, `DomainLocal` for `group_scope`
+  and `Security`, `Distribution` for `group_category` — not raw
+  numeric values like `1` / `2`. The PowerShell projection casts both
+  through `.ToString()` before serialization. If you ever see a raw
+  number in inspector JSON, treat that as a regression.
+
+### Read-only invariants confirmed by the smoke test
+
+- No `Get-ADGroupMember`. Group member enumeration is intentionally
+  out of scope; group_membership is checked one user/group pair at a
+  time via `Get-ADPrincipalGroupMembership` against the user.
+- No `-Properties *`. The user inspector only requests the explicit
+  safe profile/contact field set declared in the script builder.
+- No AD writes. The runner allowlist contains only `Get-ADUser`,
+  `Get-ADGroup`, and `Get-ADPrincipalGroupMembership`. The forbidden
+  prefixes (`Set-`, `New-`, `Remove-`, `Add-`, `Clear-`, `Enable-`,
+  `Disable-`, `Unlock-`, `Move-`, `Rename-`, `Reset-`) are rejected
+  before any subprocess is started.
+- No sensitive attributes. The script builder excludes passwords,
+  LAPS, BitLocker, raw `memberOf`, `directReports`, `thumbnailPhoto`,
+  `homeDirectory`, `scriptPath`, and similar.
+- No raw PowerShell transcripts in inspector JSON, reports, draft
+  notes, or TUI summaries. Errors are sanitized before they reach the
+  user-facing path.
+
+## Successful smoke path
+
+A successful real-AD smoke run looks like this, given a ServiceDesk
+request with one user identifier and one group identifier in the
+request body:
+
+```text
+/sdp context <request_id>
+/sdp skill-plan <request_id>
+/sdp inspect-skill <request_id>
+/sdp inspection-report <request_id>
+/sdp draft-note <request_id>
+/sdp save-note <request_id>
+```
+
+Each step is local-only until `/sdp save-note`, which is
+approval-gated and posts only the `## Note body` section of the
+generated draft as an internal ServiceDesk note. Up to and including
+`/sdp draft-note`, no ServiceDesk write happens.
+
+## Known limitations after smoke test
+
+- **No AD writes.** Real AD inspection is read-only. Mutating skills
+  remain draft-only and approval-gated when they exist, and they do
+  not run through this inspector path.
+- **No `Get-ADGroupMember` enumeration.** Full group rosters are out
+  of scope. Use the membership inspector to check one user/group pair
+  at a time.
+- **`membership_source` is `direct_or_nested_unknown`.** The runner
+  uses `Get-ADPrincipalGroupMembership` against the user, which can
+  include nested membership. The inspector reports membership as
+  effective rather than overclaiming direct membership.
+- **No cross-domain / cross-forest support yet.** The runner targets
+  the workstation's primary on-prem AD context. Trusts and remote
+  forests are not in scope for this phase.
+- **Generated local reports contain real account/group metadata.**
+  `inspection_report.md`, `draft_note.md`, and the per-inspector JSON
+  files live under `.work_copilot/servicedesk/<request_id>/` and must
+  not be committed. The repository's `.gitignore` already excludes
+  `.work_copilot/`, but double-check `git status` before any commit.
+
 ## Audience
 
 This guide is for an operator with:
