@@ -2,7 +2,7 @@ from servicedesk_prompts.common import format_allowed_label_section
 from servicedesk_prompts.labels import CAPABILITY_CLASSIFICATION_LABELS
 
 
-def build_servicedesk_skill_plan_prompt(
+def _build_skill_plan_intro(
     request_id: str,
     saved_context: str,
     skill_definitions_text: str,
@@ -25,6 +25,11 @@ def build_servicedesk_skill_plan_prompt(
         "This is draft-only/read-only planning. Do not execute commands. "
         "Do not modify ServiceDesk. Do not call connector-write tools. "
         "Do not claim that work has been completed.\n\n"
+    )
+
+
+def _build_current_state_rules() -> str:
+    return (
         "Current-state rules:\n"
         "- Distinguish the original work type from the current unresolved issue.\n"
         "- A skill can match because of earlier ticket history, but that does not mean "
@@ -36,6 +41,11 @@ def build_servicedesk_skill_plan_prompt(
         "for the current unresolved issue or safest next action.\n"
         "- Required information should be judged against what is needed now, not only "
         "against the full ideal skill checklist.\n\n"
+    )
+
+
+def _build_structured_output_rules() -> str:
+    return (
         "Structured-output rules:\n"
         "- Keep labels exactly as requested where labels are shown.\n"
         "- In `Extracted inputs`, include every relevant input from the matched skill definition.\n"
@@ -53,6 +63,11 @@ def build_servicedesk_skill_plan_prompt(
         "- Use `Work status: not_started` when the request appears actionable and there is "
         "no evidence in the saved context that a technician has already performed the work.\n"
         "- `Ready for execution` must always be `no` for now because this workflow is draft-only.\n\n"
+    )
+
+
+def _build_requester_vs_target_rules() -> str:
+    return (
         "Requester-vs-target rules:\n"
         "- Do not use the ServiceDesk requester's name or email as "
         "`target_user`, `target_user_email`, `mailbox_address`, or "
@@ -69,6 +84,11 @@ def build_servicedesk_skill_plan_prompt(
         "- For Exchange mailbox inspectors, mailbox/email identifiers "
         "(`mailbox_address`, SMTP/UPN equivalents) are expected — the "
         "Exchange identity rules above continue to apply.\n\n"
+    )
+
+
+def _build_inspector_input_rules() -> str:
+    return (
         "Inspector input extraction rules:\n"
         "- Even when `Skill match` is `none` or `Skill relevance` is `no_match`, "
         "if `Ready for inspection` is `yes` or any inspector ID is listed under "
@@ -96,6 +116,11 @@ def build_servicedesk_skill_plan_prompt(
         "- Do not invent identifier values. If the saved context does not "
         "contain an identifier required by a listed inspector, mark the field "
         "`status: missing` rather than dropping the bullet.\n\n"
+    )
+
+
+def _build_clean_identifier_rules() -> str:
+    return (
         "Clean identifier rule for inspector-bound `Extracted inputs` "
         "values:\n"
         "- Inspector-bound `value:` fields (`target_user`, "
@@ -127,6 +152,11 @@ def build_servicedesk_skill_plan_prompt(
         "only when the request gives the email as the target or it is "
         "the only reliable identifier; for Exchange, mailbox/email "
         "identifiers remain expected.\n\n"
+    )
+
+
+def _build_active_directory_identifier_rules() -> str:
+    return (
         "Active Directory lookup vs canonical-modification identifier "
         "rules:\n"
         "- Distinguish two kinds of AD identifiers in the plan:\n"
@@ -173,6 +203,11 @@ def build_servicedesk_skill_plan_prompt(
         "`sam_account_name` / `distinguished_name` as the canonical AD "
         "target before any manual ADUC update. Do not skip this step "
         "even when an email/UPN is the only thing the requester gave.\n\n"
+    )
+
+
+def _build_capability_classification_rules() -> str:
+    return (
         "Capability classification rules:\n"
         "- Pick exactly one `capability_classification` label from the "
         "allowed list. The chosen label must be consistent with the rest "
@@ -247,6 +282,11 @@ def build_servicedesk_skill_plan_prompt(
         "classification because executor wiring is out of scope for this "
         "workflow.\n\n"
         f"{format_allowed_label_section('Allowed capability_classification labels', CAPABILITY_CLASSIFICATION_LABELS)}"
+    )
+
+
+def _build_skill_plan_output_template(request_id: str) -> str:
+    return (
         "Use this output structure:\n\n"
         "# ServiceDesk skill plan\n\n"
         "## Metadata\n\n"
@@ -310,4 +350,26 @@ def build_servicedesk_skill_plan_prompt(
         "## Safety notes\n\n"
         "<uncertainties and risks. Mention if the matched skill appears historical, completed, "
         "or secondary to another current issue.>\n"
+    )
+
+
+def build_servicedesk_skill_plan_prompt(
+    request_id: str,
+    saved_context: str,
+    skill_definitions_text: str,
+) -> str:
+    return (
+        _build_skill_plan_intro(
+            request_id=request_id,
+            saved_context=saved_context,
+            skill_definitions_text=skill_definitions_text,
+        )
+        + _build_current_state_rules()
+        + _build_structured_output_rules()
+        + _build_requester_vs_target_rules()
+        + _build_inspector_input_rules()
+        + _build_clean_identifier_rules()
+        + _build_active_directory_identifier_rules()
+        + _build_capability_classification_rules()
+        + _build_skill_plan_output_template(request_id=request_id)
     )
