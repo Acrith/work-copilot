@@ -18,7 +18,9 @@ from servicedesk_skill_plan.validation import (
     SUPPORTED_INSPECTOR_TOOL_IDS,
     UNSUPPORTED_HYPOTHETICAL_EXECUTE_TOOL_IDS,
     SkillPlanValidationFinding,
+    format_skill_plan_validation_findings,
     validate_servicedesk_skill_plan,
+    validate_skill_plan_text_as_lines,
 )
 
 __all__ = [
@@ -29,6 +31,8 @@ __all__ = [
     "SkillPlanAutomationHandoff",
     "SkillPlanValidationFinding",
     "UNSUPPORTED_HYPOTHETICAL_EXECUTE_TOOL_IDS",
+    "format_skill_plan_validation_findings",
     "parse_servicedesk_skill_plan",
     "validate_servicedesk_skill_plan",
+    "validate_skill_plan_text_as_lines",
 ]

@@ -2,7 +2,10 @@ from servicedesk_skill_plan import (
     ExtractedInput,
     ParsedServiceDeskSkillPlan,
     SkillPlanAutomationHandoff,
+    SkillPlanValidationFinding,
+    format_skill_plan_validation_findings,
     validate_servicedesk_skill_plan,
+    validate_skill_plan_text_as_lines,
 )
 
 
@@ -381,3 +384,150 @@ def test_valid_ad_inspection_plan_has_no_findings():
     findings = validate_servicedesk_skill_plan(plan)
 
     assert findings == []
+
+
+# --------------------- Formatter + advisory helper ----------------------
+
+
+def test_format_skill_plan_validation_findings_no_findings():
+    assert format_skill_plan_validation_findings([]) == [
+        "Skill plan validation: no issues found.",
+    ]
+
+
+def test_format_skill_plan_validation_findings_one_warning():
+    findings = [
+        SkillPlanValidationFinding(
+            severity="warning",
+            code="clean_identifier_values",
+            message="Inspector-bound field `target_user` value `user: x` is prefixed.",
+        )
+    ]
+
+    assert format_skill_plan_validation_findings(findings) == [
+        "Skill plan validation: found 1 issue(s).",
+        (
+            "- WARNING [clean_identifier_values]: Inspector-bound field "
+            "`target_user` value `user: x` is prefixed."
+        ),
+    ]
+
+
+def test_format_skill_plan_validation_findings_one_error():
+    findings = [
+        SkillPlanValidationFinding(
+            severity="error",
+            code="ready_for_execution_must_be_no",
+            message="Automation handoff `Ready for execution` must be `no`; got `yes`.",
+        )
+    ]
+
+    assert format_skill_plan_validation_findings(findings) == [
+        "Skill plan validation: found 1 issue(s).",
+        (
+            "- ERROR [ready_for_execution_must_be_no]: Automation handoff "
+            "`Ready for execution` must be `no`; got `yes`."
+        ),
+    ]
+
+
+def test_format_skill_plan_validation_findings_mixed():
+    findings = [
+        SkillPlanValidationFinding(
+            severity="error",
+            code="supported_inspector_tools_only",
+            message="Suggested inspector tool `bogus` is not a registered inspector ID.",
+        ),
+        SkillPlanValidationFinding(
+            severity="warning",
+            code="ready_for_inspection_requires_inspector",
+            message="`Ready for inspection: yes` but `Suggested inspector tools` is empty.",
+        ),
+    ]
+
+    lines = format_skill_plan_validation_findings(findings)
+
+    assert lines[0] == "Skill plan validation: found 2 issue(s)."
+    assert lines[1].startswith("- ERROR [supported_inspector_tools_only]:")
+    assert lines[2].startswith("- WARNING [ready_for_inspection_requires_inspector]:")
+
+
+def test_validate_skill_plan_text_as_lines_clean_plan():
+    plan_text = """\
+## Metadata
+
+- Capability classification: read_only_inspection_now
+
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: name.surname
+  evidence: from request body
+  needed_now: yes
+
+## Automation handoff
+
+- Ready for inspection: yes
+- Ready for execution: no
+- Suggested inspector tools: active_directory.user.inspect
+- Suggested execute tools: none
+- Automation blocker: none
+"""
+
+    assert validate_skill_plan_text_as_lines(plan_text) == [
+        "Skill plan validation: no issues found.",
+    ]
+
+
+def test_validate_skill_plan_text_as_lines_plan_with_issues():
+    plan_text = """\
+## Metadata
+
+- Capability classification: read_only_inspection_now
+
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: Agata Piątek (agata.piatek@example.com)
+  evidence: from request body
+  needed_now: yes
+
+## Automation handoff
+
+- Ready for inspection: yes
+- Ready for execution: yes
+- Suggested inspector tools: active_directory.user.inspect
+- Suggested execute tools: active_directory.user.update_attributes
+- Automation blocker: none
+"""
+
+    lines = validate_skill_plan_text_as_lines(plan_text)
+
+    assert lines[0].startswith("Skill plan validation: found ")
+    joined = "\n".join(lines)
+    assert "ERROR [ready_for_execution_must_be_no]" in joined
+    assert "ERROR [suggested_execute_tools_must_be_none]" in joined
+    assert "WARNING [clean_identifier_values]" in joined
+
+
+def test_validate_skill_plan_text_as_lines_handles_unexpected_error(monkeypatch):
+    # Force the parser to raise to confirm the helper wraps it instead of
+    # propagating, so the TUI never crashes from a bad plan file.
+    import servicedesk_skill_plan.validation as validation_module
+
+    def _boom(_text: str):
+        raise RuntimeError("synthetic parser failure")
+
+    monkeypatch.setattr(
+        validation_module,
+        "parse_servicedesk_skill_plan",
+        _boom,
+    )
+
+    lines = validate_skill_plan_text_as_lines("ignored")
+
+    assert lines == [
+        "Skill plan validation unavailable: synthetic parser failure",
+    ]

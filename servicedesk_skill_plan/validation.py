@@ -6,6 +6,7 @@ from servicedesk_skill_plan.models import (
     ExtractedInput,
     ParsedServiceDeskSkillPlan,
 )
+from servicedesk_skill_plan.parser import parse_servicedesk_skill_plan
 
 SUPPORTED_INSPECTOR_TOOL_IDS = frozenset(
     {
@@ -446,3 +447,46 @@ def _any_present(
     present_fields: set[str],
 ) -> bool:
     return any(field in present_fields for field in candidate_fields)
+
+
+# ---- Display helpers ----------------------------------------------------
+
+
+def format_skill_plan_validation_findings(
+    findings: list[SkillPlanValidationFinding],
+) -> list[str]:
+    """Format validator findings as advisory log lines.
+
+    Returns one success line when there are no findings, otherwise a
+    summary line followed by one bullet per finding tagged ERROR or
+    WARNING.
+    """
+    if not findings:
+        return ["Skill plan validation: no issues found."]
+
+    lines: list[str] = [
+        f"Skill plan validation: found {len(findings)} issue(s)."
+    ]
+
+    for finding in findings:
+        severity_label = "ERROR" if finding.severity == "error" else "WARNING"
+        lines.append(
+            f"- {severity_label} [{finding.code}]: {finding.message}"
+        )
+
+    return lines
+
+
+def validate_skill_plan_text_as_lines(text: str) -> list[str]:
+    """Parse+validate+format a saved skill plan into advisory log lines.
+
+    Never raises. Any unexpected error is wrapped into a single
+    non-blocking "Skill plan validation unavailable: ..." line so the
+    caller can log it without breaking the user flow.
+    """
+    try:
+        plan = parse_servicedesk_skill_plan(text)
+        findings = validate_servicedesk_skill_plan(plan)
+        return format_skill_plan_validation_findings(findings)
+    except Exception as exc:  # noqa: BLE001 - advisory path must not raise
+        return [f"Skill plan validation unavailable: {exc}"]
