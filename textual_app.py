@@ -16,6 +16,7 @@ from agent_types import ToolCall
 from approval import ApprovalRequest, ApprovalResponse
 from draft_exports import (
     build_servicedesk_context_path,
+    build_servicedesk_draft_note_path,
     build_servicedesk_draft_path,
     build_servicedesk_draft_subject,
     build_servicedesk_latest_context_path,
@@ -46,6 +47,7 @@ from inspectors.skill_plan import (
 from interactive_commands import (
     build_interactive_help_renderable,
     build_servicedesk_context_prompt,
+    build_servicedesk_draft_note_prompt,
     build_servicedesk_draft_reply_prompt,
     build_servicedesk_skill_plan_prompt,
     build_servicedesk_triage_prompt,
@@ -859,6 +861,71 @@ class WorkCopilotTextualApp(App):
             )
             self._log_system_message(
                 "No ServiceDesk update was performed. Report is local-only."
+            )
+            return
+
+        if command == "sdp_draft_note":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp draft-note <request_id>")
+                return
+
+            latest_context_path = build_servicedesk_latest_context_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            saved_context = read_text_if_exists(latest_context_path)
+
+            inspection_report_path = build_servicedesk_inspection_report_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            saved_inspection_report = read_text_if_exists(inspection_report_path)
+
+            note_prompt = build_servicedesk_draft_note_prompt(
+                request_id,
+                saved_context=saved_context,
+                saved_inspection_report=saved_inspection_report,
+            )
+
+            note_path = build_servicedesk_draft_note_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Drafting local internal note for ServiceDesk request {request_id}."
+            )
+
+            if saved_context is not None:
+                self._log_system_message(f"Saved context: {latest_context_path}")
+            else:
+                self._log_system_message(
+                    "No saved context found; ServiceDesk context may be read."
+                )
+
+            if saved_inspection_report is not None:
+                self._log_system_message(
+                    f"Including local inspection report: {inspection_report_path}"
+                )
+            else:
+                self._log_system_message(
+                    "No local inspection report found. "
+                    f"Run /sdp inspection-report {request_id} for richer findings."
+                )
+
+            self._log_system_message(
+                "Note is local-only. It will not be posted to ServiceDesk."
+            )
+
+            self._set_running(True)
+            self._run_model_turn_worker(
+                note_prompt,
+                save_output_path=str(note_path),
+                save_latest_path=str(note_path),
             )
             return
 

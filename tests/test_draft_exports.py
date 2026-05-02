@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from draft_exports import (
     NO_REQUESTER_REPLY_RECOMMENDED,
     build_servicedesk_context_path,
+    build_servicedesk_draft_note_path,
     build_servicedesk_draft_path,
     build_servicedesk_draft_subject,
     build_servicedesk_latest_context_path,
@@ -223,4 +224,15 @@ def test_build_servicedesk_latest_skill_plan_path(tmp_path):
         / "servicedesk"
         / "55853"
         / "latest_skill_plan.md"
+    )
+
+
+def test_build_servicedesk_draft_note_path(tmp_path):
+    path = build_servicedesk_draft_note_path(
+        workspace=str(tmp_path),
+        request_id="55948",
+    )
+
+    assert path == (
+        tmp_path / ".work_copilot" / "servicedesk" / "55948" / "draft_note.md"
     )
