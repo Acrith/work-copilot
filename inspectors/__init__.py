@@ -31,6 +31,11 @@ from inspectors.active_directory_group_membership import (
     MockActiveDirectoryGroupMembershipInspectorClient,
     inspect_active_directory_group_membership,
 )
+from inspectors.active_directory_powershell import (
+    ActiveDirectoryPowerShellGroupClient,
+    ActiveDirectoryPowerShellGroupMembershipClient,
+    ActiveDirectoryPowerShellUserClient,
+)
 from inspectors.active_directory_powershell_runner import (
     ActiveDirectoryPowerShellExecutionError,
     ActiveDirectoryPowerShellRunnerConfig,
@@ -220,6 +225,9 @@ __all__ = [
     "ActiveDirectoryPowerShellRunnerConfig",
     "ActiveDirectoryPowerShellSubprocessRunner",
     "validate_active_directory_powershell_runner_config",
+    "ActiveDirectoryPowerShellGroupClient",
+    "ActiveDirectoryPowerShellGroupMembershipClient",
+    "ActiveDirectoryPowerShellUserClient",
     "ActiveDirectoryGroupInspectionError",
     "ActiveDirectoryGroupInspectorClient",
     "ActiveDirectoryGroupNotFoundError",
