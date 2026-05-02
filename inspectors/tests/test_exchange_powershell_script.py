@@ -71,6 +71,25 @@ def test_build_exchange_powershell_script_contains_only_allowlisted_switch_comma
     assert "Add-MailboxPermission" not in script
 
 
+def test_build_exchange_powershell_script_flattens_mailbox_statistics_total_item_size():
+    command = ExchangePowerShellCommand(
+        name="Get-EXOMailboxStatistics",
+        parameters={"Identity": "user@example.com"},
+    )
+
+    script = build_exchange_powershell_script(command)
+
+    assert "Get-EXOMailboxStatistics @params" in script
+    assert "Select-Object" in script
+    assert "TotalItemSize" in script
+    assert "$_.TotalItemSize.ToString()" in script
+    assert "ItemCount" in script
+    # Statistics output must be projected before serialization, not piped raw,
+    # because the raw ByteQuantifiedSize type serializes as
+    # {IsUnlimited: False, Value: {}} via ConvertTo-Json.
+    assert "$result = Get-EXOMailboxStatistics @params" not in script
+
+
 def test_build_exchange_powershell_script_rejects_forbidden_command():
     command = ExchangePowerShellCommand(
         name="Set-Mailbox",

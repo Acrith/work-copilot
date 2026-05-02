@@ -75,10 +75,16 @@ from inspectors.registry import (
 )
 from inspectors.runner import InspectorRunOutput, run_inspector_and_save
 from inspectors.skill_plan import (
+    INSPECTOR_ID_ALIASES,
+    SUPPORTED_INSPECTOR_IDS,
     SkillPlanInput,
+    SkillPlanInspectorSelection,
     build_inspector_request_from_skill_plan,
+    normalize_inspector_id,
     parse_extracted_inputs,
+    parse_skill_match,
     parse_suggested_inspector_tools,
+    select_inspector_for_skill_plan,
     select_supported_inspector_tool,
 )
 from inspectors.storage import (
@@ -107,10 +113,16 @@ __all__ = [
     "create_mock_inspector_registry",
     "inspect_mock_exchange_mailbox",
     "run_inspector_and_save",
+    "INSPECTOR_ID_ALIASES",
+    "SUPPORTED_INSPECTOR_IDS",
     "SkillPlanInput",
+    "SkillPlanInspectorSelection",
     "build_inspector_request_from_skill_plan",
+    "normalize_inspector_id",
     "parse_extracted_inputs",
+    "parse_skill_match",
     "parse_suggested_inspector_tools",
+    "select_inspector_for_skill_plan",
     "select_supported_inspector_tool",
     "ExchangeMailboxInspectionError",
     "ExchangeMailboxInspectorClient",
