@@ -38,3 +38,43 @@ def test_textual_app_constructs(tmp_path):
     assert app.state.provider.__class__ is DummyProvider
     assert app.permission_context is permission_context
     assert app.is_agent_running is False
+
+
+def test_textual_app_handles_active_directory_config_error_in_inspect_skill():
+    """The /sdp inspect-skill flow must catch ActiveDirectoryInspectorConfigError
+    raised by create_configured_inspector_registry_from_env() and log a clear
+    AD-specific message instead of letting it bubble up.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    assert "from inspectors.active_directory_config import (" in source
+    assert "ActiveDirectoryInspectorConfigError" in source
+    assert "except ActiveDirectoryInspectorConfigError as exc:" in source
+    # Adjacent-literal concatenation in the f-string keeps this on one line.
+    assert "Active Directory inspector configuration error:" in source
+
+
+def test_textual_app_logs_real_exchange_and_real_active_directory_separately():
+    """Real Exchange and real AD must each have their own log line; the
+    mock-only message must only appear when neither backend is real.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    # Source uses Python adjacent-string-literal concatenation, so check
+    # for the individual literals rather than the joined runtime string.
+    assert "Running real Exchange read-only inspector(s). " in source
+    assert "External Exchange Online will be contacted when called." in source
+    assert "Running real Active Directory read-only inspector(s). " in source
+    assert "On-prem AD will be contacted via PowerShell when called." in source
+
+    # The mock-only branch must be guarded by both flags being False.
+    assert "not configured_registry.uses_real_external_backend" in source
+    assert (
+        "not configured_registry.uses_real_active_directory_backend" in source
+    )
+    assert "Running mock/registered inspector(s) only. " in source
+    assert "No external systems will be contacted." in source

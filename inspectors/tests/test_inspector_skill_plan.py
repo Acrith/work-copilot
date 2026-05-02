@@ -10,7 +10,9 @@ from inspectors.skill_plan import (
     parse_skill_match,
     parse_suggested_inspector_tools,
     select_inspector_for_skill_plan,
+    select_inspectors_for_skill_plan,
     select_supported_inspector_tool,
+    select_supported_inspector_tools,
 )
 
 
@@ -521,3 +523,203 @@ def test_select_inspector_for_skill_plan_normalizes_suggested_granular_ids():
         inspector_id="exchange.mailbox.inspect",
         source="suggested_inspector_tools",
     )
+
+
+def test_select_supported_inspector_tools_preserves_order_and_dedupes():
+    selected = select_supported_inspector_tools(
+        [
+            "active_directory.user.inspect",
+            "active_directory.group.inspect",
+            "active_directory.group_membership.inspect",
+            "active_directory.user.lookup",  # alias of user.inspect
+            "exchange.mailbox.get_statistics",  # alias of mailbox.inspect
+            "exchange.mailbox.inspect",
+            "active_directory.group.inspect",  # duplicate
+        ]
+    )
+
+    assert selected == [
+        "active_directory.user.inspect",
+        "active_directory.group.inspect",
+        "active_directory.group_membership.inspect",
+        "exchange.mailbox.inspect",
+    ]
+
+
+def test_select_supported_inspector_tools_returns_empty_when_none_supported():
+    selected = select_supported_inspector_tools(
+        [
+            "exchange.shared_mailbox.get_full_access_permissions",
+            "exchange.shared_mailbox.grant_full_access",
+        ]
+    )
+
+    assert selected == []
+
+
+def test_select_inspectors_for_skill_plan_returns_all_supported_in_order():
+    skill_plan = """
+- Skill match: none
+
+## Automation handoff
+
+- Suggested inspector tools: active_directory.user.inspect, active_directory.group.inspect, active_directory.group_membership.inspect
+"""
+
+    selections = select_inspectors_for_skill_plan(skill_plan)
+
+    assert [selection.inspector_id for selection in selections] == [
+        "active_directory.user.inspect",
+        "active_directory.group.inspect",
+        "active_directory.group_membership.inspect",
+    ]
+    assert all(
+        selection.source == "suggested_inspector_tools" for selection in selections
+    )
+
+
+def test_select_inspectors_for_skill_plan_dedupes_aliases():
+    skill_plan = """
+- Skill match: none
+
+## Automation handoff
+
+- Suggested inspector tools: active_directory.user.lookup, active_directory.user.inspect, exchange.mailbox.get_statistics, exchange.mailbox.inspect
+"""
+
+    selections = select_inspectors_for_skill_plan(skill_plan)
+
+    assert [selection.inspector_id for selection in selections] == [
+        "active_directory.user.inspect",
+        "exchange.mailbox.inspect",
+    ]
+
+
+def test_select_inspectors_for_skill_plan_falls_back_to_skill_match_when_none_supported():
+    skill_plan = """
+- Skill match: exchange.mailbox.inspect
+
+## Automation handoff
+
+- Suggested inspector tools: exchange.shared_mailbox.get_full_access_permissions
+"""
+
+    selections = select_inspectors_for_skill_plan(skill_plan)
+
+    assert selections == [
+        SkillPlanInspectorSelection(
+            inspector_id="exchange.mailbox.inspect",
+            source="skill_match",
+        )
+    ]
+
+
+def test_select_inspectors_for_skill_plan_returns_empty_when_no_supported_anywhere():
+    skill_plan = """
+- Skill match: active_directory.user.provision_standard_account
+
+## Automation handoff
+
+- Suggested inspector tools: none
+"""
+
+    assert select_inspectors_for_skill_plan(skill_plan) == []
+
+
+def test_inspection_only_no_match_plan_can_build_all_three_ad_inspector_requests():
+    """No-match AD inspection plan with target_user + target_group must
+    produce buildable requests for all three AD inspectors."""
+
+    skill_plan = """
+## Metadata
+
+- Skill match: none
+- Skill relevance: no_match
+
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: name.surname@example.com
+  evidence: saved context
+  needed_now: yes
+
+- field: target_group
+  status: present
+  value: usr.podpis.test
+  evidence: saved context
+  needed_now: yes
+
+## Automation handoff
+
+- Ready for inspection: yes
+- Suggested inspector tools: active_directory.user.inspect, active_directory.group.inspect, active_directory.group_membership.inspect
+"""
+
+    selections = select_inspectors_for_skill_plan(skill_plan)
+
+    assert [s.inspector_id for s in selections] == [
+        "active_directory.user.inspect",
+        "active_directory.group.inspect",
+        "active_directory.group_membership.inspect",
+    ]
+
+    user_request = build_inspector_request_from_skill_plan(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.user.inspect",
+    )
+    group_request = build_inspector_request_from_skill_plan(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.group.inspect",
+    )
+    membership_request = build_inspector_request_from_skill_plan(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.group_membership.inspect",
+    )
+
+    assert user_request.target.id == "name.surname@example.com"
+    assert group_request.target.id == "usr.podpis.test"
+    assert membership_request.inputs["user_identifier"] == "name.surname@example.com"
+    assert membership_request.inputs["group_identifier"] == "usr.podpis.test"
+
+
+def test_build_inspector_request_reports_per_inspector_failure_when_inputs_missing():
+    skill_plan_user_only = """
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: name.surname@example.com
+  evidence: saved context
+  needed_now: yes
+"""
+
+    # User inspector: builds because user identifier is present.
+    user_request = build_inspector_request_from_skill_plan(
+        request_id="55948",
+        skill_plan_text=skill_plan_user_only,
+        inspector_id="active_directory.user.inspect",
+    )
+
+    assert user_request.target.id == "name.surname@example.com"
+
+    # Group inspector: missing target_group must surface a clear error
+    # naming the missing input rather than crashing the whole flow.
+    with pytest.raises(ValueError, match="missing group_name"):
+        build_inspector_request_from_skill_plan(
+            request_id="55948",
+            skill_plan_text=skill_plan_user_only,
+            inspector_id="active_directory.group.inspect",
+        )
+
+    # Membership inspector: missing group identifier must surface the
+    # combined "user and/or group" error.
+    with pytest.raises(ValueError, match="user and/or group identifier"):
+        build_inspector_request_from_skill_plan(
+            request_id="55948",
+            skill_plan_text=skill_plan_user_only,
+            inspector_id="active_directory.group_membership.inspect",
+        )

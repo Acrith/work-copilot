@@ -205,3 +205,71 @@ def test_mock_exchange_mailbox_inspector_uses_real_inspection_shape():
         "label": "primary_smtp_address",
         "value": "user@example.com",
     } in payload["evidence"]
+
+
+def test_run_all_supported_inspectors_from_no_match_skill_plan(tmp_path):
+    """End-to-end-ish: a no-match AD inspection plan with target_user and
+    target_group, against the mock registry, runs all three AD inspectors
+    and writes one JSON file per inspector. No real AD calls."""
+    from inspectors.skill_plan import (
+        build_inspector_request_from_skill_plan,
+        select_inspectors_for_skill_plan,
+    )
+
+    skill_plan = """
+## Metadata
+
+- Skill match: none
+- Skill relevance: no_match
+
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: name.surname@example.com
+  evidence: saved context
+  needed_now: yes
+
+- field: target_group
+  status: present
+  value: usr.podpis.test
+  evidence: saved context
+  needed_now: yes
+
+## Automation handoff
+
+- Ready for inspection: yes
+- Suggested inspector tools: active_directory.user.inspect, active_directory.group.inspect, active_directory.group_membership.inspect
+"""
+
+    registry = create_mock_inspector_registry()
+    selections = select_inspectors_for_skill_plan(skill_plan)
+
+    saved_paths: list = []
+
+    for selection in selections:
+        request = build_inspector_request_from_skill_plan(
+            request_id="55948",
+            skill_plan_text=skill_plan,
+            inspector_id=selection.inspector_id,
+        )
+        output = run_inspector_and_save(
+            registry=registry,
+            request=request,
+            workspace=str(tmp_path),
+        )
+        saved_paths.append(output.saved_path)
+
+        assert output.result.status == InspectorStatus.OK
+        assert output.result.inspector == selection.inspector_id
+
+    assert {path.name for path in saved_paths} == {
+        "active_directory.user.inspect.json",
+        "active_directory.group.inspect.json",
+        "active_directory.group_membership.inspect.json",
+    }
+
+    for path in saved_paths:
+        assert path.exists()
+        payload = read_inspector_result_payload(path)
+        assert payload["status"] == "ok"

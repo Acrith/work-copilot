@@ -428,6 +428,35 @@ def test_build_servicedesk_skill_plan_prompt_lists_active_directory_inspector_id
     assert "do not invent granular" in prompt.lower()
 
 
+def test_build_servicedesk_skill_plan_prompt_requires_inspector_input_extraction_on_no_match():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="55853",
+        saved_context="# ServiceDesk request context\n\nExample context",
+        skill_definitions_text="## active_directory.user.inspect\n\nExample skill",
+    )
+
+    assert "Inspector input extraction rules:" in prompt
+    # Must call out the no_match / inspection-only case explicitly.
+    assert "`Skill match` is `none`" in prompt
+    assert "`no_match`" in prompt
+    assert "Do not write `- none` under `Extracted inputs`" in prompt
+    # Per-inspector required-input fields must be enumerated.
+    assert "`active_directory.user.inspect` requires one user identifier" in prompt
+    assert "`target_user`" in prompt
+    assert "`user_principal_name`" in prompt
+    assert "`sam_account_name`" in prompt
+    assert "`active_directory.group.inspect` requires one group identifier" in prompt
+    assert "`target_group`" in prompt
+    assert "`group_name`" in prompt
+    assert (
+        "`active_directory.group_membership.inspect` requires BOTH a user "
+        "identifier" in prompt
+    )
+    assert "`exchange.mailbox.inspect` requires `mailbox_address`" in prompt
+    assert "Multiple inspector IDs may be listed" in prompt
+    assert "Do not invent identifier values." in prompt
+
+
 def test_parse_sdp_inspect_skill_command():
     assert parse_interactive_command("/sdp inspect-skill 55948") == "sdp_inspect_skill"
 

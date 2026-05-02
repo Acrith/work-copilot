@@ -30,6 +30,9 @@ from draft_exports import (
     read_text_if_exists,
     save_text_draft,
 )
+from inspectors.active_directory_config import (
+    ActiveDirectoryInspectorConfigError,
+)
 from inspectors.exchange_config import ExchangeInspectorConfigError
 from inspectors.factory import create_configured_inspector_registry_from_env
 from inspectors.inspection_report import (
@@ -43,7 +46,7 @@ from inspectors.skill_plan import (
     SUPPORTED_INSPECTOR_IDS,
     build_inspector_request_from_skill_plan,
     parse_suggested_inspector_tools,
-    select_inspector_for_skill_plan,
+    select_inspectors_for_skill_plan,
 )
 from interactive_commands import (
     build_interactive_help_renderable,
@@ -794,9 +797,9 @@ class WorkCopilotTextualApp(App):
                 return
 
             suggested_tools = parse_suggested_inspector_tools(latest_skill_plan)
-            selection = select_inspector_for_skill_plan(latest_skill_plan)
+            selections = select_inspectors_for_skill_plan(latest_skill_plan)
 
-            if selection is None:
+            if not selections:
                 self._log_blank()
                 supported_list = ", ".join(sorted(SUPPORTED_INSPECTOR_IDS))
                 self._log(
@@ -811,71 +814,102 @@ class WorkCopilotTextualApp(App):
 
                 return
 
-            inspector_id = selection.inspector_id
-
-            if selection.source == "skill_match":
-                self._log_blank()
-                self._log(
-                    "No supported inspector listed under Suggested inspector tools; "
-                    f"falling back to Skill match inspector: {inspector_id}."
-                )
-
-            try:
-                inspector_request = build_inspector_request_from_skill_plan(
-                    request_id=request_id,
-                    skill_plan_text=latest_skill_plan,
-                    inspector_id=inspector_id,
-                )
-            except ValueError as exc:
-                self._log_blank()
-                self._log(f"Could not build inspector request: {exc}")
-                return
-
             try:
                 configured_registry = create_configured_inspector_registry_from_env()
             except ExchangeInspectorConfigError as exc:
                 self._log_blank()
                 self._log(f"Exchange inspector configuration error: {exc}")
                 return
-
-            if configured_registry.registry.get(inspector_id) is None:
+            except ActiveDirectoryInspectorConfigError as exc:
                 self._log_blank()
-
-                if configured_registry.is_disabled:
-                    self._log(
-                        "Exchange inspector backend is disabled. "
-                        "Set WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND=mock to use mock inspection."
-                    )
-                else:
-                    self._log(
-                        f"Inspector {inspector_id} is not registered for the current backend."
-                    )
-
+                self._log(f"Active Directory inspector configuration error: {exc}")
                 return
-
-            output = run_inspector_and_save(
-                registry=configured_registry.registry,
-                request=inspector_request,
-                workspace=self.config.workspace,
-            )
 
             self._log_user_message(user_prompt)
 
             if configured_registry.uses_real_external_backend:
                 self._log_system_message(
-                    "Running real Exchange read-only inspector. "
-                    "External Exchange Online will be contacted."
-                )
-            else:
-                self._log_system_message(
-                    "Running mock inspector only. No external systems were contacted."
+                    "Running real Exchange read-only inspector(s). "
+                    "External Exchange Online will be contacted when called."
                 )
 
-            self._log_system_message(f"Inspector backend: {configured_registry.exchange_backend.value}")
-            self._log_system_message(f"Inspector: {inspector_id}")
-            self._log_system_message(f"Result: {output.result.status.value}")
-            self._log_system_message(f"Summary: {output.result.summary}")
-            self._log_system_message(f"Inspector result saved to: {output.saved_path}")
+            if configured_registry.uses_real_active_directory_backend:
+                self._log_system_message(
+                    "Running real Active Directory read-only inspector(s). "
+                    "On-prem AD will be contacted via PowerShell when called."
+                )
+
+            if (
+                not configured_registry.uses_real_external_backend
+                and not configured_registry.uses_real_active_directory_backend
+            ):
+                self._log_system_message(
+                    "Running mock/registered inspector(s) only. "
+                    "No external systems will be contacted."
+                )
+
+            self._log_system_message(
+                f"Exchange backend: {configured_registry.exchange_backend.value}"
+            )
+            self._log_system_message(
+                "Active Directory backend: "
+                f"{configured_registry.active_directory_backend.value}"
+            )
+            self._log_system_message(
+                "Selected inspectors: "
+                + ", ".join(selection.inspector_id for selection in selections)
+            )
+
+            for selection in selections:
+                inspector_id = selection.inspector_id
+
+                if selection.source == "skill_match":
+                    self._log_system_message(
+                        "Falling back to Skill match inspector "
+                        f"({inspector_id}); no supported inspector was listed "
+                        "under Suggested inspector tools."
+                    )
+
+                if configured_registry.registry.get(inspector_id) is None:
+                    self._log_system_message(
+                        f"Inspector {inspector_id} is not registered for the "
+                        "current backend; skipping."
+                    )
+                    continue
+
+                try:
+                    inspector_request = build_inspector_request_from_skill_plan(
+                        request_id=request_id,
+                        skill_plan_text=latest_skill_plan,
+                        inspector_id=inspector_id,
+                    )
+                except ValueError as exc:
+                    self._log_system_message(
+                        f"Could not build {inspector_id} request: {exc}"
+                    )
+                    continue
+
+                try:
+                    output = run_inspector_and_save(
+                        registry=configured_registry.registry,
+                        request=inspector_request,
+                        workspace=self.config.workspace,
+                    )
+                except Exception as exc:
+                    self._log_system_message(
+                        f"Inspector {inspector_id} raised: {exc}"
+                    )
+                    continue
+
+                self._log_system_message(f"Inspector: {inspector_id}")
+                self._log_system_message(
+                    f"Result: {output.result.status.value}"
+                )
+                self._log_system_message(f"Summary: {output.result.summary}")
+                self._log_system_message(
+                    f"Inspector result saved to: {output.saved_path}"
+                )
+
             return
 
         if command == "sdp_inspection_report":
