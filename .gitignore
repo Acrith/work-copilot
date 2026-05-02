@@ -11,6 +11,8 @@ wheels/
 
 # Other files
 .env
+.env.*
+!.env.example
 .work_copilot/runs/
 .work_copilot/servicedesk/
 
