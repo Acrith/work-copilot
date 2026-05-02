@@ -162,7 +162,9 @@ from inspectors.skill_plan import (
     parse_skill_match,
     parse_suggested_inspector_tools,
     select_inspector_for_skill_plan,
+    select_inspectors_for_skill_plan,
     select_supported_inspector_tool,
+    select_supported_inspector_tools,
 )
 from inspectors.storage import (
     build_inspector_output_dir,
@@ -250,7 +252,9 @@ __all__ = [
     "parse_skill_match",
     "parse_suggested_inspector_tools",
     "select_inspector_for_skill_plan",
+    "select_inspectors_for_skill_plan",
     "select_supported_inspector_tool",
+    "select_supported_inspector_tools",
     "ExchangeMailboxFolderStat",
     "ExchangeMailboxInspectionError",
     "ExchangeMailboxInspectorClient",

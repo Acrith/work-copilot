@@ -377,3 +377,67 @@ def select_inspector_for_skill_plan(
         )
 
     return None
+
+
+def select_supported_inspector_tools(suggested_tools: list[str]) -> list[str]:
+    """Return all suggested tools that map to registered inspector IDs.
+
+    Granular ids (for example, `exchange.mailbox.get_statistics`) are
+    normalized through `INSPECTOR_ID_ALIASES` before the support check.
+    Order is preserved and duplicates are removed.
+    """
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    for tool in suggested_tools:
+        normalized = normalize_inspector_id(tool)
+
+        if normalized not in SUPPORTED_INSPECTOR_IDS:
+            continue
+
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        selected.append(normalized)
+
+    return selected
+
+
+def select_inspectors_for_skill_plan(
+    skill_plan_text: str,
+) -> list[SkillPlanInspectorSelection]:
+    """Pick all supported inspectors from a skill plan, with Skill-match fallback.
+
+    Preserves the order of `Suggested inspector tools` (after normalization
+    and deduplication). When no suggested tool is supported, falls back to
+    the `Skill match` inspector if it normalizes to a supported id.
+    """
+    suggested_tools = parse_suggested_inspector_tools(skill_plan_text)
+    selected_ids = select_supported_inspector_tools(suggested_tools)
+
+    if selected_ids:
+        return [
+            SkillPlanInspectorSelection(
+                inspector_id=inspector_id,
+                source="suggested_inspector_tools",
+            )
+            for inspector_id in selected_ids
+        ]
+
+    skill_match = parse_skill_match(skill_plan_text)
+
+    if skill_match is None:
+        return []
+
+    normalized_skill_match = normalize_inspector_id(skill_match)
+
+    if normalized_skill_match in SUPPORTED_INSPECTOR_IDS:
+        return [
+            SkillPlanInspectorSelection(
+                inspector_id=normalized_skill_match,
+                source="skill_match",
+            )
+        ]
+
+    return []
