@@ -123,10 +123,12 @@ from inspectors.factory import (
 from inspectors.inspection_report import (
     SUPPORTED_REPORT_INSPECTOR_IDS,
     InspectionReportError,
+    InspectionReportInspector,
     InspectionReportNotFoundError,
     InspectionReportOutput,
     build_servicedesk_inspection_report,
     build_servicedesk_inspection_report_path,
+    render_combined_inspection_report_markdown,
     render_inspection_report_markdown,
 )
 from inspectors.mock import (
@@ -291,10 +293,12 @@ __all__ = [
     "create_configured_inspector_registry_from_env",
     "SUPPORTED_REPORT_INSPECTOR_IDS",
     "InspectionReportError",
+    "InspectionReportInspector",
     "InspectionReportNotFoundError",
     "InspectionReportOutput",
     "build_servicedesk_inspection_report",
     "build_servicedesk_inspection_report_path",
+    "render_combined_inspection_report_markdown",
     "render_inspection_report_markdown",
     "ExchangePowerShellAuthConfig",
     "ExchangePowerShellAuthConfigError",

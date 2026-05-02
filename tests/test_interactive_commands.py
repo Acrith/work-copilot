@@ -600,8 +600,23 @@ def test_build_servicedesk_draft_note_prompt_requires_neutral_operational_body()
         "If there is no real follow-up, omit the `Follow-up:` section entirely."
         in prompt
     )
-    assert "No changes were made." in prompt
+    # Scope wording is system-aware: a no-change bullet must appear when
+    # the report says so, but the literal phrasing comes from the report
+    # itself (e.g. AD reports use "No changes were made to Active
+    # Directory."). Assert the system-aware rule rather than locking the
+    # prompt to a single generic phrase.
+    assert (
+        "Always include a no-change Scope bullet when the inspection "
+        "report indicates no changes were made" in prompt
+    )
+    assert "system-specific wording from the report" in prompt
+    assert "`No changes were made to Active Directory.`" in prompt
+    assert "`No changes were made.`" in prompt
     assert "Mailbox content and attachments were not inspected." in prompt
+    assert (
+        "`Sensitive Active Directory attributes were not inspected.`"
+        in prompt
+    )
     # Greetings/sign-offs are forbidden because this is technician-facing.
     assert "No greetings, sign-offs, or signatures." in prompt
 
@@ -663,6 +678,99 @@ def test_build_servicedesk_draft_note_prompt_mentions_largest_folders_evidence()
     )
 
 
+def test_build_servicedesk_draft_note_prompt_understands_combined_inspection_report():
+    saved_inspection_report = (
+        "# Inspection report for ServiceDesk request 56104\n\n"
+        "## Overview\n\n- Inspectors run: 3\n- Overall status: `ok`\n\n"
+        "## active_directory.user.inspect\n\n## active_directory.group.inspect\n\n"
+        "## active_directory.group_membership.inspect\n"
+    )
+    prompt = build_servicedesk_draft_note_prompt(
+        "56104",
+        saved_inspection_report=saved_inspection_report,
+    )
+
+    # The prompt explains that inspection reports may be single or combined
+    # and what a combined report looks like.
+    assert (
+        "single-inspector report or a combined report" in prompt
+    )
+    assert (
+        "one `## <inspector_id>` section per inspector that was run"
+        in prompt
+    )
+    assert "## active_directory.user.inspect" in prompt
+    assert "## active_directory.group.inspect" in prompt
+    assert "## active_directory.group_membership.inspect" in prompt
+
+    # Already-completed inspector sections must be summarised under
+    # Findings, never proposed under Follow-up.
+    assert (
+        "every inspector section that is present with status `ok` "
+        "represents work that was already completed" in prompt
+    )
+    assert (
+        'Do NOT propose "perform user inspection", "run group inspection", '
+        '"check membership"' in prompt
+    )
+
+    # Per-family wording: AD wording for AD inspector sections, mailbox
+    # wording for Exchange mailbox sections only.
+    assert (
+        "Use Active Directory wording (account/user/group/membership) "
+        "for AD inspector sections" in prompt
+    )
+    assert (
+        "Use mailbox wording only for Exchange mailbox inspector sections."
+        in prompt
+    )
+
+    # The combined-AD example shape is present and uses NESTED Markdown
+    # bullets so Rich/Textual renderers don't collapse the inspector
+    # groupings into a single inline paragraph.
+    assert (
+        "Read-only Active Directory inspection completed for user "
+        in prompt
+    )
+    # Top-level bullets per inspector group.
+    assert "- User:" in prompt
+    assert "- Group:" in prompt
+    assert "- Membership:" in prompt
+    # Indented sub-bullets for facts under each inspector group.
+    assert "  - User exists: yes" in prompt
+    assert "  - Display name: Name Surname" in prompt
+    assert "  - Group exists: yes" in prompt
+    assert "  - Name: usr.podpis.test" in prompt
+    assert "  - User identifier: name.surname" in prompt
+    assert "  - Is member: yes" in prompt
+
+    # The flat-grouping shape that Rich collapses must NOT be suggested
+    # for combined reports.
+    assert "User:\n- User exists: yes" not in prompt
+    assert "Group:\n- Group exists: yes" not in prompt
+    assert "Membership:\n- User identifier:" not in prompt
+
+    # Combined-report Findings rule must call out NESTED Markdown bullets
+    # explicitly and ban plain standalone group labels.
+    assert (
+        "group bullets by inspector using NESTED Markdown bullets" in prompt
+    )
+    assert "`- User:`" in prompt
+    assert "`- Group:`" in prompt
+    assert "`- Membership:`" in prompt
+    assert (
+        "Do NOT use plain standalone `User:` / `Group:` / `Membership:` "
+        "lines for combined reports" in prompt
+    )
+
+    # The Scope still uses AD-specific no-change wording.
+    assert "- No changes were made to Active Directory." in prompt
+    assert (
+        "- Sensitive Active Directory attributes were not inspected."
+        in prompt
+    )
+
+
 def test_build_servicedesk_draft_note_prompt_separates_assessment_from_followup():
     prompt = build_servicedesk_draft_note_prompt("55948")
 
@@ -680,11 +788,17 @@ def test_build_servicedesk_draft_note_prompt_separates_assessment_from_followup(
     assert "That text belongs under `Assessment:`." in prompt
 
     # Filler follow-ups stay forbidden, including the archive-readiness
-    # fallback wording.
+    # fallback wording and per-inspector "do this work again" phrases.
+    assert "`Review the inspection findings`" in prompt
+    assert "`Confirm no changes should be made`" in prompt
+    assert "`No archive-readiness recommendation was generated...`" in prompt
+    assert "`Perform user inspection`" in prompt
+    assert "`Run group inspection`" in prompt
+    assert "`Check membership`" in prompt
+    # Already-completed inspector sections must not be moved under Follow-up.
     assert (
-        "Do not include filler follow-ups such as `Review "
-        "the inspection findings`, `Confirm no changes should be made`, or "
-        "`No archive-readiness recommendation was generated...`." in prompt
+        "If an inspector section is already present with status `ok` in "
+        "the report, do not put it under `Follow-up:`." in prompt
     )
 
 

@@ -1,9 +1,13 @@
+from pathlib import Path
+
 import pytest
 
 from inspectors.inspection_report import (
+    InspectionReportInspector,
     InspectionReportNotFoundError,
     build_servicedesk_inspection_report,
     build_servicedesk_inspection_report_path,
+    render_combined_inspection_report_markdown,
     render_inspection_report_markdown,
 )
 from inspectors.models import (
@@ -393,3 +397,247 @@ def test_build_servicedesk_inspection_report_raises_when_supported_json_missing(
             workspace=str(tmp_path),
             request_id="55948",
         )
+
+
+# --------------------- Combined inspection reports ----------------------
+
+
+def _ok_ad_user_result() -> InspectorResult:
+    return InspectorResult(
+        inspector="active_directory.user.inspect",
+        target=InspectorTarget(
+            type="active_directory_user", id="name.surname"
+        ),
+        status=InspectorStatus.OK,
+        summary="AD user metadata inspected for name.surname.",
+        facts=[
+            InspectorFact(key="user_exists", value=True),
+            InspectorFact(key="display_name", value="Name Surname"),
+            InspectorFact(key="user_principal_name", value="name.surname@example.com"),
+            InspectorFact(key="sam_account_name", value="name.surname"),
+            InspectorFact(key="enabled", value=True),
+        ],
+        limitations=[
+            "Account passwords not inspected",
+            "No AD writes performed",
+        ],
+    )
+
+
+def _ok_ad_group_result() -> InspectorResult:
+    return InspectorResult(
+        inspector="active_directory.group.inspect",
+        target=InspectorTarget(
+            type="active_directory_group", id="usr.podpis.test"
+        ),
+        status=InspectorStatus.OK,
+        summary="AD group metadata inspected for usr.podpis.test.",
+        facts=[
+            InspectorFact(key="group_exists", value=True),
+            InspectorFact(key="name", value="usr.podpis.test"),
+            InspectorFact(key="group_scope", value="Global"),
+            InspectorFact(key="group_category", value="Security"),
+        ],
+        limitations=["No AD writes performed"],
+    )
+
+
+def _ok_ad_membership_result() -> InspectorResult:
+    return InspectorResult(
+        inspector="active_directory.group_membership.inspect",
+        target=InspectorTarget(
+            type="active_directory_group_membership",
+            id="name.surname@usr.podpis.test",
+        ),
+        status=InspectorStatus.OK,
+        summary=(
+            "AD group membership inspected for user name.surname and "
+            "group usr.podpis.test."
+        ),
+        facts=[
+            InspectorFact(key="user_identifier", value="name.surname"),
+            InspectorFact(key="group_identifier", value="usr.podpis.test"),
+            InspectorFact(key="is_member", value=True),
+            InspectorFact(key="membership_source", value="direct_or_nested_unknown"),
+        ],
+        limitations=["No AD writes performed"],
+    )
+
+
+def _save_ad_inspector_results(workspace: str, request_id: str) -> None:
+    for result in (
+        _ok_ad_user_result(),
+        _ok_ad_group_result(),
+        _ok_ad_membership_result(),
+    ):
+        save_inspector_result(
+            workspace=workspace,
+            request_id=request_id,
+            result=result,
+        )
+
+
+def test_build_servicedesk_inspection_report_aggregates_three_ad_inspectors(tmp_path):
+    _save_ad_inspector_results(str(tmp_path), "56104")
+
+    output = build_servicedesk_inspection_report(
+        workspace=str(tmp_path),
+        request_id="56104",
+    )
+
+    assert output.report_path.exists()
+    inspector_ids = [item.inspector_id for item in output.inspectors]
+    assert inspector_ids == [
+        "active_directory.user.inspect",
+        "active_directory.group.inspect",
+        "active_directory.group_membership.inspect",
+    ]
+
+    report_text = output.report_path.read_text(encoding="utf-8")
+
+    # Combined-report shape with overview + per-inspector sections.
+    assert "## Overview" in report_text
+    assert "Inspectors run: 3" in report_text
+    assert "Overall status: `ok`" in report_text
+    assert "## active_directory.user.inspect" in report_text
+    assert "## active_directory.group.inspect" in report_text
+    assert "## active_directory.group_membership.inspect" in report_text
+
+    # Per-inspector facts.
+    assert "**user_exists**: yes" in report_text
+    assert "**display_name**: Name Surname" in report_text
+    assert "**group_exists**: yes" in report_text
+    assert "**group_scope**: Global" in report_text
+    assert "**group_category**: Security" in report_text
+    assert "**is_member**: yes" in report_text
+    assert "**membership_source**: direct_or_nested_unknown" in report_text
+
+
+def test_combined_ad_only_report_uses_active_directory_wording():
+    inspectors = [
+        InspectionReportInspector(
+            inspector_id="active_directory.user.inspect",
+            payload=_ok_ad_user_result().to_dict(),
+            source_path=Path("/tmp/active_directory.user.inspect.json"),
+        ),
+        InspectionReportInspector(
+            inspector_id="active_directory.group.inspect",
+            payload=_ok_ad_group_result().to_dict(),
+            source_path=Path("/tmp/active_directory.group.inspect.json"),
+        ),
+        InspectionReportInspector(
+            inspector_id="active_directory.group_membership.inspect",
+            payload=_ok_ad_membership_result().to_dict(),
+            source_path=Path("/tmp/active_directory.group_membership.inspect.json"),
+        ),
+    ]
+
+    report = render_combined_inspection_report_markdown(
+        request_id="56104",
+        inspectors=inspectors,
+    )
+
+    # AD-aware recommendations preamble appears at every inspector section.
+    assert (
+        "These are read-only recommendations for technician review. "
+        "No changes were made to Active Directory." in report
+    )
+
+    # Suggested ticket note groups facts by inspector and uses AD scope.
+    assert "active_directory.user.inspect (status: ok):" in report
+    assert "active_directory.group.inspect (status: ok):" in report
+    assert "active_directory.group_membership.inspect (status: ok):" in report
+    assert "- user_exists: yes" in report
+    assert "- group_scope: Global" in report
+    assert "- is_member: yes" in report
+    assert "- No changes were made to Active Directory." in report
+    assert "- Sensitive Active Directory attributes were not inspected." in report
+    assert "- No ServiceDesk writes were performed automatically." in report
+
+    # Local-only safety notes mention AD-specific items.
+    assert "## Local-only safety notes" in report
+    assert (
+        "Account passwords, sensitive Active Directory attributes" in report
+    )
+    assert "No ServiceDesk writes performed." in report
+
+    # AD-only reports must NOT contain Exchange/mailbox-specific wording.
+    assert "Exchange Online" not in report
+    assert "mailbox content" not in report.lower()
+    assert "message subjects/bodies" not in report
+    assert "No mailbox content was read" not in report
+
+
+def test_combined_report_overall_status_is_error_when_any_inspector_failed():
+    failing = InspectorResult(
+        inspector="active_directory.group_membership.inspect",
+        target=InspectorTarget(
+            type="active_directory_group_membership", id="x@y"
+        ),
+        status=InspectorStatus.ERROR,
+        summary="Membership lookup failed.",
+        facts=[],
+        errors=[
+            InspectorError(
+                code="active_directory_group_membership_inspection_failed",
+                message="Get-ADUser failed during Active Directory inspection.",
+                recoverable=True,
+            )
+        ],
+    )
+
+    inspectors = [
+        InspectionReportInspector(
+            inspector_id="active_directory.user.inspect",
+            payload=_ok_ad_user_result().to_dict(),
+            source_path=Path("/tmp/active_directory.user.inspect.json"),
+        ),
+        InspectionReportInspector(
+            inspector_id="active_directory.group_membership.inspect",
+            payload=failing.to_dict(),
+            source_path=Path("/tmp/active_directory.group_membership.inspect.json"),
+        ),
+    ]
+
+    report = render_combined_inspection_report_markdown(
+        request_id="56104",
+        inspectors=inspectors,
+    )
+
+    assert "Overall status: `error`" in report
+    # The failing inspector remains visible with its own status and error.
+    assert "## active_directory.group_membership.inspect" in report
+    assert "### Errors" in report
+    assert (
+        "Get-ADUser failed during Active Directory inspection." in report
+    )
+
+
+def test_combined_report_overall_status_partial_when_any_partial_and_no_error():
+    partial = InspectorResult(
+        inspector="active_directory.group.inspect",
+        target=InspectorTarget(type="active_directory_group", id="g"),
+        status=InspectorStatus.PARTIAL,
+        summary="Partial group metadata.",
+        facts=[InspectorFact(key="group_exists", value=True)],
+    )
+
+    inspectors = [
+        InspectionReportInspector(
+            inspector_id="active_directory.user.inspect",
+            payload=_ok_ad_user_result().to_dict(),
+            source_path=Path("/tmp/active_directory.user.inspect.json"),
+        ),
+        InspectionReportInspector(
+            inspector_id="active_directory.group.inspect",
+            payload=partial.to_dict(),
+            source_path=Path("/tmp/active_directory.group.inspect.json"),
+        ),
+    ]
+
+    report = render_combined_inspection_report_markdown(
+        request_id="56104",
+        inspectors=inspectors,
+    )
+
+    assert "Overall status: `partial`" in report
