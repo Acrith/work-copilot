@@ -107,9 +107,17 @@ def test_render_inspection_report_includes_findings_and_recommendations():
     assert "## Limitations" in report
     assert "Mailbox content not inspected" in report
     assert "## Recommendations" in report
+    assert (
+        "These are read-only recommendations for technician review. "
+        "No changes were made to Exchange Online or to the mailbox." in report
+    )
     assert "exchange.archive.enable may be relevant" in report
     assert "## Suggested ticket note" in report
     assert "Read-only inspection completed" in report
+    assert (
+        "Suggested next steps for technician review (no changes performed):"
+        in report
+    )
     assert "## Local-only safety notes" in report
     assert "not posted to ServiceDesk" in report
 
@@ -168,6 +176,62 @@ def test_render_inspection_report_does_not_leak_sensitive_data():
 
     for forbidden in forbidden_substrings:
         assert forbidden not in report, f"Report leaked: {forbidden}"
+
+
+def test_render_inspection_report_renders_archive_readiness_recommendations():
+    archive_readiness_result = InspectorResult(
+        inspector="exchange.mailbox.inspect",
+        target=InspectorTarget(type="mailbox", id="user@example.com"),
+        status=InspectorStatus.OK,
+        summary="Mailbox metadata inspected for user@example.com.",
+        facts=[
+            InspectorFact(key="mailbox_exists", value=True),
+            InspectorFact(key="archive_status", value="disabled"),
+            InspectorFact(key="quota_warning_status", value="primary_mailbox_near_quota"),
+        ],
+        limitations=["Mailbox content not inspected"],
+        recommendations=[
+            "Mailbox appears full and archive is disabled. Review whether enabling "
+            "archive (exchange.archive.enable) is appropriate. No change has been made."
+        ],
+    )
+
+    report = render_inspection_report_markdown(
+        request_id="55948",
+        payload=archive_readiness_result.to_dict(),
+    )
+
+    assert "Mailbox appears full and archive is disabled" in report
+    assert "exchange.archive.enable" in report
+    assert "No change has been made" in report
+    assert "No changes were made to Exchange Online" in report
+
+
+def test_render_inspection_report_renders_no_archive_recommendation_fallback():
+    insufficient_evidence_result = InspectorResult(
+        inspector="exchange.mailbox.inspect",
+        target=InspectorTarget(type="mailbox", id="user@example.com"),
+        status=InspectorStatus.OK,
+        summary="Mailbox metadata inspected for user@example.com.",
+        facts=[
+            InspectorFact(key="mailbox_exists", value=True),
+            InspectorFact(key="archive_status", value="disabled"),
+        ],
+        limitations=["Mailbox content not inspected"],
+        recommendations=[
+            "No archive-readiness recommendation was generated. Existing facts "
+            "do not indicate a mailbox-full or archive-capacity problem. "
+            "No change has been made."
+        ],
+    )
+
+    report = render_inspection_report_markdown(
+        request_id="55948",
+        payload=insufficient_evidence_result.to_dict(),
+    )
+
+    assert "No archive-readiness recommendation was generated" in report
+    assert "No change has been made" in report
 
 
 def test_build_servicedesk_inspection_report_writes_file(tmp_path):
