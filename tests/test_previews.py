@@ -221,6 +221,36 @@ def test_build_connector_write_preview_for_servicedesk_draft():
     assert "It will not send the reply to the requester." in preview
 
 
+def test_build_connector_write_preview_for_servicedesk_internal_note():
+    preview = build_connector_write_preview(
+        "servicedesk_add_request_note",
+        {
+            "request_id": "55948",
+            "description": (
+                "Read-only mailbox inspection completed for `user@example.com`.\n\n"
+                "Findings:\n- Mailbox exists: yes\n\n"
+                "Scope:\n- No changes were made."
+            ),
+            "show_to_requester": False,
+        },
+    )
+
+    assert preview is not None
+    assert "# ServiceDesk internal note" in preview
+    assert "- **Action:** Add internal note" in preview
+    assert "- **Ticket:** 55948" in preview
+    assert "- **Visibility:** internal-only" in preview
+    assert "## Note body" in preview
+    assert "Mailbox exists: yes" in preview
+    assert "No changes were made." in preview
+    # Local draft metadata wording must not leak into the approval preview.
+    assert "Local draft metadata" not in preview
+    assert "Generated locally by Work Copilot" not in preview
+    assert "## Safety" in preview
+    assert "This will post an internal note to ServiceDesk Plus." in preview
+    assert "It will not send a reply to the requester." in preview
+
+
 def test_build_connector_write_preview_returns_none_for_unknown_tool():
     preview = build_connector_write_preview(
         "some_other_tool",

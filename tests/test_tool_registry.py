@@ -115,3 +115,19 @@ def test_servicedesk_add_request_draft_is_registered_as_connector_write():
     assert "request_id" in definition.spec.parameters["required"]
     assert "subject" in definition.spec.parameters["required"]
     assert "description" in definition.spec.parameters["required"]
+
+
+def test_servicedesk_add_request_note_is_registered_as_connector_write():
+    definition = get_tool_definition("servicedesk_add_request_note")
+
+    assert definition.category == ToolCategory.CONNECTOR_WRITE
+    assert definition.connector == "servicedeskplus"
+    assert definition.resource_type == "request_note"
+    assert "request_id" in definition.spec.parameters["required"]
+    assert "description" in definition.spec.parameters["required"]
+    # show_to_requester is optional and defaults to internal-only.
+    assert "show_to_requester" not in definition.spec.parameters["required"]
+    assert (
+        definition.spec.parameters["properties"]["show_to_requester"]["default"]
+        is False
+    )

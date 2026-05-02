@@ -213,6 +213,33 @@ def build_connector_write_preview(
             ]
         )
 
+    if tool_name == "servicedesk_add_request_note":
+        request_id = args.get("request_id", "")
+        description = args.get("description", "")
+        show_to_requester = bool(args.get("show_to_requester", False))
+        visibility = "visible to requester" if show_to_requester else "internal-only"
+
+        return "\n".join(
+            [
+                "# ServiceDesk internal note",
+                "",
+                "- **Action:** Add internal note",
+                f"- **Ticket:** {request_id}",
+                f"- **Visibility:** {visibility}",
+                "",
+                "## Note body",
+                "",
+                str(description),
+                "",
+                "---",
+                "",
+                "## Safety",
+                "",
+                "This will post an internal note to ServiceDesk Plus.",
+                "It will not send a reply to the requester.",
+            ]
+        )
+
     return None
 
 

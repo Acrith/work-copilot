@@ -24,6 +24,7 @@ from draft_exports import (
     build_servicedesk_latest_skill_plan_path,
     build_servicedesk_skill_plan_path,
     extract_servicedesk_draft_reply,
+    extract_servicedesk_note_body,
     extract_servicedesk_request_subject,
     is_no_requester_reply_recommended,
     read_text_if_exists,
@@ -334,6 +335,56 @@ class WorkCopilotTextualApp(App):
             self.call_from_thread(
                 self._log_system_message,
                 f"ServiceDesk draft save error: {exc}",
+            )
+        finally:
+            self.call_from_thread(self._set_running, False)
+
+    @work(thread=True)
+    def _save_servicedesk_note_worker(
+        self,
+        *,
+        request_id: str,
+        description: str,
+    ) -> None:
+        approval_handler = TextualApprovalHandler(
+            request_callback=lambda request, approval_event: self.call_from_thread(
+                self.request_textual_approval,
+                request,
+                approval_event,
+            ),
+            response_getter=lambda: self.pending_approval_response,
+        )
+
+        try:
+            result = execute_tool_call(
+                ToolCall(
+                    name="servicedesk_add_request_note",
+                    args={
+                        "request_id": request_id,
+                        "description": description,
+                        "show_to_requester": False,
+                    },
+                ),
+                self.config.workspace,
+                self.permission_context,
+                approval_handler=approval_handler,
+            )
+
+            if "error" in result.payload:
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"Could not save ServiceDesk note: {result.payload['error']}",
+                )
+                return
+
+            self.call_from_thread(
+                self._log_system_message,
+                f"ServiceDesk internal note saved for request {request_id}.",
+            )
+        except Exception as exc:
+            self.call_from_thread(
+                self._log_system_message,
+                f"ServiceDesk note save error: {exc}",
             )
         finally:
             self.call_from_thread(self._set_running, False)
@@ -926,6 +977,63 @@ class WorkCopilotTextualApp(App):
                 note_prompt,
                 save_output_path=str(note_path),
                 save_latest_path=str(note_path),
+            )
+            return
+
+        if command == "sdp_save_note":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp save-note <request_id>")
+                return
+
+            note_path = build_servicedesk_draft_note_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            note_text = read_text_if_exists(note_path)
+
+            if note_text is None:
+                self._log_blank()
+                self._log(
+                    f"No local note draft found for request {request_id}. "
+                    f"Run /sdp draft-note {request_id} first."
+                )
+                return
+
+            note_body = extract_servicedesk_note_body(note_text)
+
+            if note_body is None:
+                self._log_blank()
+                self._log(
+                    f"Could not find a ## Note body section in {note_path}. "
+                    "Note was not posted."
+                )
+                return
+
+            if not note_body.strip():
+                self._log_blank()
+                self._log(
+                    f"## Note body section is empty in {note_path}. "
+                    "Note was not posted."
+                )
+                return
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Saving local note draft as an internal ServiceDesk note for "
+                f"request {request_id}."
+            )
+            self._log_system_message(f"Source: {note_path}")
+            self._log_system_message(
+                "Local draft metadata will not be posted; only the Note body section."
+            )
+
+            self._set_running(True)
+            self._save_servicedesk_note_worker(
+                request_id=request_id,
+                description=note_body,
             )
             return
 

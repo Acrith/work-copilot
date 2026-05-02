@@ -315,3 +315,29 @@ class ServiceDeskPlusClient:
             f"/api/v3/requests/{request_id}/drafts",
             input_data,
         )
+
+
+    def add_request_note(
+        self,
+        *,
+        request_id: str,
+        description: str,
+        show_to_requester: bool = False,
+    ) -> dict[str, Any]:
+        if not request_id:
+            raise ServiceDeskPlusError("request_id is required.")
+
+        if not description.strip():
+            raise ServiceDeskPlusError("description is required.")
+
+        input_data = {
+            "note": {
+                "description": plain_text_to_basic_html(description),
+                "show_to_requester": bool(show_to_requester),
+            }
+        }
+
+        return self.post_with_input_data(
+            f"/api/v3/requests/{request_id}/notes",
+            input_data,
+        )
