@@ -207,6 +207,52 @@ def test_render_inspection_report_renders_archive_readiness_recommendations():
     assert "No changes were made to Exchange Online" in report
 
 
+def test_render_inspection_report_renders_largest_folders_subsection():
+    folder_evidence_result = InspectorResult(
+        inspector="exchange.mailbox.inspect",
+        target=InspectorTarget(type="mailbox", id="user@example.com"),
+        status=InspectorStatus.OK,
+        summary="Mailbox metadata inspected for user@example.com.",
+        facts=[
+            InspectorFact(key="mailbox_exists", value=True),
+            InspectorFact(key="mailbox_size", value="12 GB"),
+            InspectorFact(
+                key="largest_folders",
+                value=[
+                    {
+                        "name": "Inbox",
+                        "folder_path": "/Inbox",
+                        "folder_size": "8 GB (8,589,934,592 bytes)",
+                        "items_in_folder": 4321,
+                    },
+                    {
+                        "name": "Sent Items",
+                        "folder_path": "/Sent Items",
+                        "folder_size": "2 GB (2,147,483,648 bytes)",
+                        "items_in_folder": 1234,
+                    },
+                ],
+            ),
+        ],
+        limitations=["Mailbox content not inspected"],
+    )
+
+    report = render_inspection_report_markdown(
+        request_id="55948",
+        payload=folder_evidence_result.to_dict(),
+    )
+
+    assert "### Largest folders" in report
+    assert (
+        "Folder-level metadata only. Mailbox content, message "
+        "subjects/bodies, and attachments were not inspected." in report
+    )
+    assert "`/Inbox` — 8 GB (8,589,934,592 bytes) (4321 items)" in report
+    assert "`/Sent Items` — 2 GB (2,147,483,648 bytes) (1234 items)" in report
+    # The raw fact bullet must not also appear under Findings as a stringified list.
+    assert "**largest_folders**:" not in report
+
+
 def test_render_inspection_report_renders_no_archive_recommendation_fallback():
     insufficient_evidence_result = InspectorResult(
         inspector="exchange.mailbox.inspect",

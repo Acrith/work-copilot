@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from inspectors.models import (
@@ -20,6 +20,22 @@ class ExchangeMailboxInspectionError(Exception):
 
 
 @dataclass(frozen=True)
+class ExchangeMailboxFolderStat:
+    name: str | None = None
+    folder_path: str | None = None
+    folder_size: str | None = None
+    items_in_folder: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "folder_path": self.folder_path,
+            "folder_size": self.folder_size,
+            "items_in_folder": self.items_in_folder,
+        }
+
+
+@dataclass(frozen=True)
 class ExchangeMailboxSnapshot:
     mailbox_address: str
     display_name: str | None = None
@@ -31,6 +47,7 @@ class ExchangeMailboxSnapshot:
     auto_expanding_archive_status: str | None = None
     retention_policy: str | None = None
     quota_warning_status: str | None = None
+    largest_folders: list[ExchangeMailboxFolderStat] = field(default_factory=list)
 
 
 class ExchangeMailboxInspectorClient(Protocol):
@@ -159,6 +176,15 @@ def _snapshot_to_facts(snapshot: ExchangeMailboxSnapshot) -> list[InspectorFact]
             )
         )
 
+    if snapshot.largest_folders:
+        facts.append(
+            InspectorFact(
+                key="largest_folders",
+                value=[folder.to_dict() for folder in snapshot.largest_folders],
+                source="read_only_exchange_metadata",
+            )
+        )
+
     return facts
 
 
@@ -183,6 +209,21 @@ def _snapshot_to_evidence(snapshot: ExchangeMailboxSnapshot) -> list[InspectorEv
             InspectorEvidence(
                 label="recipient_type",
                 value=snapshot.recipient_type,
+            )
+        )
+
+    for folder in snapshot.largest_folders:
+        size_label = folder.folder_size or "unknown size"
+        identifier = folder.folder_path or folder.name or "(unnamed folder)"
+        items_part = ""
+
+        if folder.items_in_folder is not None:
+            items_part = f" — {folder.items_in_folder} items"
+
+        evidence.append(
+            InspectorEvidence(
+                label="largest_folder",
+                value=f"{identifier}: {size_label}{items_part}",
             )
         )
 

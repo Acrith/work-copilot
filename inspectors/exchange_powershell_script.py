@@ -8,6 +8,7 @@ from inspectors.exchange_auth_config import (
     validate_exchange_powershell_auth_config,
 )
 from inspectors.exchange_command_runner import (
+    EXCHANGE_FOLDER_STATISTICS_LIMIT,
     ExchangePowerShellCommand,
     validate_read_only_exchange_command,
 )
@@ -59,6 +60,36 @@ def build_exchange_powershell_script(
             "else { $null } }}, `",
             "            @{Name='TotalDeletedItemSize'; Expression={ "
             "if ($null -ne $_.TotalDeletedItemSize) { $_.TotalDeletedItemSize.ToString() } "
+            "else { $null } }}",
+            "        break",
+            "    }",
+            "    'Get-EXOMailboxFolderStatistics' {",
+            "        $raw = Get-EXOMailboxFolderStatistics @params",
+            "        $folderSizeBytes = {",
+            "            param($folder)",
+            "            if ($null -eq $folder.FolderSize) { return [int64]0 }",
+            "            $sizeText = $folder.FolderSize.ToString()",
+            "            if ([string]::IsNullOrWhiteSpace($sizeText)) "
+            "{ return [int64]0 }",
+            "            $match = [regex]::Match($sizeText, "
+            "'\\(([0-9,]+)\\s*bytes\\)')",
+            "            if ($match.Success) {",
+            "                $digits = $match.Groups[1].Value -replace ',', ''",
+            "                $parsed = [int64]0",
+            "                if ([int64]::TryParse($digits, [ref]$parsed)) "
+            "{ return $parsed }",
+            "            }",
+            "            return [int64]0",
+            "        }",
+            "        $sorted = $raw | Sort-Object -Property "
+            "@{Expression={ & $folderSizeBytes $_ }} -Descending",
+            f"        $bounded = $sorted | Select-Object -First {EXCHANGE_FOLDER_STATISTICS_LIMIT}",
+            "        $result = $bounded | Select-Object `",
+            "            Name, `",
+            "            FolderPath, `",
+            "            ItemsInFolder, `",
+            "            @{Name='FolderSize'; Expression={ "
+            "if ($null -ne $_.FolderSize) { $_.FolderSize.ToString() } "
             "else { $null } }}",
             "        break",
             "    }",

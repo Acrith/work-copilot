@@ -7,6 +7,7 @@ from inspectors.exchange_auth_config import (
     validate_exchange_powershell_auth_config,
 )
 from inspectors.exchange_command_runner import (
+    EXCHANGE_FOLDER_STATISTICS_LIMIT,
     ExchangeCommandValidationError,
     ExchangePowerShellCommand,
     ExchangePowerShellCommandResult,
@@ -23,6 +24,7 @@ from inspectors.exchange_config import (
     validate_exchange_inspector_runtime_config,
 )
 from inspectors.exchange_mailbox import (
+    ExchangeMailboxFolderStat,
     ExchangeMailboxInspectionError,
     ExchangeMailboxInspectorClient,
     ExchangeMailboxNotFoundError,
@@ -133,6 +135,7 @@ __all__ = [
     "parse_suggested_inspector_tools",
     "select_inspector_for_skill_plan",
     "select_supported_inspector_tool",
+    "ExchangeMailboxFolderStat",
     "ExchangeMailboxInspectionError",
     "ExchangeMailboxInspectorClient",
     "ExchangeMailboxNotFoundError",
@@ -141,6 +144,7 @@ __all__ = [
     "inspect_exchange_mailbox",
     "ExchangeOnlinePowerShellConfig",
     "ExchangeOnlinePowerShellMailboxClient",
+    "EXCHANGE_FOLDER_STATISTICS_LIMIT",
     "ExchangeCommandValidationError",
     "ExchangePowerShellCommand",
     "ExchangePowerShellCommandResult",
