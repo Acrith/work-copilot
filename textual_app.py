@@ -34,6 +34,7 @@ from inspectors.inspection_report import (
     InspectionReportError,
     InspectionReportNotFoundError,
     build_servicedesk_inspection_report,
+    build_servicedesk_inspection_report_path,
 )
 from inspectors.runner import run_inspector_and_save
 from inspectors.skill_plan import (
@@ -553,9 +554,16 @@ class WorkCopilotTextualApp(App):
             )
             saved_context = read_text_if_exists(latest_context_path)
 
+            inspection_report_path = build_servicedesk_inspection_report_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            saved_inspection_report = read_text_if_exists(inspection_report_path)
+
             draft_prompt = build_servicedesk_draft_reply_prompt(
                 request_id,
                 saved_context=saved_context,
+                saved_inspection_report=saved_inspection_report,
             )
             draft_path = build_servicedesk_draft_path(
                 workspace=self.config.workspace,
@@ -578,6 +586,11 @@ class WorkCopilotTextualApp(App):
                     f"Drafting ServiceDesk reply for request {request_id}."
                 )
                 self._log_system_message("No saved context found; ServiceDesk context may be read.")
+
+            if saved_inspection_report is not None:
+                self._log_system_message(
+                    f"Including local inspection report: {inspection_report_path}"
+                )
 
             self._set_running(True)
             self._run_model_turn_worker(

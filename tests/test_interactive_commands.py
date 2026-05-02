@@ -312,6 +312,60 @@ def test_build_servicedesk_draft_reply_prompt_uses_saved_context():
     assert "ready_to_close" in prompt
 
 
+def test_build_servicedesk_draft_reply_prompt_omits_inspection_block_when_missing():
+    prompt = build_servicedesk_draft_reply_prompt("55478")
+
+    assert "<saved_inspection_report>" not in prompt
+    assert "saved local inspection report" not in prompt
+
+
+def test_build_servicedesk_draft_reply_prompt_includes_inspection_report_when_supplied():
+    saved_inspection_report = (
+        "# Inspection report for ServiceDesk request 55478\n\n"
+        "## Findings\n\n"
+        "- **mailbox_size**: 136.6 MB (143,246,578 bytes)\n"
+        "- **archive_status**: disabled\n\n"
+        "## Suggested ticket note\n\n"
+        "Read-only inspection completed. No changes were made.\n"
+    )
+
+    prompt = build_servicedesk_draft_reply_prompt(
+        "55478",
+        saved_inspection_report=saved_inspection_report,
+    )
+
+    assert "A saved local inspection report is also available" in prompt
+    assert "<saved_inspection_report>" in prompt
+    assert "</saved_inspection_report>" in prompt
+    assert "**mailbox_size**: 136.6 MB" in prompt
+    assert "Inspection report rules:" in prompt
+    assert "Do not claim actions were posted or sent automatically" in prompt
+    assert "no changes were made" in prompt
+    assert "Do not invent findings that are not in the inspection report" in prompt
+    assert (
+        "Do not include raw command output, secrets, mailbox content, or "
+        "authentication details in the draft" in prompt
+    )
+
+
+def test_build_servicedesk_draft_reply_prompt_combines_context_and_inspection_report():
+    saved_context = "# ServiceDesk request context\n\nTicket: 55478"
+    saved_inspection_report = "# Inspection report for ServiceDesk request 55478"
+
+    prompt = build_servicedesk_draft_reply_prompt(
+        "55478",
+        saved_context=saved_context,
+        saved_inspection_report=saved_inspection_report,
+    )
+
+    context_index = prompt.find("<saved_servicedesk_context>")
+    report_index = prompt.find("<saved_inspection_report>")
+
+    assert context_index != -1
+    assert report_index != -1
+    assert context_index < report_index
+
+
 def test_parse_sdp_save_draft_command():
     assert parse_interactive_command("/sdp save-draft 55776") == "sdp_save_draft"
 
