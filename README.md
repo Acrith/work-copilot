@@ -26,6 +26,9 @@ Work Copilot currently supports:
 - opt-in JSON run logging
 - package script entrypoint with `uv run work-copilot`
 - terminal truecolor startup hint for improved Textual colors
+- real read-only Active Directory inspectors (user, group, group
+  membership), opt-in behind explicit double opt-in and documented in
+  [`docs/active_directory_real_inspector_smoke.md`](docs/active_directory_real_inspector_smoke.md)
 
 Textual mode is experimental, but it can now run normal model prompts and handle write/exec approval requests inside the TUI.
 
