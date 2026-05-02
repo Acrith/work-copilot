@@ -23,6 +23,8 @@ class ActiveDirectoryUserInspectionError(Exception):
 class ActiveDirectoryUserSnapshot:
     user_identifier: str
     display_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
     user_principal_name: str | None = None
     sam_account_name: str | None = None
     mail: str | None = None
@@ -30,6 +32,9 @@ class ActiveDirectoryUserSnapshot:
     distinguished_name: str | None = None
     department: str | None = None
     title: str | None = None
+    office: str | None = None
+    office_phone: str | None = None
+    mobile_phone: str | None = None
     manager: str | None = None
 
 
@@ -158,6 +163,8 @@ def _snapshot_to_facts(
 
     optional_fact_values: dict[str, object | None] = {
         "display_name": snapshot.display_name,
+        "first_name": snapshot.first_name,
+        "last_name": snapshot.last_name,
         "user_principal_name": snapshot.user_principal_name,
         "sam_account_name": snapshot.sam_account_name,
         "mail": snapshot.mail,
@@ -165,6 +172,9 @@ def _snapshot_to_facts(
         "distinguished_name": snapshot.distinguished_name,
         "department": snapshot.department,
         "title": snapshot.title,
+        "office": snapshot.office,
+        "office_phone": snapshot.office_phone,
+        "mobile_phone": snapshot.mobile_phone,
         "manager": snapshot.manager,
     }
 
