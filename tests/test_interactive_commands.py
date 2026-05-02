@@ -413,6 +413,167 @@ def test_build_servicedesk_skill_plan_prompt_distinguishes_current_issue_from_hi
     assert "Do not ask the requester for missing skill information unless it is needed" in prompt
 
 
+def test_build_servicedesk_skill_plan_prompt_capability_classification_label_set():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="55853",
+        saved_context="# ServiceDesk request context\n\nExample context",
+        skill_definitions_text="## active_directory.user.inspect\n\nExample skill",
+    )
+
+    # Allowed-labels block must enumerate the five buckets exactly once.
+    assert "Allowed capability_classification labels:" in prompt
+    for label in (
+        "`read_only_inspection_now`",
+        "`draft_only_manual_now`",
+        "`blocked_missing_information`",
+        "`unsupported_no_safe_capability`",
+        "`future_automation_candidate`",
+    ):
+        assert label in prompt
+
+    # Metadata block must surface the field with a placeholder pointing at
+    # the allowed labels.
+    assert (
+        "- Capability classification: <one allowed "
+        "capability_classification label>" in prompt
+    )
+
+
+def test_build_servicedesk_skill_plan_prompt_describes_read_only_inspection_now_bucket():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="56104",
+        saved_context=(
+            "# ServiceDesk request context\n\n"
+            "Read-only AD inspection requested for user name.surname and "
+            "group usr.podpis.test.\n"
+        ),
+        skill_definitions_text="## active_directory.user.inspect\n",
+    )
+
+    assert "Capability classification rules:" in prompt
+    # read_only_inspection_now is gated on registered inspector(s) + all
+    # required inputs being present, with Ready for inspection: yes.
+    assert "`read_only_inspection_now`" in prompt
+    assert (
+        "at least one registered inspector ID is listed under "
+        "`Suggested inspector tools` AND every required input for those "
+        "inspectors is `status: present`" in prompt
+    )
+    assert "Set `Ready for inspection: yes`" in prompt
+    # The three AD inspectors are referenced as concrete examples.
+    assert "all three AD inspectors" in prompt
+    assert "`exchange.mailbox.inspect`" in prompt
+
+
+def test_build_servicedesk_skill_plan_prompt_describes_draft_only_manual_now_bucket():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="60001",
+        saved_context=(
+            "# ServiceDesk request context\n\n"
+            "Please add user name.surname to AD group usr.podpis.test.\n"
+        ),
+        skill_definitions_text="## active_directory.group.add_member\n",
+    )
+
+    # Group membership add/remove etc. live here while no executor is
+    # wired. Ready for execution must stay no, Suggested execute tools
+    # must remain none.
+    assert "`draft_only_manual_now`" in prompt
+    assert (
+        "Write-shaped skills that have no implemented executor (for "
+        "example AD group membership add/remove" in prompt
+    )
+    assert "Set `Ready for execution: no`" in prompt
+    assert "leave `Suggested execute tools: none`" in prompt
+
+
+def test_build_servicedesk_skill_plan_prompt_describes_blocked_missing_information_bucket():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="60002",
+        saved_context=(
+            "# ServiceDesk request context\n\n"
+            "Please inspect mailbox of the affected user (no email or "
+            "username given).\n"
+        ),
+        skill_definitions_text="## exchange.mailbox.inspect\n",
+    )
+
+    assert "`blocked_missing_information`" in prompt
+    assert "`status: missing` or `status: unclear`" in prompt
+    # The plan must reflect the missing input and avoid suggesting
+    # inspectors whose inputs are not present.
+    assert "Reflect it in `Missing information needed now`" in prompt
+    assert (
+        "Do not list inspector tools whose required inputs are missing"
+        in prompt
+    )
+    assert "set `Ready for inspection: no`" in prompt
+
+
+def test_build_servicedesk_skill_plan_prompt_describes_unsupported_no_safe_capability_bucket():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="60003",
+        saved_context=(
+            "# ServiceDesk request context\n\n"
+            "Please dump every member of every distribution group in the "
+            "organisation and email them as a CSV.\n"
+        ),
+        skill_definitions_text="## active_directory.group.inspect\n",
+    )
+
+    assert "`unsupported_no_safe_capability`" in prompt
+    # Out-of-scope examples must include broad/destructive ops and mass
+    # enumeration (Get-ADGroupMember-style requests).
+    assert (
+        "broad/destructive operations, mass enumeration" in prompt
+    )
+    assert "Use `Skill match: none`" in prompt
+
+
+def test_build_servicedesk_skill_plan_prompt_describes_future_automation_candidate_bucket():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="60004",
+        saved_context=(
+            "# ServiceDesk request context\n\n"
+            "Recurring shared mailbox provisioning request — no current "
+            "skill matches.\n"
+        ),
+        skill_definitions_text="## exchange.mailbox.inspect\n",
+    )
+
+    assert "`future_automation_candidate`" in prompt
+    assert "does not yet have a registered skill or executor" in prompt
+    assert (
+        "do not list any unsupported tool name under `Suggested inspector "
+        "tools` or `Suggested execute tools`" in prompt
+    )
+
+
+def test_build_servicedesk_skill_plan_prompt_forbids_inspector_suggestions_for_unsupported_or_future():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="60005",
+        saved_context="# ServiceDesk request context\n\nExample context",
+        skill_definitions_text="## active_directory.user.inspect\n",
+    )
+
+    assert (
+        "Inspector tools must NEVER be suggested for "
+        "`unsupported_no_safe_capability` or `future_automation_"
+        "candidate`." in prompt
+    )
+    # Inspector suggestions for the other three labels are conditioned on
+    # required inputs being present.
+    assert (
+        "They may be suggested for the other three labels only when the "
+        "inputs that those inspectors require are present." in prompt
+    )
+    # Ready for execution stays "no" across the board.
+    assert (
+        "`Ready for execution` must remain `no` for every classification"
+        in prompt
+    )
+
+
 def test_build_servicedesk_skill_plan_prompt_lists_active_directory_inspector_ids():
     prompt = build_servicedesk_skill_plan_prompt(
         request_id="55853",
