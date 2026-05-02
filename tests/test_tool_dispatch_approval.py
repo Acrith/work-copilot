@@ -42,6 +42,7 @@ def make_definition(name, handler, category=None):
         "run_tests": ToolCategory.EXEC,
         "bash": ToolCategory.EXEC,
         "servicedesk_add_request_draft": ToolCategory.CONNECTOR_WRITE,
+        "servicedesk_add_request_note": ToolCategory.CONNECTOR_WRITE,
     }
 
     return ToolDefinition(

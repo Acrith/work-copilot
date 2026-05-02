@@ -74,6 +74,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/sdp inspect-skill" in help_text
     assert "/sdp inspection-report" in help_text
     assert "/sdp draft-note" in help_text
+    assert "/sdp save-note" in help_text
     assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
@@ -440,6 +441,14 @@ def test_parse_sdp_draft_note_underscore_alias():
 
 def test_parse_sdp_note_short_alias():
     assert parse_interactive_command("/sdp note 55948") == "sdp_draft_note"
+
+
+def test_parse_sdp_save_note_command():
+    assert parse_interactive_command("/sdp save-note 55948") == "sdp_save_note"
+
+
+def test_parse_sdp_save_note_underscore_alias():
+    assert parse_interactive_command("/sdp save_note 55948") == "sdp_save_note"
 
 
 def test_build_servicedesk_draft_note_prompt_is_internal_and_local_only():

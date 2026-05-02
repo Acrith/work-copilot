@@ -744,3 +744,91 @@ def test_add_request_draft_requires_description():
             subject="Test",
             description="   ",
         )
+
+
+def test_add_request_note_posts_internal_note_payload(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(
+            b'{"note": {"id": "note-1"}, "response_status": {"status": "success"}}'
+        )
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+
+    result = client.add_request_note(
+        request_id="55948",
+        description="Read-only inspection completed.\nNo changes were made.",
+    )
+
+    assert result == {
+        "note": {"id": "note-1"},
+        "response_status": {"status": "success"},
+    }
+
+    request = captured["request"]
+    parsed_url = urlparse(request.full_url)
+
+    assert parsed_url.scheme == "https"
+    assert parsed_url.path == "/api/v3/requests/55948/notes"
+    assert request.get_method() == "POST"
+
+    body = request.data.decode("utf-8")
+    parsed_body = parse_qs(body)
+    input_data = json.loads(parsed_body["input_data"][0])
+
+    assert input_data == {
+        "note": {
+            "description": (
+                "Read-only inspection completed.<br />No changes were made."
+            ),
+            "show_to_requester": False,
+        }
+    }
+
+
+def test_add_request_note_can_be_marked_visible_to_requester(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        return FakeResponse(b'{"note": {"id": "note-1"}}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+
+    client = ServiceDeskPlusClient(make_config())
+    client.add_request_note(
+        request_id="55948",
+        description="visible note",
+        show_to_requester=True,
+    )
+
+    body = captured["request"].data.decode("utf-8")
+    parsed_body = parse_qs(body)
+    input_data = json.loads(parsed_body["input_data"][0])
+
+    assert input_data["note"]["show_to_requester"] is True
+
+
+def test_add_request_note_requires_request_id():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="request_id is required"):
+        client.add_request_note(
+            request_id="",
+            description="body",
+        )
+
+
+def test_add_request_note_requires_description():
+    client = ServiceDeskPlusClient(make_config())
+
+    with pytest.raises(ServiceDeskPlusError, match="description is required"):
+        client.add_request_note(
+            request_id="55948",
+            description="   ",
+        )

@@ -20,6 +20,7 @@ InteractiveCommand = Literal[
     "sdp_inspect_skill",
     "sdp_inspection_report",
     "sdp_draft_note",
+    "sdp_save_note",
     "sdp_triage",
     "unknown",
 ]
@@ -40,6 +41,10 @@ COMMAND_HELP = [
     (
         "/sdp draft-note <id>",
         "Draft a local internal technician note from saved context and inspection report",
+    ),
+    (
+        "/sdp save-note <id>",
+        "Save the local note draft as an internal ServiceDesk note (approval-gated)",
     ),
     ("/sdp triage <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
     ("/exit", "Exit interactive mode"),
@@ -204,6 +209,12 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand:
             "note",
         }:
             return "sdp_draft_note"
+
+        if len(parts) >= 2 and parts[1].lower() in {
+            "save-note",
+            "save_note",
+        }:
+            return "sdp_save_note"
 
         if len(parts) >= 2 and parts[1].lower() == "triage":
             return "sdp_triage"

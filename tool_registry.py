@@ -4,6 +4,7 @@ from typing import Any, Callable
 from agent_types import ToolSpec
 from connectors.servicedeskplus.tools import (
     servicedesk_add_request_draft,
+    servicedesk_add_request_note,
     servicedesk_get_request,
     servicedesk_get_request_attachments,
     servicedesk_get_request_conversation_content,
@@ -589,6 +590,42 @@ TOOL_DEFINITIONS: dict[str, ToolDefinition] = {
         category=ToolCategory.CONNECTOR_WRITE,
         connector="servicedeskplus",
         resource_type="request_draft",
+    ),
+    "servicedesk_add_request_note": ToolDefinition(
+        spec=ToolSpec(
+            name="servicedesk_add_request_note",
+            description=(
+                "Adds an internal note to a ServiceDesk Plus request. "
+                "By default the note is internal and not visible to the requester. "
+                "This is a connector write tool and requires approval."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "description": "ServiceDesk Plus request ID.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Internal note body text.",
+                    },
+                    "show_to_requester": {
+                        "type": "boolean",
+                        "description": (
+                            "Whether the note should be visible to the requester. "
+                            "Defaults to false (internal-only)."
+                        ),
+                        "default": False,
+                    },
+                },
+                "required": ["request_id", "description"],
+            },
+        ),
+        handler=servicedesk_add_request_note,
+        category=ToolCategory.CONNECTOR_WRITE,
+        connector="servicedeskplus",
+        resource_type="request_note",
     ),
 }
 

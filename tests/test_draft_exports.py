@@ -13,6 +13,7 @@ from draft_exports import (
     build_servicedesk_skill_plan_path,
     extract_markdown_section,
     extract_servicedesk_draft_reply,
+    extract_servicedesk_note_body,
     extract_servicedesk_request_subject,
     is_no_requester_reply_recommended,
     read_text_if_exists,
@@ -236,3 +237,70 @@ def test_build_servicedesk_draft_note_path(tmp_path):
     assert path == (
         tmp_path / ".work_copilot" / "servicedesk" / "55948" / "draft_note.md"
     )
+
+
+SAMPLE_DRAFT_NOTE = """\
+# ServiceDesk internal note draft
+
+- Ticket: 55948
+- Note type: internal technician note
+- Inspection report used: yes
+
+## Note body
+
+Read-only mailbox inspection completed for `user@example.com`.
+
+Findings:
+- Mailbox exists: yes
+- Display name: Example User
+- Mailbox size: 136.7 MB
+
+Scope:
+- No changes were made.
+- Mailbox content and attachments were not inspected.
+
+## Local draft metadata
+
+- Generated locally by Work Copilot.
+- Not posted to ServiceDesk yet.
+- Source files used: saved context, inspection report
+"""
+
+
+def test_extract_servicedesk_note_body_returns_only_note_body_section():
+    body = extract_servicedesk_note_body(SAMPLE_DRAFT_NOTE)
+
+    assert body is not None
+    assert body.startswith(
+        "Read-only mailbox inspection completed for `user@example.com`."
+    )
+    assert "Findings:" in body
+    assert "- Mailbox exists: yes" in body
+    assert "Scope:" in body
+    # Local draft metadata must NOT be part of the postable body.
+    assert "Local draft metadata" not in body
+    assert "Generated locally by Work Copilot." not in body
+    assert "Not posted to ServiceDesk yet." not in body
+    assert "Source files used:" not in body
+
+
+def test_extract_servicedesk_note_body_returns_none_when_section_missing():
+    text = (
+        "# ServiceDesk internal note draft\n\n"
+        "- Ticket: 55948\n\n"
+        "## Local draft metadata\n\n"
+        "- Generated locally by Work Copilot.\n"
+    )
+
+    assert extract_servicedesk_note_body(text) is None
+
+
+def test_extract_servicedesk_note_body_returns_none_when_section_empty():
+    text = (
+        "# ServiceDesk internal note draft\n\n"
+        "## Note body\n\n"
+        "## Local draft metadata\n\n"
+        "- Not posted to ServiceDesk yet.\n"
+    )
+
+    assert extract_servicedesk_note_body(text) is None

@@ -197,3 +197,26 @@ def servicedesk_add_request_draft(
         )
     except ServiceDeskPlusError as error:
         return {"error": str(error)}
+
+
+def servicedesk_add_request_note(
+    request_id: str,
+    description: str,
+    show_to_requester: bool = False,
+    working_directory: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    config = load_servicedeskplus_config()
+
+    if not config.enabled:
+        return {"error": "ServiceDesk Plus connector is disabled."}
+
+    try:
+        client = ServiceDeskPlusClient(config)
+        return client.add_request_note(
+            request_id=request_id,
+            description=description,
+            show_to_requester=show_to_requester,
+        )
+    except ServiceDeskPlusError as error:
+        return {"error": str(error)}

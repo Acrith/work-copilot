@@ -139,6 +139,10 @@ def extract_servicedesk_draft_reply(draft_text: str) -> str | None:
     return extract_markdown_section(draft_text, "Draft reply")
 
 
+def extract_servicedesk_note_body(draft_text: str) -> str | None:
+    return extract_markdown_section(draft_text, "Note body")
+
+
 def build_servicedesk_draft_subject(
     request_id: str,
     original_subject: str | None = None,
