@@ -32,9 +32,10 @@ from inspectors.exchange_config import ExchangeInspectorConfigError
 from inspectors.factory import create_configured_inspector_registry_from_env
 from inspectors.runner import run_inspector_and_save
 from inspectors.skill_plan import (
+    SUPPORTED_INSPECTOR_IDS,
     build_inspector_request_from_skill_plan,
     parse_suggested_inspector_tools,
-    select_supported_inspector_tool,
+    select_inspector_for_skill_plan,
 )
 from interactive_commands import (
     build_interactive_help_renderable,
@@ -722,13 +723,14 @@ class WorkCopilotTextualApp(App):
                 return
 
             suggested_tools = parse_suggested_inspector_tools(latest_skill_plan)
-            inspector_id = select_supported_inspector_tool(suggested_tools)
+            selection = select_inspector_for_skill_plan(latest_skill_plan)
 
-            if inspector_id is None:
+            if selection is None:
                 self._log_blank()
+                supported_list = ", ".join(sorted(SUPPORTED_INSPECTOR_IDS))
                 self._log(
-                    "No supported inspector found in the latest skill plan. "
-                    "Currently supported mock inspector: exchange.mailbox.inspect."
+                    "No registered inspector found in the latest skill plan. "
+                    f"Currently registered inspector(s): {supported_list}."
                 )
 
                 if suggested_tools:
@@ -737,6 +739,15 @@ class WorkCopilotTextualApp(App):
                     self._log("The skill plan did not suggest any inspector tools.")
 
                 return
+
+            inspector_id = selection.inspector_id
+
+            if selection.source == "skill_match":
+                self._log_blank()
+                self._log(
+                    "No supported inspector listed under Suggested inspector tools; "
+                    f"falling back to Skill match inspector: {inspector_id}."
+                )
 
             try:
                 inspector_request = build_inspector_request_from_skill_plan(

@@ -7,6 +7,23 @@ SUPPORTED_INSPECTOR_IDS = {
 }
 
 
+INSPECTOR_ID_ALIASES = {
+    "exchange.mailbox.get_properties": "exchange.mailbox.inspect",
+    "exchange.mailbox.get_statistics": "exchange.mailbox.inspect",
+    "exchange.mailbox.get_archive_status": "exchange.mailbox.inspect",
+    "exchange.mailbox.get_retention_policy": "exchange.mailbox.inspect",
+    "exchange.mailbox.get_quota_warning_status": "exchange.mailbox.inspect",
+    "exchange.mailbox.get_auto_expanding_archive_status": "exchange.mailbox.inspect",
+    "exchange.mailbox.prepare_inspection_report_parameters": "exchange.mailbox.inspect",
+}
+
+
+def normalize_inspector_id(inspector_id: str) -> str:
+    cleaned = _clean_markdown_value(inspector_id)
+
+    return INSPECTOR_ID_ALIASES.get(cleaned, cleaned)
+
+
 @dataclass(frozen=True)
 class SkillPlanInput:
     field: str
@@ -105,6 +122,8 @@ def build_inspector_request_from_skill_plan(
     skill_plan_text: str,
     inspector_id: str,
 ) -> InspectorRequest:
+    inspector_id = normalize_inspector_id(inspector_id)
+
     if inspector_id not in SUPPORTED_INSPECTOR_IDS:
         raise ValueError(f"Unsupported inspector for skill-plan handoff: {inspector_id}")
 
@@ -172,7 +191,61 @@ def _clean_markdown_value(value: str) -> str:
 
 def select_supported_inspector_tool(suggested_tools: list[str]) -> str | None:
     for tool in suggested_tools:
-        if tool in SUPPORTED_INSPECTOR_IDS:
-            return tool
+        normalized = normalize_inspector_id(tool)
+
+        if normalized in SUPPORTED_INSPECTOR_IDS:
+            return normalized
+
+    return None
+
+
+def parse_skill_match(skill_plan_text: str) -> str | None:
+    for line in skill_plan_text.splitlines():
+        stripped = line.strip()
+
+        if not stripped.startswith("- Skill match:"):
+            continue
+
+        raw_value = stripped.removeprefix("- Skill match:").strip()
+        cleaned = _clean_markdown_value(raw_value)
+
+        if not cleaned or cleaned.lower() == "none":
+            return None
+
+        return cleaned
+
+    return None
+
+
+@dataclass(frozen=True)
+class SkillPlanInspectorSelection:
+    inspector_id: str
+    source: str
+
+
+def select_inspector_for_skill_plan(
+    skill_plan_text: str,
+) -> SkillPlanInspectorSelection | None:
+    suggested_tools = parse_suggested_inspector_tools(skill_plan_text)
+    suggested = select_supported_inspector_tool(suggested_tools)
+
+    if suggested is not None:
+        return SkillPlanInspectorSelection(
+            inspector_id=suggested,
+            source="suggested_inspector_tools",
+        )
+
+    skill_match = parse_skill_match(skill_plan_text)
+
+    if skill_match is None:
+        return None
+
+    normalized_skill_match = normalize_inspector_id(skill_match)
+
+    if normalized_skill_match in SUPPORTED_INSPECTOR_IDS:
+        return SkillPlanInspectorSelection(
+            inspector_id=normalized_skill_match,
+            source="skill_match",
+        )
 
     return None

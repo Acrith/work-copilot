@@ -46,9 +46,22 @@ def build_exchange_powershell_script(
             "}",
             "switch ($payload.name) {",
             "    'Get-EXOMailbox' { $result = Get-EXOMailbox @params; break }",
-            "    'Get-EXOMailboxStatistics' { "
-            "$result = Get-EXOMailboxStatistics @params; break "
-            "}",
+            "    'Get-EXOMailboxStatistics' {",
+            "        $raw = Get-EXOMailboxStatistics @params",
+            "        $result = $raw | Select-Object `",
+            "            DisplayName, `",
+            "            ItemCount, `",
+            "            DeletedItemCount, `",
+            "            StorageLimitStatus, `",
+            "            LastLogonTime, `",
+            "            @{Name='TotalItemSize'; Expression={ "
+            "if ($null -ne $_.TotalItemSize) { $_.TotalItemSize.ToString() } "
+            "else { $null } }}, `",
+            "            @{Name='TotalDeletedItemSize'; Expression={ "
+            "if ($null -ne $_.TotalDeletedItemSize) { $_.TotalDeletedItemSize.ToString() } "
+            "else { $null } }}",
+            "        break",
+            "    }",
             "    'Get-Mailbox' { $result = Get-Mailbox @params; break }",
             "    default { throw \"Exchange command is not allowlisted for inspectors: "
             "$($payload.name)\" }",
