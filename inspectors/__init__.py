@@ -31,6 +31,12 @@ from inspectors.active_directory_group_membership import (
     MockActiveDirectoryGroupMembershipInspectorClient,
     inspect_active_directory_group_membership,
 )
+from inspectors.active_directory_powershell_runner import (
+    ActiveDirectoryPowerShellExecutionError,
+    ActiveDirectoryPowerShellRunnerConfig,
+    ActiveDirectoryPowerShellSubprocessRunner,
+    validate_active_directory_powershell_runner_config,
+)
 from inspectors.active_directory_powershell_script import (
     AD_GROUP_PROJECTION_FIELDS,
     AD_PRINCIPAL_GROUP_MEMBERSHIP_PROJECTION_FIELDS,
@@ -210,6 +216,10 @@ __all__ = [
     "build_active_directory_powershell_script",
     "decode_active_directory_command_payload",
     "encode_active_directory_command_payload",
+    "ActiveDirectoryPowerShellExecutionError",
+    "ActiveDirectoryPowerShellRunnerConfig",
+    "ActiveDirectoryPowerShellSubprocessRunner",
+    "validate_active_directory_powershell_runner_config",
     "ActiveDirectoryGroupInspectionError",
     "ActiveDirectoryGroupInspectorClient",
     "ActiveDirectoryGroupNotFoundError",
