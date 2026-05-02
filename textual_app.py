@@ -30,6 +30,11 @@ from draft_exports import (
 )
 from inspectors.exchange_config import ExchangeInspectorConfigError
 from inspectors.factory import create_configured_inspector_registry_from_env
+from inspectors.inspection_report import (
+    InspectionReportError,
+    InspectionReportNotFoundError,
+    build_servicedesk_inspection_report,
+)
 from inspectors.runner import run_inspector_and_save
 from inspectors.skill_plan import (
     SUPPORTED_INSPECTOR_IDS,
@@ -805,6 +810,43 @@ class WorkCopilotTextualApp(App):
             self._log_system_message(f"Result: {output.result.status.value}")
             self._log_system_message(f"Summary: {output.result.summary}")
             self._log_system_message(f"Inspector result saved to: {output.saved_path}")
+            return
+
+        if command == "sdp_inspection_report":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp inspection-report <request_id>")
+                return
+
+            try:
+                report_output = build_servicedesk_inspection_report(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+            except InspectionReportNotFoundError as exc:
+                self._log_blank()
+                self._log(str(exc))
+                return
+            except InspectionReportError as exc:
+                self._log_blank()
+                self._log(f"Could not build inspection report: {exc}")
+                return
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Built local inspection report for request {request_id}."
+            )
+            self._log_system_message(
+                f"Source inspector JSON: {report_output.source_json_path}"
+            )
+            self._log_system_message(
+                f"Inspection report saved to: {report_output.report_path}"
+            )
+            self._log_system_message(
+                "No ServiceDesk update was performed. Report is local-only."
+            )
             return
 
         if command == "unknown":

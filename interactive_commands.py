@@ -16,6 +16,7 @@ InteractiveCommand = Literal[
     "sdp_draft_reply",
     "sdp_save_draft",
     "sdp_skill_plan",
+    "sdp_inspection_report",
     "sdp_triage",
     "unknown",
 ]
@@ -29,6 +30,10 @@ COMMAND_HELP = [
     ("/sdp save-draft <id>", "Save latest local reply as a ServiceDesk draft"),
     ("/sdp skill-plan <id>", "Prepare a read-only skill plan for ServiceDesk request"),
     ("/sdp inspect-skill <id>", "Run mock read-only inspectors from the latest skill plan"),
+    (
+        "/sdp inspection-report <id>",
+        "Render saved inspector JSON into a local Markdown report",
+    ),
     ("/sdp triage <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
     ("/exit", "Exit interactive mode"),
 ]
@@ -179,6 +184,12 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand:
 
         if len(parts) >= 2 and parts[1].lower() in {"inspect-skill", "inspect_skill"}:
             return "sdp_inspect_skill"
+
+        if len(parts) >= 2 and parts[1].lower() in {
+            "inspection-report",
+            "inspection_report",
+        }:
+            return "sdp_inspection_report"
 
         if len(parts) >= 2 and parts[1].lower() == "triage":
             return "sdp_triage"
