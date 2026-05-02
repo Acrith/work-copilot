@@ -4,8 +4,11 @@ from typing import Protocol
 READ_ONLY_EXCHANGE_COMMANDS = {
     "Get-EXOMailbox",
     "Get-EXOMailboxStatistics",
+    "Get-EXOMailboxFolderStatistics",
     "Get-Mailbox",
 }
+
+EXCHANGE_FOLDER_STATISTICS_LIMIT = 5
 
 FORBIDDEN_EXCHANGE_COMMAND_PREFIXES = (
     "Set-",

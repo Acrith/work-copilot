@@ -115,13 +115,36 @@ def render_inspection_report_markdown(
     sections.append("## Findings")
     sections.append("")
 
+    largest_folders_fact: dict[str, object] | None = None
+
     if facts:
         for fact in facts:
             key = _str(fact.get("key")) or "(unnamed fact)"
+
+            if key == "largest_folders":
+                largest_folders_fact = fact
+                continue
+
             value = _format_fact_value(fact.get("value"))
             sections.append(f"- **{key}**: {value}")
     else:
         sections.append("- No findings were returned by the inspector.")
+
+    if largest_folders_fact is not None:
+        folder_rows = _list_of_dicts(largest_folders_fact.get("value"))
+
+        if folder_rows:
+            sections.append("")
+            sections.append("### Largest folders")
+            sections.append("")
+            sections.append(
+                "Folder-level metadata only. Mailbox content, message "
+                "subjects/bodies, and attachments were not inspected."
+            )
+            sections.append("")
+
+            for folder in folder_rows:
+                sections.append(_format_folder_bullet(folder))
 
     sections.append("")
 
@@ -272,10 +295,23 @@ def _build_suggested_note(
     if facts:
         for fact in facts:
             key = _str(fact.get("key"))
-            value = _format_fact_value(fact.get("value"))
 
-            if key:
-                lines.append(f"- {key}: {value}")
+            if not key:
+                continue
+
+            if key == "largest_folders":
+                folder_rows = _list_of_dicts(fact.get("value"))
+
+                if folder_rows:
+                    lines.append(
+                        f"- largest_folders: {len(folder_rows)} folders "
+                        "summarised under Largest folders in the report"
+                    )
+
+                continue
+
+            value = _format_fact_value(fact.get("value"))
+            lines.append(f"- {key}: {value}")
     else:
         lines.append("- No facts were returned by the inspector.")
 
@@ -308,6 +344,22 @@ def _format_fact_value(value: object) -> str:
         return value
 
     return str(value)
+
+
+def _format_folder_bullet(folder: dict[str, object]) -> str:
+    name = _str(folder.get("name"))
+    folder_path = _str(folder.get("folder_path"))
+    folder_size = _str(folder.get("folder_size"))
+    items_in_folder = folder.get("items_in_folder")
+
+    identifier = folder_path or name or "(unnamed folder)"
+    size_label = folder_size or "unknown size"
+    items_part = ""
+
+    if isinstance(items_in_folder, int):
+        items_part = f" ({items_in_folder} items)"
+
+    return f"- `{identifier}` — {size_label}{items_part}"
 
 
 def _str(value: object) -> str:

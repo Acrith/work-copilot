@@ -2,11 +2,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from inspectors.exchange_command_runner import (
+    EXCHANGE_FOLDER_STATISTICS_LIMIT,
     ExchangePowerShellCommand,
     ExchangePowerShellCommandResult,
     ExchangePowerShellCommandRunner,
 )
 from inspectors.exchange_mailbox import (
+    ExchangeMailboxFolderStat,
     ExchangeMailboxInspectionError,
     ExchangeMailboxInspectorClient,
     ExchangeMailboxNotFoundError,
@@ -72,6 +74,16 @@ class ExchangeOnlinePowerShellMailboxClient(ExchangeMailboxInspectorClient):
             command_name="Get-EXOMailboxStatistics",
         )
 
+        folder_statistics_result = self.runner.run(
+            ExchangePowerShellCommand(
+                name="Get-EXOMailboxFolderStatistics",
+                parameters={
+                    "Identity": mailbox_address,
+                },
+            )
+        )
+        largest_folders = _largest_folders_from_result(folder_statistics_result)
+
         primary_smtp_address = _optional_str(
             mailbox_data.get("PrimarySmtpAddress")
             or mailbox_data.get("PrimarySMTPAddress")
@@ -100,6 +112,7 @@ class ExchangeOnlinePowerShellMailboxClient(ExchangeMailboxInspectorClient):
                 statistics_data.get("StorageLimitStatus")
                 or statistics_data.get("QuotaWarningStatus")
             ),
+            largest_folders=largest_folders,
         )
 
 
@@ -231,3 +244,42 @@ def _looks_like_not_found(error: str) -> bool:
     normalized = error.lower()
 
     return "not found" in normalized or "couldn't be found" in normalized
+
+
+def _largest_folders_from_result(
+    result: ExchangePowerShellCommandResult,
+) -> list[ExchangeMailboxFolderStat]:
+    """Map a Get-EXOMailboxFolderStatistics result into a bounded list.
+
+    Folder statistics is supporting evidence; failures must not break the
+    overall mailbox inspection. Return an empty list when the command did
+    not run successfully or returned no usable rows.
+    """
+    if not result.ok:
+        return []
+
+    data = result.data
+
+    if data is None:
+        return []
+
+    if isinstance(data, dict):
+        rows: list[dict[str, object]] = [data]
+    elif isinstance(data, list):
+        rows = [item for item in data if isinstance(item, dict)]
+    else:
+        return []
+
+    folders: list[ExchangeMailboxFolderStat] = []
+
+    for row in rows[:EXCHANGE_FOLDER_STATISTICS_LIMIT]:
+        folders.append(
+            ExchangeMailboxFolderStat(
+                name=_optional_str(row.get("Name")),
+                folder_path=_optional_str(row.get("FolderPath")),
+                folder_size=_optional_str(row.get("FolderSize")),
+                items_in_folder=_optional_int(row.get("ItemsInFolder")),
+            )
+        )
+
+    return folders

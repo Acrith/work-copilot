@@ -71,6 +71,42 @@ def test_build_exchange_powershell_script_contains_only_allowlisted_switch_comma
     assert "Add-MailboxPermission" not in script
 
 
+def test_build_exchange_powershell_script_supports_folder_statistics_projection():
+    command = ExchangePowerShellCommand(
+        name="Get-EXOMailboxFolderStatistics",
+        parameters={"Identity": "user@example.com"},
+    )
+
+    script = build_exchange_powershell_script(command)
+
+    assert "Get-EXOMailboxFolderStatistics @params" in script
+    assert "Sort-Object" in script
+    # Output is bounded to the top N folders by size.
+    assert "Select-Object -First 5" in script
+    # FolderSize is treated as nullable and string-like, with the byte count
+    # parsed from the trailing "(N bytes)" portion via regex. We must not
+    # invoke .ToBytes() on FolderSize, because in some Exchange Online
+    # environments FolderSize is already a string.
+    assert ".ToBytes()" not in script
+    assert "$_.FolderSize.ToBytes()" not in script
+    assert "$folder.FolderSize.ToString()" in script
+    assert r"'\(([0-9,]+)\s*bytes\)'" in script
+    assert "[int64]::TryParse" in script
+    # FolderSize must be flattened to a string in the projected output so the
+    # readable size lands in the inspector JSON instead of a complex object.
+    assert "$_.FolderSize.ToString()" in script
+    # Final projection includes only the technician-relevant fields, no
+    # internal byte count column, no item-level fields.
+    assert "Name" in script
+    assert "FolderPath" in script
+    assert "ItemsInFolder" in script
+    # The temporary byte count is used for sort only and must not appear as
+    # a Select-Object column in the final projection.
+    assert "FolderSizeBytes" not in script
+    # The raw command result must not be piped straight to ConvertTo-Json.
+    assert "$result = Get-EXOMailboxFolderStatistics @params" not in script
+
+
 def test_build_exchange_powershell_script_flattens_mailbox_statistics_total_item_size():
     command = ExchangePowerShellCommand(
         name="Get-EXOMailboxStatistics",

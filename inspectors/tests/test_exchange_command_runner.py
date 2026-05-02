@@ -15,6 +15,7 @@ from inspectors.exchange_command_runner import (
     [
         "Get-EXOMailbox",
         "Get-EXOMailboxStatistics",
+        "Get-EXOMailboxFolderStatistics",
         "Get-Mailbox",
     ],
 )

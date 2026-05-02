@@ -73,6 +73,24 @@ def test_exchange_online_powershell_client_builds_snapshot_from_mock_results():
                     "StorageLimitStatus": "BelowLimit",
                 },
             ),
+            "Get-EXOMailboxFolderStatistics": ExchangePowerShellCommandResult(
+                command="Get-EXOMailboxFolderStatistics",
+                ok=True,
+                data=[
+                    {
+                        "Name": "Inbox",
+                        "FolderPath": "/Inbox",
+                        "FolderSize": "8 GB (8,589,934,592 bytes)",
+                        "ItemsInFolder": 4321,
+                    },
+                    {
+                        "Name": "Sent Items",
+                        "FolderPath": "/Sent Items",
+                        "FolderSize": "2 GB (2,147,483,648 bytes)",
+                        "ItemsInFolder": 1234,
+                    },
+                ],
+            ),
         }
     )
     client = ExchangeOnlinePowerShellMailboxClient(
@@ -93,12 +111,104 @@ def test_exchange_online_powershell_client_builds_snapshot_from_mock_results():
     assert snapshot.retention_policy == "Default MRM Policy"
     assert snapshot.quota_warning_status == "BelowLimit"
 
+    assert len(snapshot.largest_folders) == 2
+    assert snapshot.largest_folders[0].name == "Inbox"
+    assert snapshot.largest_folders[0].folder_path == "/Inbox"
+    assert snapshot.largest_folders[0].folder_size == "8 GB (8,589,934,592 bytes)"
+    assert snapshot.largest_folders[0].items_in_folder == 4321
+    assert snapshot.largest_folders[1].name == "Sent Items"
+
     assert [command.name for command in runner.commands] == [
         "Get-EXOMailbox",
         "Get-EXOMailboxStatistics",
+        "Get-EXOMailboxFolderStatistics",
     ]
     assert runner.commands[0].parameters == {"Identity": "user@example.com"}
     assert runner.commands[1].parameters == {"Identity": "user@example.com"}
+    assert runner.commands[2].parameters == {"Identity": "user@example.com"}
+
+
+def test_exchange_online_powershell_client_returns_empty_folders_when_command_fails():
+    runner = MockExchangePowerShellCommandRunner(
+        results={
+            "Get-EXOMailbox": ExchangePowerShellCommandResult(
+                command="Get-EXOMailbox",
+                ok=True,
+                data={
+                    "DisplayName": "Example User",
+                    "PrimarySmtpAddress": "user@example.com",
+                    "RecipientTypeDetails": "UserMailbox",
+                },
+            ),
+            "Get-EXOMailboxStatistics": ExchangePowerShellCommandResult(
+                command="Get-EXOMailboxStatistics",
+                ok=True,
+                data={
+                    "TotalItemSize": "5 GB",
+                    "ItemCount": 1000,
+                    "StorageLimitStatus": "BelowLimit",
+                },
+            ),
+            "Get-EXOMailboxFolderStatistics": ExchangePowerShellCommandResult(
+                command="Get-EXOMailboxFolderStatistics",
+                ok=False,
+                error="Folder statistics lookup failed.",
+            ),
+        }
+    )
+    client = ExchangeOnlinePowerShellMailboxClient(
+        ExchangeOnlinePowerShellConfig(enabled=True),
+        runner=runner,
+    )
+
+    # Folder evidence is supporting only; failure must not break inspection.
+    snapshot = client.get_mailbox_snapshot("user@example.com")
+
+    assert snapshot.mailbox_size == "5 GB"
+    assert snapshot.largest_folders == []
+
+
+def test_exchange_online_powershell_client_caps_folder_evidence_at_limit():
+    folders = [
+        {
+            "Name": f"Folder{index}",
+            "FolderPath": f"/Folder{index}",
+            "FolderSize": f"{10 - index} GB",
+            "ItemsInFolder": 100 - index,
+        }
+        for index in range(8)
+    ]
+    runner = MockExchangePowerShellCommandRunner(
+        results={
+            "Get-EXOMailbox": ExchangePowerShellCommandResult(
+                command="Get-EXOMailbox",
+                ok=True,
+                data={"DisplayName": "Example User"},
+            ),
+            "Get-EXOMailboxStatistics": ExchangePowerShellCommandResult(
+                command="Get-EXOMailboxStatistics",
+                ok=True,
+                data={"TotalItemSize": "5 GB", "ItemCount": 1000},
+            ),
+            "Get-EXOMailboxFolderStatistics": ExchangePowerShellCommandResult(
+                command="Get-EXOMailboxFolderStatistics",
+                ok=True,
+                data=folders,
+            ),
+        }
+    )
+    client = ExchangeOnlinePowerShellMailboxClient(
+        ExchangeOnlinePowerShellConfig(enabled=True),
+        runner=runner,
+    )
+
+    snapshot = client.get_mailbox_snapshot("user@example.com")
+
+    # Adapter caps to EXCHANGE_FOLDER_STATISTICS_LIMIT regardless of
+    # whether the upstream PowerShell projection was bounded.
+    assert len(snapshot.largest_folders) == 5
+    assert snapshot.largest_folders[0].name == "Folder0"
+    assert snapshot.largest_folders[-1].name == "Folder4"
 
 
 def test_exchange_online_powershell_client_accepts_list_shaped_command_data():

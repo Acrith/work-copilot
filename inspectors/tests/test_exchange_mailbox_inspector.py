@@ -1,4 +1,5 @@
 from inspectors.exchange_mailbox import (
+    ExchangeMailboxFolderStat,
     ExchangeMailboxInspectionError,
     ExchangeMailboxNotFoundError,
     ExchangeMailboxSnapshot,
@@ -70,6 +71,77 @@ def test_inspect_exchange_mailbox_returns_read_only_facts():
     assert "Mailbox content not inspected" in result.limitations
     assert "No permission changes performed" in result.limitations
     assert "No archive or retention changes performed" in result.limitations
+
+
+def test_inspect_exchange_mailbox_emits_largest_folders_fact_and_evidence():
+    snapshot = ExchangeMailboxSnapshot(
+        mailbox_address="user@example.com",
+        recipient_type="UserMailbox",
+        mailbox_size="12 GB",
+        archive_status="enabled",
+        largest_folders=[
+            ExchangeMailboxFolderStat(
+                name="Inbox",
+                folder_path="/Inbox",
+                folder_size="8 GB",
+                items_in_folder=4321,
+            ),
+            ExchangeMailboxFolderStat(
+                name="Sent Items",
+                folder_path="/Sent Items",
+                folder_size="2 GB",
+                items_in_folder=1234,
+            ),
+        ],
+    )
+    client = MockExchangeMailboxInspectorClient({"user@example.com": snapshot})
+
+    result = inspect_exchange_mailbox(make_request(), client)
+
+    facts = {fact.key: fact.value for fact in result.facts}
+
+    assert "largest_folders" in facts
+    assert facts["largest_folders"] == [
+        {
+            "name": "Inbox",
+            "folder_path": "/Inbox",
+            "folder_size": "8 GB",
+            "items_in_folder": 4321,
+        },
+        {
+            "name": "Sent Items",
+            "folder_path": "/Sent Items",
+            "folder_size": "2 GB",
+            "items_in_folder": 1234,
+        },
+    ]
+
+    folder_evidence = [
+        item for item in result.evidence if item.label == "largest_folder"
+    ]
+
+    assert len(folder_evidence) == 2
+    assert folder_evidence[0].value == "/Inbox: 8 GB — 4321 items"
+    assert folder_evidence[1].value == "/Sent Items: 2 GB — 1234 items"
+
+
+def test_inspect_exchange_mailbox_omits_largest_folders_fact_when_absent():
+    snapshot = ExchangeMailboxSnapshot(
+        mailbox_address="user@example.com",
+        recipient_type="UserMailbox",
+        archive_status="enabled",
+    )
+    client = MockExchangeMailboxInspectorClient({"user@example.com": snapshot})
+
+    result = inspect_exchange_mailbox(make_request(), client)
+
+    fact_keys = {fact.key for fact in result.facts}
+
+    assert "largest_folders" not in fact_keys
+
+    evidence_labels = {item.label for item in result.evidence}
+
+    assert "largest_folder" not in evidence_labels
 
 
 def test_recommends_archive_review_when_disabled_and_primary_mailbox_full():

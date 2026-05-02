@@ -564,6 +564,21 @@ def test_build_servicedesk_draft_note_prompt_requires_structured_note_body():
     assert "- Mailbox content and attachments were not inspected." in prompt
 
 
+def test_build_servicedesk_draft_note_prompt_mentions_largest_folders_evidence():
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    # Draft-note must allow technician-facing summarization of the bounded
+    # folder evidence when the inspection report contains it, but must not
+    # include item-level content.
+    assert "### Largest folders" in prompt
+    assert "1-3 indented sub-bullets" in prompt
+    assert "Largest folders:" in prompt
+    assert (
+        "Do not include subjects, message bodies, attachment names, "
+        "or any item-level content." in prompt
+    )
+
+
 def test_build_servicedesk_draft_note_prompt_separates_assessment_from_followup():
     prompt = build_servicedesk_draft_note_prompt("55948")
 
