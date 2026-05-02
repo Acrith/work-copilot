@@ -13,3 +13,7 @@ wheels/
 .env
 .work_copilot/runs/
 .work_copilot/servicedesk/
+
+# Local Claude/agent metadata
+.claude/
+CLAUDE.md
