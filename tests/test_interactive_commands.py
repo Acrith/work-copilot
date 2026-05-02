@@ -483,8 +483,79 @@ def test_build_servicedesk_skill_plan_prompt_describes_draft_only_manual_now_buc
         "Write-shaped skills that have no implemented executor (for "
         "example AD group membership add/remove" in prompt
     )
+    # Profile/surname/attribute updates must also be called out as a
+    # draft_only_manual_now case so they don't bleed into execute tools.
+    assert "AD profile/surname/attribute update" in prompt
     assert "Set `Ready for execution: no`" in prompt
     assert "leave `Suggested execute tools: none`" in prompt
+
+    # Manual-work wording for the next action and the work plan is
+    # required for draft_only_manual_now.
+    assert (
+        "`Proposed next action` and `Internal work plan` MUST be phrased "
+        "as manual technician steps" in prompt
+    )
+    assert "manual change in ADUC / Exchange admin / target system" in prompt
+    assert (
+        "MUST NOT be phrased as if Work Copilot will perform the external "
+        "modification" in prompt
+    )
+
+
+def test_build_servicedesk_skill_plan_prompt_forbids_yaml_or_future_tool_names_in_suggested_execute_tools():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="60010",
+        saved_context=(
+            "# ServiceDesk request context\n\n"
+            "Please update surname for user name.surname.\n"
+        ),
+        skill_definitions_text="## active_directory.user.update_attributes\n",
+    )
+
+    # Cross-cutting rule: only implemented, registered, approval-gated
+    # execute tools may appear; YAML/future tool names must not.
+    assert (
+        "`Suggested execute tools` must be `none` unless the tool is an "
+        "implemented, registered, approval-gated execute tool in Work "
+        "Copilot." in prompt
+    )
+    assert (
+        "YAML skill ids, `future_tool_bindings` entries, and hypothetical "
+        "tool names are NOT executable tools and MUST NOT be copied into "
+        "`Suggested execute tools`." in prompt
+    )
+
+    # Concrete examples of forbidden names (the bug this patch addresses
+    # was active_directory.user.update_attributes leaking through).
+    for forbidden_name in (
+        "`active_directory.user.update_attributes`",
+        "`active_directory.group.add_member`",
+        "`active_directory.group.remove_member`",
+        "`active_directory.user.reset_password`",
+        "`exchange.archive.enable`",
+    ):
+        assert forbidden_name in prompt, (
+            f"Expected forbidden execute-tool name {forbidden_name} to be "
+            "called out in the prompt"
+        )
+
+    # Across every classification, including draft_only_manual_now, the
+    # correct value while no executor exists is `none`.
+    assert (
+        "Across every classification — including "
+        "`draft_only_manual_now` — the correct value while no executor "
+        "exists is `none`." in prompt
+    )
+
+    # The placeholder for the field itself must reinforce the rule.
+    assert "Suggested execute tools: <comma-separated implemented" in prompt
+    assert (
+        "YAML skill ids, `future_tool_bindings` entries, and hypothetical "
+        "tool names (for example "
+        "`active_directory.user.update_attributes`) MUST NOT appear here"
+        in prompt
+    )
+    assert "use `none` while no executor is implemented." in prompt
 
 
 def test_build_servicedesk_skill_plan_prompt_describes_blocked_missing_information_bucket():
