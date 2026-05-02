@@ -293,6 +293,12 @@ uv run pytest
 
 See [`docs/architecture.md`](docs/architecture.md) for the current provider/tool/runtime/Textual structure.
 
+Related docs:
+
+- [`docs/inspectors.md`](docs/inspectors.md) — read-only inspector architecture.
+- [`docs/exchange_mailbox_inspector_client.md`](docs/exchange_mailbox_inspector_client.md) — Exchange mailbox inspector design.
+- [`docs/exchange_real_inspector_smoke.md`](docs/exchange_real_inspector_smoke.md) — opt-in smoke test for the real read-only Exchange backend.
+
 High-level flow:
 
 ```text
