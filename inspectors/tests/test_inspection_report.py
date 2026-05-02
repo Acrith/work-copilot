@@ -207,6 +207,69 @@ def test_render_inspection_report_renders_archive_readiness_recommendations():
     assert "No changes were made to Exchange Online" in report
 
 
+def test_render_inspection_report_renders_active_directory_user_payload():
+    ad_user_result = InspectorResult(
+        inspector="active_directory.user.inspect",
+        target=InspectorTarget(
+            type="active_directory_user", id="user@example.com"
+        ),
+        status=InspectorStatus.OK,
+        summary="AD user metadata inspected for user@example.com.",
+        facts=[
+            InspectorFact(key="user_exists", value=True),
+            InspectorFact(key="display_name", value="Example User"),
+            InspectorFact(key="user_principal_name", value="user@example.com"),
+            InspectorFact(key="enabled", value=True),
+            InspectorFact(key="department", value="Engineering"),
+        ],
+        limitations=[
+            "Account passwords not inspected",
+            "No AD writes performed",
+        ],
+    )
+
+    report = render_inspection_report_markdown(
+        request_id="55948",
+        payload=ad_user_result.to_dict(),
+    )
+
+    assert "Inspector: `active_directory.user.inspect`" in report
+    assert "active_directory_user: user@example.com" in report
+    assert "**display_name**: Example User" in report
+    assert "**enabled**: yes" in report
+    assert "**department**: Engineering" in report
+    assert "Account passwords not inspected" in report
+
+
+def test_build_servicedesk_inspection_report_writes_active_directory_user_report(tmp_path):
+    save_inspector_result(
+        workspace=str(tmp_path),
+        request_id="55948",
+        result=InspectorResult(
+            inspector="active_directory.user.inspect",
+            target=InspectorTarget(
+                type="active_directory_user", id="user@example.com"
+            ),
+            status=InspectorStatus.OK,
+            summary="AD user metadata inspected for user@example.com.",
+            facts=[
+                InspectorFact(key="user_exists", value=True),
+                InspectorFact(key="display_name", value="Example User"),
+            ],
+            limitations=["No AD writes performed"],
+        ),
+    )
+
+    output = build_servicedesk_inspection_report(
+        workspace=str(tmp_path),
+        request_id="55948",
+    )
+
+    assert output.inspector_id == "active_directory.user.inspect"
+    assert output.report_path.exists()
+    assert "Example User" in output.report_path.read_text(encoding="utf-8")
+
+
 def test_render_inspection_report_renders_largest_folders_subsection():
     folder_evidence_result = InspectorResult(
         inspector="exchange.mailbox.inspect",

@@ -145,3 +145,56 @@ def test_create_configured_inspector_registry_from_runtime_config_disabled():
 
     assert configured.is_disabled is True
     assert configured.registry.get("exchange.mailbox.inspect") is None
+
+
+_ACTIVE_DIRECTORY_INSPECTOR_IDS = (
+    "active_directory.user.inspect",
+    "active_directory.group.inspect",
+    "active_directory.group_membership.inspect",
+)
+
+
+def test_mock_backend_includes_active_directory_inspectors():
+    configured = create_configured_inspector_registry_from_env({})
+
+    assert configured.is_mock is True
+    assert configured.registry.get("exchange.mailbox.inspect") is not None
+
+    for inspector_id in _ACTIVE_DIRECTORY_INSPECTOR_IDS:
+        assert configured.registry.get(inspector_id) is not None, (
+            f"Expected {inspector_id} to be registered under mock backend"
+        )
+
+
+def test_real_exchange_backend_includes_active_directory_inspectors():
+    configured = create_configured_inspector_registry_from_env(
+        make_real_exchange_env()
+    )
+
+    assert configured.uses_real_external_backend is True
+    assert configured.registry.get("exchange.mailbox.inspect") is not None
+
+    for inspector_id in _ACTIVE_DIRECTORY_INSPECTOR_IDS:
+        assert configured.registry.get(inspector_id) is not None, (
+            f"Expected {inspector_id} to be registered under real Exchange backend"
+        )
+
+
+def test_disabled_exchange_backend_still_registers_active_directory_inspectors():
+    configured = create_configured_inspector_registry_from_env(
+        {
+            "WORK_COPILOT_EXCHANGE_INSPECTOR_BACKEND": "disabled",
+        }
+    )
+
+    assert configured.is_disabled is True
+    # Exchange inspector remains absent under the disabled backend.
+    assert configured.registry.get("exchange.mailbox.inspect") is None
+
+    # AD inspectors are mock-only and remain available regardless of
+    # Exchange backend.
+    for inspector_id in _ACTIVE_DIRECTORY_INSPECTOR_IDS:
+        assert configured.registry.get(inspector_id) is not None, (
+            f"Expected {inspector_id} to remain registered under disabled "
+            "Exchange backend"
+        )

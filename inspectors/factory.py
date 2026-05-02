@@ -24,7 +24,12 @@ from inspectors.exchange_powershell_runner import (
     ExchangePowerShellRunnerConfig,
     ExchangePowerShellSubprocessRunner,
 )
-from inspectors.mock import create_mock_inspector_registry
+from inspectors.mock import (
+    create_mock_inspector_registry,
+    inspect_mock_active_directory_group,
+    inspect_mock_active_directory_group_membership,
+    inspect_mock_active_directory_user,
+)
 from inspectors.registry import InspectorRegistry
 
 
@@ -55,15 +60,20 @@ def create_configured_inspector_registry(
     auth_config: ExchangePowerShellAuthConfig | None = None,
 ) -> ConfiguredInspectorRegistry:
     if runtime_config.backend == ExchangeInspectorBackend.DISABLED:
+        registry = InspectorRegistry()
+        _register_active_directory_mock_inspectors(registry)
+
         return ConfiguredInspectorRegistry(
-            registry=InspectorRegistry(),
+            registry=registry,
             exchange_backend=runtime_config.backend,
             allow_real_external_calls=runtime_config.allow_real_external_calls,
         )
 
     if runtime_config.backend == ExchangeInspectorBackend.MOCK:
+        registry = create_mock_inspector_registry()
+
         return ConfiguredInspectorRegistry(
-            registry=create_mock_inspector_registry(),
+            registry=registry,
             exchange_backend=runtime_config.backend,
             allow_real_external_calls=runtime_config.allow_real_external_calls,
         )
@@ -89,6 +99,7 @@ def create_configured_inspector_registry(
             "exchange.mailbox.inspect",
             lambda request: inspect_exchange_mailbox(request, client),
         )
+        _register_active_directory_mock_inspectors(registry)
 
         return ConfiguredInspectorRegistry(
             registry=registry,
@@ -98,6 +109,24 @@ def create_configured_inspector_registry(
 
     raise ExchangeInspectorConfigError(
         f"Unsupported Exchange inspector backend: {runtime_config.backend}"
+    )
+
+
+def _register_active_directory_mock_inspectors(registry: InspectorRegistry) -> None:
+    """Register read-only mock AD inspectors regardless of Exchange backend.
+
+    AD does not yet have a real backend, so these are mock-only and never
+    perform real AD/LDAP/Graph/PowerShell calls.
+    """
+    registry.register(
+        "active_directory.user.inspect", inspect_mock_active_directory_user
+    )
+    registry.register(
+        "active_directory.group.inspect", inspect_mock_active_directory_group
+    )
+    registry.register(
+        "active_directory.group_membership.inspect",
+        inspect_mock_active_directory_group_membership,
     )
 
 

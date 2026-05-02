@@ -4,6 +4,9 @@ from inspectors.models import InspectorRequest, InspectorTarget
 
 SUPPORTED_INSPECTOR_IDS = {
     "exchange.mailbox.inspect",
+    "active_directory.user.inspect",
+    "active_directory.group.inspect",
+    "active_directory.group_membership.inspect",
 }
 
 
@@ -15,6 +18,18 @@ INSPECTOR_ID_ALIASES = {
     "exchange.mailbox.get_quota_warning_status": "exchange.mailbox.inspect",
     "exchange.mailbox.get_auto_expanding_archive_status": "exchange.mailbox.inspect",
     "exchange.mailbox.prepare_inspection_report_parameters": "exchange.mailbox.inspect",
+    "active_directory.user.lookup": "active_directory.user.inspect",
+    "active_directory.user.get_properties": "active_directory.user.inspect",
+    "active_directory.user.get_account_status": "active_directory.user.inspect",
+    "active_directory.user.get_manager": "active_directory.user.inspect",
+    "active_directory.group.lookup": "active_directory.group.inspect",
+    "active_directory.group.get_properties": "active_directory.group.inspect",
+    "active_directory.group_membership.lookup": (
+        "active_directory.group_membership.inspect"
+    ),
+    "active_directory.group_membership.check": (
+        "active_directory.group_membership.inspect"
+    ),
 }
 
 
@@ -156,6 +171,119 @@ def build_inspector_request_from_skill_plan(
             ),
             inputs={
                 "mailbox_address": mailbox_address,
+                "skill_plan_inputs": {
+                    field: item.to_dict()
+                    for field, item in extracted_inputs.items()
+                },
+            },
+        )
+
+    if inspector_id == "active_directory.user.inspect":
+        user_identifier = _first_present_input_value(
+            extracted_inputs,
+            [
+                "user_principal_name",
+                "sam_account_name",
+                "user_identifier",
+                "target_user_email",
+                "target_user",
+            ],
+        )
+
+        if user_identifier is None:
+            raise ValueError(
+                "Cannot build active_directory.user.inspect request: "
+                "missing user_principal_name or equivalent extracted input"
+            )
+
+        return InspectorRequest(
+            inspector=inspector_id,
+            request_id=request_id,
+            target=InspectorTarget(
+                type="active_directory_user",
+                id=user_identifier,
+                metadata={"source": "skill_plan"},
+            ),
+            inputs={
+                "user_identifier": user_identifier,
+                "skill_plan_inputs": {
+                    field: item.to_dict()
+                    for field, item in extracted_inputs.items()
+                },
+            },
+        )
+
+    if inspector_id == "active_directory.group.inspect":
+        group_identifier = _first_present_input_value(
+            extracted_inputs,
+            [
+                "group_name",
+                "sam_account_name",
+                "group_identifier",
+                "target_group",
+            ],
+        )
+
+        if group_identifier is None:
+            raise ValueError(
+                "Cannot build active_directory.group.inspect request: "
+                "missing group_name or equivalent extracted input"
+            )
+
+        return InspectorRequest(
+            inspector=inspector_id,
+            request_id=request_id,
+            target=InspectorTarget(
+                type="active_directory_group",
+                id=group_identifier,
+                metadata={"source": "skill_plan"},
+            ),
+            inputs={
+                "group_identifier": group_identifier,
+                "skill_plan_inputs": {
+                    field: item.to_dict()
+                    for field, item in extracted_inputs.items()
+                },
+            },
+        )
+
+    if inspector_id == "active_directory.group_membership.inspect":
+        user_identifier = _first_present_input_value(
+            extracted_inputs,
+            [
+                "user_principal_name",
+                "sam_account_name",
+                "user_identifier",
+                "target_user_email",
+                "target_user",
+            ],
+        )
+        group_identifier = _first_present_input_value(
+            extracted_inputs,
+            [
+                "group_name",
+                "group_identifier",
+                "target_group",
+            ],
+        )
+
+        if user_identifier is None or group_identifier is None:
+            raise ValueError(
+                "Cannot build active_directory.group_membership.inspect "
+                "request: missing user and/or group identifier extracted input"
+            )
+
+        return InspectorRequest(
+            inspector=inspector_id,
+            request_id=request_id,
+            target=InspectorTarget(
+                type="active_directory_group_membership",
+                id=f"{user_identifier}@{group_identifier}",
+                metadata={"source": "skill_plan"},
+            ),
+            inputs={
+                "user_identifier": user_identifier,
+                "group_identifier": group_identifier,
                 "skill_plan_inputs": {
                     field: item.to_dict()
                     for field, item in extracted_inputs.items()

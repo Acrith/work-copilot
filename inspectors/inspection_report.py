@@ -9,6 +9,9 @@ from inspectors.storage import (
 
 SUPPORTED_REPORT_INSPECTOR_IDS = {
     "exchange.mailbox.inspect",
+    "active_directory.user.inspect",
+    "active_directory.group.inspect",
+    "active_directory.group_membership.inspect",
 }
 
 

@@ -413,6 +413,21 @@ def test_build_servicedesk_skill_plan_prompt_distinguishes_current_issue_from_hi
     assert "Do not ask the requester for missing skill information unless it is needed" in prompt
 
 
+def test_build_servicedesk_skill_plan_prompt_lists_active_directory_inspector_ids():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="55853",
+        saved_context="# ServiceDesk request context\n\nExample context",
+        skill_definitions_text="## active_directory.user.inspect\n\nExample skill",
+    )
+
+    assert "Suggested inspector tools" in prompt
+    assert "`exchange.mailbox.inspect`" in prompt
+    assert "`active_directory.user.inspect`" in prompt
+    assert "`active_directory.group.inspect`" in prompt
+    assert "`active_directory.group_membership.inspect`" in prompt
+    assert "do not invent granular" in prompt.lower()
+
+
 def test_parse_sdp_inspect_skill_command():
     assert parse_interactive_command("/sdp inspect-skill 55948") == "sdp_inspect_skill"
 
