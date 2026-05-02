@@ -827,21 +827,40 @@ class WorkCopilotTextualApp(App):
 
             self._log_user_message(user_prompt)
 
-            if configured_registry.uses_real_external_backend:
+            selected_ids = [selection.inspector_id for selection in selections]
+            selected_includes_exchange = any(
+                inspector_id.startswith("exchange.")
+                for inspector_id in selected_ids
+            )
+            selected_includes_ad = any(
+                inspector_id.startswith("active_directory.")
+                for inspector_id in selected_ids
+            )
+
+            real_exchange_will_be_contacted = (
+                selected_includes_exchange
+                and configured_registry.uses_real_external_backend
+            )
+            real_ad_will_be_contacted = (
+                selected_includes_ad
+                and configured_registry.uses_real_active_directory_backend
+            )
+
+            if real_exchange_will_be_contacted:
                 self._log_system_message(
                     "Running real Exchange read-only inspector(s). "
                     "External Exchange Online will be contacted when called."
                 )
 
-            if configured_registry.uses_real_active_directory_backend:
+            if real_ad_will_be_contacted:
                 self._log_system_message(
                     "Running real Active Directory read-only inspector(s). "
                     "On-prem AD will be contacted via PowerShell when called."
                 )
 
             if (
-                not configured_registry.uses_real_external_backend
-                and not configured_registry.uses_real_active_directory_backend
+                not real_exchange_will_be_contacted
+                and not real_ad_will_be_contacted
             ):
                 self._log_system_message(
                     "Running mock/registered inspector(s) only. "

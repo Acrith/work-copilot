@@ -428,6 +428,46 @@ def test_build_servicedesk_skill_plan_prompt_lists_active_directory_inspector_id
     assert "do not invent granular" in prompt.lower()
 
 
+def test_build_servicedesk_skill_plan_prompt_separates_requester_from_target_identity():
+    prompt = build_servicedesk_skill_plan_prompt(
+        request_id="55853",
+        saved_context="# ServiceDesk request context\n\nExample context",
+        skill_definitions_text="## active_directory.user.inspect\n\nExample skill",
+    )
+
+    assert "Requester-vs-target rules:" in prompt
+    # Forbid using requester metadata as the inspection target by default.
+    assert "Do not use the ServiceDesk requester's name or email" in prompt
+    assert "`target_user`" in prompt
+    assert "`target_user_email`" in prompt
+    assert "`mailbox_address`" in prompt
+    assert "`target_group`" in prompt
+    assert (
+        "unless the request body explicitly says the requester is the "
+        "account/mailbox/group" in prompt
+    )
+
+    # Prefer body-mentioned identifiers over requester metadata.
+    assert (
+        "Prefer identifiers that appear in the request body or "
+        "conversation content over identifiers from requester metadata"
+        in prompt
+    )
+
+    # Per-family identity guidance: AD prefers account-like, Exchange
+    # keeps mailbox/email semantics.
+    assert (
+        "For Active Directory inspectors, prefer explicit account-like "
+        "values mentioned in the request body" in prompt
+    )
+    assert "`sam_account_name`" in prompt
+    assert "`distinguished_name`" in prompt
+    assert (
+        "For Exchange mailbox inspectors, mailbox/email identifiers"
+        in prompt
+    )
+
+
 def test_build_servicedesk_skill_plan_prompt_requires_inspector_input_extraction_on_no_match():
     prompt = build_servicedesk_skill_plan_prompt(
         request_id="55853",
