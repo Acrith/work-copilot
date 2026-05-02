@@ -72,13 +72,14 @@ def test_inspect_exchange_mailbox_returns_read_only_facts():
     assert "No archive or retention changes performed" in result.limitations
 
 
-def test_inspect_exchange_mailbox_recommends_archive_enable_when_archive_disabled():
+def test_recommends_archive_review_when_disabled_and_primary_mailbox_full():
     client = MockExchangeMailboxInspectorClient(
         {
             "user@example.com": ExchangeMailboxSnapshot(
                 mailbox_address="user@example.com",
                 recipient_type="UserMailbox",
                 archive_status="disabled",
+                quota_warning_status="primary_mailbox_near_quota",
             )
         }
     )
@@ -86,11 +87,35 @@ def test_inspect_exchange_mailbox_recommends_archive_enable_when_archive_disable
     result = inspect_exchange_mailbox(make_request(), client)
 
     assert result.recommendations == [
-        "exchange.archive.enable may be relevant if archive is required."
+        "Mailbox appears full and archive is disabled. Review whether enabling "
+        "archive (exchange.archive.enable) is appropriate. No change has been made."
     ]
 
 
-def test_inspect_exchange_mailbox_recommends_auto_expanding_for_archive_quota_issue():
+def test_recommends_retention_review_when_archive_enabled_and_primary_full():
+    client = MockExchangeMailboxInspectorClient(
+        {
+            "user@example.com": ExchangeMailboxSnapshot(
+                mailbox_address="user@example.com",
+                recipient_type="UserMailbox",
+                archive_status="enabled",
+                auto_expanding_archive_status="enabled",
+                quota_warning_status="primary_mailbox_near_quota",
+            )
+        }
+    )
+
+    result = inspect_exchange_mailbox(make_request(), client)
+
+    assert any(
+        "Primary mailbox appears full while archive is enabled" in rec
+        and "retention policy" in rec
+        and "No change has been made" in rec
+        for rec in result.recommendations
+    )
+
+
+def test_recommends_auto_expanding_review_when_archive_full_and_auto_expanding_disabled():
     client = MockExchangeMailboxInspectorClient(
         {
             "user@example.com": ExchangeMailboxSnapshot(
@@ -105,14 +130,119 @@ def test_inspect_exchange_mailbox_recommends_auto_expanding_for_archive_quota_is
 
     result = inspect_exchange_mailbox(make_request(), client)
 
-    assert (
-        "exchange.archive.enable_auto_expanding may be relevant if archive capacity "
-        "is the issue."
-    ) in result.recommendations
-    assert (
-        "Confirm whether auto-expanding archive is needed before any archive expansion."
-        in result.recommendations
+    assert any(
+        "auto-expanding archive is disabled" in rec
+        and "exchange.archive.enable_auto_expanding" in rec
+        and "No change has been made" in rec
+        for rec in result.recommendations
     )
+
+
+def test_recommends_retention_review_when_archive_enabled_and_archive_full_with_auto_expanding_enabled():
+    client = MockExchangeMailboxInspectorClient(
+        {
+            "user@example.com": ExchangeMailboxSnapshot(
+                mailbox_address="user@example.com",
+                recipient_type="UserMailbox",
+                archive_status="enabled",
+                auto_expanding_archive_status="enabled",
+                quota_warning_status="archive_quota_full",
+            )
+        }
+    )
+
+    result = inspect_exchange_mailbox(make_request(), client)
+
+    assert any(
+        "Archive is enabled and appears full" in rec
+        and "retention policy" in rec
+        for rec in result.recommendations
+    )
+
+
+def test_returns_no_recommendation_fallback_when_evidence_is_insufficient():
+    client = MockExchangeMailboxInspectorClient(
+        {
+            "user@example.com": ExchangeMailboxSnapshot(
+                mailbox_address="user@example.com",
+                recipient_type="UserMailbox",
+                archive_status="disabled",
+            )
+        }
+    )
+
+    result = inspect_exchange_mailbox(make_request(), client)
+
+    assert result.recommendations == [
+        "No archive-readiness recommendation was generated. Existing facts "
+        "do not indicate a mailbox-full or archive-capacity problem. "
+        "No change has been made."
+    ]
+
+
+def test_recommends_manual_review_when_full_but_archive_status_unknown():
+    client = MockExchangeMailboxInspectorClient(
+        {
+            "user@example.com": ExchangeMailboxSnapshot(
+                mailbox_address="user@example.com",
+                recipient_type="UserMailbox",
+                quota_warning_status="primary_mailbox_near_quota",
+            )
+        }
+    )
+
+    result = inspect_exchange_mailbox(make_request(), client)
+
+    assert any(
+        "archive status is unknown" in rec
+        and "Manual review" in rec
+        and "No change has been made" in rec
+        for rec in result.recommendations
+    )
+
+
+def test_recommendations_never_claim_archive_was_enabled_or_changed():
+    snapshots = [
+        ExchangeMailboxSnapshot(
+            mailbox_address="user@example.com",
+            archive_status="disabled",
+            quota_warning_status="primary_mailbox_near_quota",
+        ),
+        ExchangeMailboxSnapshot(
+            mailbox_address="user@example.com",
+            archive_status="enabled",
+            auto_expanding_archive_status="disabled",
+            quota_warning_status="archive_quota_full",
+        ),
+        ExchangeMailboxSnapshot(
+            mailbox_address="user@example.com",
+            archive_status="enabled",
+            auto_expanding_archive_status="enabled",
+            quota_warning_status="primary_mailbox_near_quota",
+        ),
+    ]
+
+    forbidden = [
+        "archive enabled",
+        "archive has been enabled",
+        "archive was enabled",
+        "auto-expanding archive enabled",
+        "auto-expanding archive has been enabled",
+        "we enabled",
+        "we have enabled",
+    ]
+
+    for snapshot in snapshots:
+        client = MockExchangeMailboxInspectorClient({snapshot.mailbox_address: snapshot})
+        result = inspect_exchange_mailbox(make_request(), client)
+
+        for rec in result.recommendations:
+            lowered = rec.lower()
+            assert "no change has been made" in lowered
+            for phrase in forbidden:
+                assert phrase not in lowered, (
+                    f"Recommendation falsely implies a change: {rec!r}"
+                )
 
 
 def test_inspect_exchange_mailbox_uses_target_id_when_input_missing():

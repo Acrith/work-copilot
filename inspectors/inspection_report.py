@@ -138,6 +138,11 @@ def render_inspection_report_markdown(
 
     sections.append("## Recommendations")
     sections.append("")
+    sections.append(
+        "These are read-only recommendations for technician review. "
+        "No changes were made to Exchange Online or to the mailbox."
+    )
+    sections.append("")
 
     if recommendations:
         for recommendation in recommendations:
@@ -276,7 +281,9 @@ def _build_suggested_note(
 
     if recommendations:
         lines.append("")
-        lines.append("Suggested next steps from the inspector:")
+        lines.append(
+            "Suggested next steps for technician review (no changes performed):"
+        )
 
         for recommendation in recommendations:
             lines.append(f"- {recommendation}")

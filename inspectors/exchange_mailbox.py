@@ -189,34 +189,114 @@ def _snapshot_to_evidence(snapshot: ExchangeMailboxSnapshot) -> list[InspectorEv
     return evidence
 
 
-def _build_recommendations(snapshot: ExchangeMailboxSnapshot) -> list[str]:
-    recommendations: list[str] = []
+_ARCHIVE_DISABLED_VALUES = {"disabled", "not_enabled", "none", "not applicable", "not_applicable"}
+_ARCHIVE_ENABLED_VALUES = {"enabled", "active"}
+_ARCHIVE_AUTO_DISABLED_VALUES = {"disabled", "not_enabled", "false", "off"}
 
+
+def _build_recommendations(snapshot: ExchangeMailboxSnapshot) -> list[str]:
     archive_status = (snapshot.archive_status or "").lower()
     auto_expanding_status = (snapshot.auto_expanding_archive_status or "").lower()
     quota_status = (snapshot.quota_warning_status or "").lower()
 
-    if archive_status in {"disabled", "not_enabled", "none"}:
-        recommendations.append(
-            "exchange.archive.enable may be relevant if archive is required."
-        )
-
-    archive_quota_issue = "archive" in quota_status and (
-        "full" in quota_status or "quota" in quota_status
+    primary_full = _primary_mailbox_appears_full(quota_status)
+    archive_full = _archive_mailbox_appears_full(quota_status)
+    appears_large = primary_full or archive_full
+    archive_disabled = archive_status in _ARCHIVE_DISABLED_VALUES
+    archive_enabled = archive_status in _ARCHIVE_ENABLED_VALUES
+    auto_expanding_disabled = auto_expanding_status in _ARCHIVE_AUTO_DISABLED_VALUES
+    has_archive_signal = bool(archive_status) and (
+        appears_large or "archive" in quota_status
     )
 
-    if archive_status == "enabled" and archive_quota_issue:
+    recommendations: list[str] = []
+
+    if archive_disabled and primary_full:
         recommendations.append(
-            "exchange.archive.enable_auto_expanding may be relevant if archive capacity "
-            "is the issue."
+            "Mailbox appears full and archive is disabled. Review whether enabling "
+            "archive (exchange.archive.enable) is appropriate. No change has been made."
+        )
+    elif archive_disabled and has_archive_signal:
+        recommendations.append(
+            "Archive is disabled. Review whether enabling archive "
+            "(exchange.archive.enable) is appropriate based on the requester's needs. "
+            "No change has been made."
         )
 
-    if archive_status == "enabled" and auto_expanding_status in {"disabled", "not_enabled"}:
+    if archive_enabled and archive_full and auto_expanding_disabled:
         recommendations.append(
-            "Confirm whether auto-expanding archive is needed before any archive expansion."
+            "Archive is enabled and appears full while auto-expanding archive is "
+            "disabled. Review whether auto-expanding archive "
+            "(exchange.archive.enable_auto_expanding) is appropriate. "
+            "No change has been made."
         )
+    elif archive_enabled and archive_full:
+        recommendations.append(
+            "Archive is enabled and appears full. Review the retention policy and "
+            "archive capacity before any change. No change has been made."
+        )
+    elif archive_enabled and primary_full:
+        recommendations.append(
+            "Primary mailbox appears full while archive is enabled. Review the "
+            "retention policy and confirm archive move policy is processing. "
+            "No change has been made."
+        )
+    elif archive_enabled and auto_expanding_disabled and "archive" in quota_status:
+        recommendations.append(
+            "Archive is enabled and a quota signal mentions the archive while "
+            "auto-expanding archive is disabled. Review whether auto-expanding "
+            "archive is appropriate. No change has been made."
+        )
+
+    if not recommendations:
+        if appears_large and not archive_status:
+            recommendations.append(
+                "Mailbox appears full but archive status is unknown. Manual review "
+                "of archive configuration is recommended. No change has been made."
+            )
+        else:
+            recommendations.append(
+                "No archive-readiness recommendation was generated. Existing facts "
+                "do not indicate a mailbox-full or archive-capacity problem. "
+                "No change has been made."
+            )
 
     return recommendations
+
+
+def _primary_mailbox_appears_full(quota_status: str) -> bool:
+    if not quota_status:
+        return False
+
+    if "archive" in quota_status:
+        return False
+
+    return _quota_indicates_full(quota_status)
+
+
+def _archive_mailbox_appears_full(quota_status: str) -> bool:
+    if not quota_status or "archive" not in quota_status:
+        return False
+
+    return _quota_indicates_full(quota_status)
+
+
+def _quota_indicates_full(quota_status: str) -> bool:
+    return any(
+        marker in quota_status
+        for marker in (
+            "full",
+            "warning",
+            "near_quota",
+            "near quota",
+            "send_prohibited",
+            "send prohibited",
+            "send_receive_prohibited",
+            "send receive prohibited",
+            "issuewarning",
+            "prohibitsend",
+        )
+    )
 
 
 def _default_limitations() -> list[str]:
