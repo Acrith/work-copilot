@@ -1,3 +1,26 @@
+from inspectors.active_directory_group import (
+    ActiveDirectoryGroupInspectionError,
+    ActiveDirectoryGroupInspectorClient,
+    ActiveDirectoryGroupNotFoundError,
+    ActiveDirectoryGroupSnapshot,
+    MockActiveDirectoryGroupInspectorClient,
+    inspect_active_directory_group,
+)
+from inspectors.active_directory_group_membership import (
+    ActiveDirectoryGroupMembershipInspectionError,
+    ActiveDirectoryGroupMembershipInspectorClient,
+    ActiveDirectoryGroupMembershipSnapshot,
+    MockActiveDirectoryGroupMembershipInspectorClient,
+    inspect_active_directory_group_membership,
+)
+from inspectors.active_directory_user import (
+    ActiveDirectoryUserInspectionError,
+    ActiveDirectoryUserInspectorClient,
+    ActiveDirectoryUserNotFoundError,
+    ActiveDirectoryUserSnapshot,
+    MockActiveDirectoryUserInspectorClient,
+    inspect_active_directory_user,
+)
 from inspectors.exchange_auth_config import (
     ExchangePowerShellAuthConfig,
     ExchangePowerShellAuthConfigError,
@@ -68,6 +91,9 @@ from inspectors.inspection_report import (
 )
 from inspectors.mock import (
     create_mock_inspector_registry,
+    inspect_mock_active_directory_group,
+    inspect_mock_active_directory_group_membership,
+    inspect_mock_active_directory_user,
     inspect_mock_exchange_mailbox,
 )
 from inspectors.models import (
@@ -123,6 +149,26 @@ __all__ = [
     "InspectorRunOutput",
     "create_mock_inspector_registry",
     "inspect_mock_exchange_mailbox",
+    "inspect_mock_active_directory_user",
+    "inspect_mock_active_directory_group",
+    "inspect_mock_active_directory_group_membership",
+    "ActiveDirectoryUserInspectionError",
+    "ActiveDirectoryUserInspectorClient",
+    "ActiveDirectoryUserNotFoundError",
+    "ActiveDirectoryUserSnapshot",
+    "MockActiveDirectoryUserInspectorClient",
+    "inspect_active_directory_user",
+    "ActiveDirectoryGroupInspectionError",
+    "ActiveDirectoryGroupInspectorClient",
+    "ActiveDirectoryGroupNotFoundError",
+    "ActiveDirectoryGroupSnapshot",
+    "MockActiveDirectoryGroupInspectorClient",
+    "inspect_active_directory_group",
+    "ActiveDirectoryGroupMembershipInspectionError",
+    "ActiveDirectoryGroupMembershipInspectorClient",
+    "ActiveDirectoryGroupMembershipSnapshot",
+    "MockActiveDirectoryGroupMembershipInspectorClient",
+    "inspect_active_directory_group_membership",
     "run_inspector_and_save",
     "INSPECTOR_ID_ALIASES",
     "SUPPORTED_INSPECTOR_IDS",

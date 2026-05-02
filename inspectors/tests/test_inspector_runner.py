@@ -1,6 +1,12 @@
 import pytest
 
-from inspectors.mock import create_mock_inspector_registry, inspect_mock_exchange_mailbox
+from inspectors.mock import (
+    create_mock_inspector_registry,
+    inspect_mock_active_directory_group,
+    inspect_mock_active_directory_group_membership,
+    inspect_mock_active_directory_user,
+    inspect_mock_exchange_mailbox,
+)
 from inspectors.models import (
     InspectorRequest,
     InspectorResult,
@@ -60,6 +66,20 @@ def test_create_mock_inspector_registry_registers_mailbox_inspector():
     handler = registry.get("exchange.mailbox.inspect")
 
     assert handler is inspect_mock_exchange_mailbox
+
+
+def test_create_mock_inspector_registry_registers_active_directory_inspectors():
+    registry = create_mock_inspector_registry()
+
+    assert registry.get("active_directory.user.inspect") is (
+        inspect_mock_active_directory_user
+    )
+    assert registry.get("active_directory.group.inspect") is (
+        inspect_mock_active_directory_group
+    )
+    assert registry.get("active_directory.group_membership.inspect") is (
+        inspect_mock_active_directory_group_membership
+    )
 
 
 def test_run_inspector_and_save_writes_registered_result(tmp_path):

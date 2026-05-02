@@ -169,7 +169,7 @@ def test_build_inspector_request_rejects_unsupported_inspector():
         build_inspector_request_from_skill_plan(
             request_id="55948",
             skill_plan_text="",
-            inspector_id="active_directory.user.lookup",
+            inspector_id="exchange.shared_mailbox.get_full_access_permissions",
         )
 
 
@@ -195,7 +195,7 @@ def test_build_exchange_mailbox_inspector_request_requires_mailbox_input():
 def test_select_supported_inspector_tool_returns_first_supported_tool():
     selected = select_supported_inspector_tool(
         [
-            "active_directory.user.lookup",
+            "exchange.shared_mailbox.get_full_access_permissions",
             "exchange.mailbox.inspect",
         ]
     )
@@ -206,8 +206,8 @@ def test_select_supported_inspector_tool_returns_first_supported_tool():
 def test_select_supported_inspector_tool_returns_none_when_no_supported_tool():
     selected = select_supported_inspector_tool(
         [
-            "active_directory.user.lookup",
             "exchange.shared_mailbox.get_full_access_permissions",
+            "exchange.shared_mailbox.grant_full_access",
         ]
     )
 
@@ -235,9 +235,9 @@ def test_normalize_inspector_id_strips_backticks():
 
 
 def test_normalize_inspector_id_passes_through_unknown_ids():
-    assert normalize_inspector_id("active_directory.user.lookup") == (
-        "active_directory.user.lookup"
-    )
+    assert normalize_inspector_id(
+        "exchange.shared_mailbox.get_full_access_permissions"
+    ) == "exchange.shared_mailbox.get_full_access_permissions"
 
 
 def test_select_supported_inspector_tool_normalizes_granular_ids():
@@ -347,6 +347,163 @@ def test_select_inspector_for_skill_plan_returns_none_when_skill_match_unsupport
 """
 
     assert select_inspector_for_skill_plan(skill_plan) is None
+
+
+@pytest.mark.parametrize(
+    "ad_id",
+    [
+        "active_directory.user.inspect",
+        "active_directory.group.inspect",
+        "active_directory.group_membership.inspect",
+    ],
+)
+def test_select_inspector_for_skill_plan_accepts_active_directory_ids(ad_id):
+    skill_plan = f"""
+- Skill match: none
+
+## Automation handoff
+
+- Suggested inspector tools: {ad_id}
+"""
+
+    selection = select_inspector_for_skill_plan(skill_plan)
+
+    assert selection == SkillPlanInspectorSelection(
+        inspector_id=ad_id,
+        source="suggested_inspector_tools",
+    )
+
+
+@pytest.mark.parametrize(
+    "granular_id, expected",
+    [
+        ("active_directory.user.lookup", "active_directory.user.inspect"),
+        (
+            "active_directory.user.get_properties",
+            "active_directory.user.inspect",
+        ),
+        ("active_directory.group.lookup", "active_directory.group.inspect"),
+        (
+            "active_directory.group_membership.lookup",
+            "active_directory.group_membership.inspect",
+        ),
+        (
+            "active_directory.group_membership.check",
+            "active_directory.group_membership.inspect",
+        ),
+    ],
+)
+def test_normalize_inspector_id_maps_active_directory_aliases(
+    granular_id, expected
+):
+    assert normalize_inspector_id(granular_id) == expected
+
+
+def test_normalize_inspector_id_does_not_map_group_get_members_to_membership_inspect():
+    # `group.get_members` implies enumerating all members, which the
+    # group_membership inspector does not do. Keep it un-aliased so the skill
+    # plan does not falsely promise full member listing.
+    assert normalize_inspector_id("active_directory.group.get_members") == (
+        "active_directory.group.get_members"
+    )
+
+
+def test_build_inspector_request_for_active_directory_user_uses_upn():
+    skill_plan = """
+## Extracted inputs
+
+- field: user_principal_name
+  status: present
+  value: user@example.com
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = build_inspector_request_from_skill_plan(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.user.inspect",
+    )
+
+    assert request.inspector == "active_directory.user.inspect"
+    assert request.target.type == "active_directory_user"
+    assert request.target.id == "user@example.com"
+    assert request.inputs["user_identifier"] == "user@example.com"
+
+
+def test_build_inspector_request_for_active_directory_group_uses_group_name():
+    skill_plan = """
+## Extracted inputs
+
+- field: group_name
+  status: present
+  value: Engineers
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = build_inspector_request_from_skill_plan(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.group.inspect",
+    )
+
+    assert request.inspector == "active_directory.group.inspect"
+    assert request.target.type == "active_directory_group"
+    assert request.target.id == "Engineers"
+    assert request.inputs["group_identifier"] == "Engineers"
+
+
+def test_build_inspector_request_for_group_membership_requires_user_and_group():
+    skill_plan = """
+## Extracted inputs
+
+- field: user_principal_name
+  status: present
+  value: user@example.com
+  evidence: saved context
+  needed_now: yes
+
+- field: group_name
+  status: present
+  value: Engineers
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = build_inspector_request_from_skill_plan(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.group_membership.inspect",
+    )
+
+    assert request.inspector == "active_directory.group_membership.inspect"
+    assert request.target.type == "active_directory_group_membership"
+    assert request.target.id == "user@example.com@Engineers"
+    assert request.inputs["user_identifier"] == "user@example.com"
+    assert request.inputs["group_identifier"] == "Engineers"
+
+
+def test_build_inspector_request_group_membership_rejects_when_inputs_missing():
+    skill_plan = """
+## Extracted inputs
+
+- field: user_principal_name
+  status: missing
+  value:
+  evidence: none
+  needed_now: yes
+"""
+
+    with pytest.raises(
+        ValueError,
+        match="missing user and/or group identifier",
+    ):
+        build_inspector_request_from_skill_plan(
+            request_id="55948",
+            skill_plan_text=skill_plan,
+            inspector_id="active_directory.group_membership.inspect",
+        )
 
 
 def test_select_inspector_for_skill_plan_normalizes_suggested_granular_ids():
