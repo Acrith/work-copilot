@@ -2,6 +2,7 @@
 
 from interactive_commands import (
     build_servicedesk_context_prompt,
+    build_servicedesk_draft_note_prompt,
     build_servicedesk_draft_reply_prompt,
     build_servicedesk_skill_plan_prompt,
     build_servicedesk_triage_prompt,
@@ -72,6 +73,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/sdp save-draft <id>" in help_text
     assert "/sdp inspect-skill" in help_text
     assert "/sdp inspection-report" in help_text
+    assert "/sdp draft-note" in help_text
     assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
@@ -426,3 +428,225 @@ def test_parse_sdp_inspection_report_underscore_alias():
         parse_interactive_command("/sdp inspection_report 55948")
         == "sdp_inspection_report"
     )
+
+
+def test_parse_sdp_draft_note_command():
+    assert parse_interactive_command("/sdp draft-note 55948") == "sdp_draft_note"
+
+
+def test_parse_sdp_draft_note_underscore_alias():
+    assert parse_interactive_command("/sdp draft_note 55948") == "sdp_draft_note"
+
+
+def test_parse_sdp_note_short_alias():
+    assert parse_interactive_command("/sdp note 55948") == "sdp_draft_note"
+
+
+def test_build_servicedesk_draft_note_prompt_is_internal_and_local_only():
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    assert "internal technician note draft" in prompt
+    assert (
+        "internal technician work-log entry, not a requester-facing reply"
+        in prompt
+    )
+    assert "ServiceDesk internal note draft" in prompt
+    assert "Ticket: 55948" in prompt
+    assert "Note type: internal technician note" in prompt
+    # The "local-only draft" parenthetical must NOT appear in the title — it
+    # belongs only in the Local draft metadata section.
+    assert "Note type: internal technician note (local-only draft)" not in prompt
+    # Must explicitly forbid claims that the note was posted/sent.
+    assert (
+        "Do not claim the note was posted, sent, or saved to ServiceDesk." in prompt
+    )
+    # Read-only + chronology rules from the shared blocks must be present.
+    assert "Use only read-only ServiceDesk tools." in prompt
+    assert "Analyze the ticket chronologically" in prompt
+
+
+def test_build_servicedesk_draft_note_prompt_separates_note_body_from_metadata():
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    # The structure must split postable content from local metadata so a
+    # future /sdp save-note step can post only the Note body section.
+    assert "## Note body" in prompt
+    assert "## Local draft metadata" in prompt
+
+    body_index = prompt.find("## Note body")
+    metadata_index = prompt.find("## Local draft metadata")
+
+    assert body_index != -1
+    assert metadata_index != -1
+    assert body_index < metadata_index
+
+    # Local-draft commentary must be confined to the metadata section, not
+    # echoed inside the Note body.
+    assert "Generated locally by Work Copilot." in prompt
+    assert "Not posted to ServiceDesk yet." in prompt
+    assert "Source files used:" in prompt
+    assert (
+        "do not put local-draft commentary inside it" in prompt
+        or "do not say 'local-only draft'" in prompt.lower()
+    )
+
+    # A future /sdp save-note workflow should be reflected in the prompt.
+    assert "/sdp save-note" in prompt
+
+
+def test_build_servicedesk_draft_note_prompt_requires_neutral_operational_body():
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    # The Note body must be neutral, concise, operational, and free of
+    # filler review steps.
+    assert "neutral, concise, and operational" in prompt
+    assert "Operational tone." in prompt
+    assert "Review the inspection findings" in prompt  # explicitly forbidden filler
+    assert "Confirm no changes should be made" in prompt  # explicitly forbidden filler
+    assert (
+        "If there is no real follow-up, omit the `Follow-up:` section entirely."
+        in prompt
+    )
+    assert "No changes were made." in prompt
+    assert "Mailbox content and attachments were not inspected." in prompt
+    # Greetings/sign-offs are forbidden because this is technician-facing.
+    assert "No greetings, sign-offs, or signatures." in prompt
+
+
+def test_build_servicedesk_draft_note_prompt_requires_structured_note_body():
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    # The Note body shape must be explicitly required: opening sentence,
+    # Findings, optional Assessment, Scope, optional Follow-up.
+    assert "Required Note body shape" in prompt
+    assert "One opening sentence stating what was inspected" in prompt
+    assert "`Findings:` label followed by a Markdown bullet list" in prompt
+    assert "`Assessment:` label followed by a Markdown bullet list" in prompt
+    assert "`Scope:` label followed by a Markdown bullet list" in prompt
+    assert "`Follow-up:` label followed by a Markdown bullet list" in prompt
+
+    # Assessment must come before Scope, and Scope must come before Follow-up.
+    findings_index = prompt.find("`Findings:` label")
+    assessment_index = prompt.find("`Assessment:` label")
+    scope_index = prompt.find("`Scope:` label")
+    followup_index = prompt.find("`Follow-up:` label")
+
+    assert findings_index < assessment_index < scope_index < followup_index
+
+    # One fact per bullet, no stacking.
+    assert "One fact per bullet under `Findings:`." in prompt
+    assert (
+        "Do not stack multiple facts into one bullet or one paragraph." in prompt
+    )
+
+    # The illustrative example must reflect the desired technician-note
+    # shape, including an Assessment block sourced from inspector
+    # recommendations.
+    assert (
+        "Read-only mailbox inspection completed for `user@example.com`." in prompt
+    )
+    assert "Findings:\n- Mailbox exists: yes" in prompt
+    assert "- Display name: Example User" in prompt
+    assert "- Recipient type: UserMailbox" in prompt
+    assert "- Mailbox size: 136.7 MB" in prompt
+    assert "- Item count: 1210" in prompt
+    assert "Assessment:\n- No archive-readiness recommendation was generated." in prompt
+    assert "Scope:\n- No changes were made." in prompt
+    assert "- Mailbox content and attachments were not inspected." in prompt
+
+
+def test_build_servicedesk_draft_note_prompt_separates_assessment_from_followup():
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    # Follow-up is reserved for concrete operational actions, not
+    # assessments or fallback recommendation text.
+    assert (
+        "`Follow-up:` is reserved for concrete operational next actions."
+        in prompt
+    )
+    assert (
+        "Do not put recommendation/fallback text such as `No archive-"
+        "readiness recommendation was generated...` under `Follow-up:`."
+        in prompt
+    )
+    assert "That text belongs under `Assessment:`." in prompt
+
+    # Filler follow-ups stay forbidden, including the archive-readiness
+    # fallback wording.
+    assert (
+        "Do not include filler follow-ups such as `Review "
+        "the inspection findings`, `Confirm no changes should be made`, or "
+        "`No archive-readiness recommendation was generated...`." in prompt
+    )
+
+
+def test_build_servicedesk_draft_note_prompt_uses_inspection_report_when_present():
+    saved_inspection_report = (
+        "# Inspection report for ServiceDesk request 55948\n\n"
+        "## Findings\n\n"
+        "- **mailbox_size**: 136.6 MB\n"
+        "- **archive_status**: disabled\n\n"
+        "## Suggested ticket note\n\n"
+        "Read-only inspection completed. No changes were made.\n"
+    )
+
+    prompt = build_servicedesk_draft_note_prompt(
+        "55948",
+        saved_inspection_report=saved_inspection_report,
+    )
+
+    assert "<saved_inspection_report>" in prompt
+    assert "</saved_inspection_report>" in prompt
+    assert "**mailbox_size**: 136.6 MB" in prompt
+    assert "Inspection report rules:" in prompt
+    assert (
+        "Do not claim actions were posted, sent, or applied automatically." in prompt
+    )
+    assert "If the inspection report indicates no changes were made" in prompt
+    assert "Inspection report used: <yes/no>" in prompt
+
+
+def test_build_servicedesk_draft_note_prompt_suggests_running_inspection_when_missing():
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    assert "<saved_inspection_report>" not in prompt
+    assert "No saved inspection report is available" in prompt
+    assert "/sdp inspection-report 55948" in prompt
+    assert "Do not invent technical findings." in prompt
+
+
+def test_build_servicedesk_draft_note_prompt_combines_context_and_inspection():
+    saved_context = "# ServiceDesk request context\n\nTicket: 55948"
+    saved_inspection_report = "# Inspection report for ServiceDesk request 55948"
+
+    prompt = build_servicedesk_draft_note_prompt(
+        "55948",
+        saved_context=saved_context,
+        saved_inspection_report=saved_inspection_report,
+    )
+
+    context_index = prompt.find("<saved_servicedesk_context>")
+    report_index = prompt.find("<saved_inspection_report>")
+
+    assert context_index != -1
+    assert report_index != -1
+    assert context_index < report_index
+
+
+def test_build_servicedesk_draft_note_prompt_forbids_secret_and_content_leakage():
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    forbidden_lines = [
+        "secrets",
+        "authentication config",
+        "certificate paths",
+        "thumbprints",
+        "tenant identifiers",
+        "raw PowerShell transcripts",
+        "mailbox content",
+        "message subjects/bodies",
+        "attachments",
+    ]
+
+    for token in forbidden_lines:
+        assert token in prompt, f"Prompt missing safety mention: {token}"
