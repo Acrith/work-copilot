@@ -55,6 +55,15 @@ from inspectors.factory import (
     create_configured_inspector_registry,
     create_configured_inspector_registry_from_env,
 )
+from inspectors.inspection_report import (
+    SUPPORTED_REPORT_INSPECTOR_IDS,
+    InspectionReportError,
+    InspectionReportNotFoundError,
+    InspectionReportOutput,
+    build_servicedesk_inspection_report,
+    build_servicedesk_inspection_report_path,
+    render_inspection_report_markdown,
+)
 from inspectors.mock import (
     create_mock_inspector_registry,
     inspect_mock_exchange_mailbox,
@@ -156,6 +165,13 @@ __all__ = [
     "ConfiguredInspectorRegistry",
     "create_configured_inspector_registry",
     "create_configured_inspector_registry_from_env",
+    "SUPPORTED_REPORT_INSPECTOR_IDS",
+    "InspectionReportError",
+    "InspectionReportNotFoundError",
+    "InspectionReportOutput",
+    "build_servicedesk_inspection_report",
+    "build_servicedesk_inspection_report_path",
+    "render_inspection_report_markdown",
     "ExchangePowerShellAuthConfig",
     "ExchangePowerShellAuthConfigError",
     "ExchangePowerShellAuthMode",

@@ -71,6 +71,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/sdp draft-reply <id>" in help_text
     assert "/sdp save-draft <id>" in help_text
     assert "/sdp inspect-skill" in help_text
+    assert "/sdp inspection-report" in help_text
     assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
@@ -357,3 +358,17 @@ def test_build_servicedesk_skill_plan_prompt_distinguishes_current_issue_from_hi
 
 def test_parse_sdp_inspect_skill_command():
     assert parse_interactive_command("/sdp inspect-skill 55948") == "sdp_inspect_skill"
+
+
+def test_parse_sdp_inspection_report_command():
+    assert (
+        parse_interactive_command("/sdp inspection-report 55948")
+        == "sdp_inspection_report"
+    )
+
+
+def test_parse_sdp_inspection_report_underscore_alias():
+    assert (
+        parse_interactive_command("/sdp inspection_report 55948")
+        == "sdp_inspection_report"
+    )
