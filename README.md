@@ -298,6 +298,7 @@ Related docs:
 - [`docs/inspectors.md`](docs/inspectors.md) — read-only inspector architecture.
 - [`docs/exchange_mailbox_inspector_client.md`](docs/exchange_mailbox_inspector_client.md) — Exchange mailbox inspector design.
 - [`docs/exchange_real_inspector_smoke.md`](docs/exchange_real_inspector_smoke.md) — opt-in smoke test for the real read-only Exchange backend.
+- [`docs/active_directory_inspector_client.md`](docs/active_directory_inspector_client.md) — planned read-only Active Directory inspector backend design.
 
 High-level flow:
 
