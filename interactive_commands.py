@@ -90,6 +90,14 @@ AUTOMATION_CANDIDATE_LABELS = [
     "yes",
 ]
 
+CAPABILITY_CLASSIFICATION_LABELS = [
+    "read_only_inspection_now",
+    "draft_only_manual_now",
+    "blocked_missing_information",
+    "unsupported_no_safe_capability",
+    "future_automation_candidate",
+]
+
 RISK_LEVEL_LABELS = [
     "low",
     "medium",
@@ -866,6 +874,60 @@ def build_servicedesk_skill_plan_prompt(
         "- Do not invent identifier values. If the saved context does not "
         "contain an identifier required by a listed inspector, mark the field "
         "`status: missing` rather than dropping the bullet.\n\n"
+        "Capability classification rules:\n"
+        "- Pick exactly one `capability_classification` label from the "
+        "allowed list. The chosen label must be consistent with the rest "
+        "of the plan: `Suggested inspector tools`, `Ready for inspection`, "
+        "`Ready for execution`, `Work status`, and `Missing information "
+        "needed now`.\n"
+        "- `read_only_inspection_now`: at least one registered inspector ID "
+        "is listed under `Suggested inspector tools` AND every required "
+        "input for those inspectors is `status: present` in `Extracted "
+        "inputs`. Set `Ready for inspection: yes`. Examples: "
+        "`exchange.mailbox.inspect` with `mailbox_address`, "
+        "`active_directory.user.inspect` with `target_user`/"
+        "`sam_account_name`, all three AD inspectors with both a user "
+        "and a group identifier.\n"
+        "- `draft_only_manual_now`: the safest next action is a manual "
+        "step, a draft reply, an internal note, or another non-mutating "
+        "action that a technician will perform by hand. Write-shaped "
+        "skills that have no implemented executor (for example AD group "
+        "membership add/remove, mailbox/archive enablement, password "
+        "reset) fall HERE while inputs are present but no executor is "
+        "wired. Set `Ready for execution: no` and leave `Suggested "
+        "execute tools: none`. Inspector tools may still be listed if a "
+        "read-only check is part of the next manual action.\n"
+        "- `blocked_missing_information`: a registered inspector or a "
+        "matched skill cannot proceed because at least one required "
+        "input is `status: missing` or `status: unclear`. Use this when "
+        "the missing input is needed for the current next action. "
+        "Reflect it in `Missing information needed now` and `Current "
+        "blocker`. Do not list inspector tools whose required inputs are "
+        "missing — leave `Suggested inspector tools: none` (or list only "
+        "inspectors whose inputs are fully present) and set `Ready for "
+        "inspection: no` in that case.\n"
+        "- `unsupported_no_safe_capability`: the request asks for "
+        "something out of scope — broad/destructive operations, mass "
+        "enumeration (for example listing all members of a large group), "
+        "writes that have no skill, anything that would require a "
+        "forbidden command, or anything where the safest answer is to "
+        "decline. Use `Skill match: none` and explain why under `Safety "
+        "notes`.\n"
+        "- `future_automation_candidate`: the request is a recognisable "
+        "operational pattern that does not yet have a registered skill or "
+        "executor in Work Copilot, but could safely be one in the future. "
+        "Use this when you would otherwise be tempted to invent a tool. "
+        "Suggest in `Safety notes` what skill or executor would need to "
+        "exist; do not list any unsupported tool name under `Suggested "
+        "inspector tools` or `Suggested execute tools`.\n"
+        "- Inspector tools must NEVER be suggested for "
+        "`unsupported_no_safe_capability` or `future_automation_"
+        "candidate`. They may be suggested for the other three labels "
+        "only when the inputs that those inspectors require are present.\n"
+        "- `Ready for execution` must remain `no` for every "
+        "classification because executor wiring is out of scope for this "
+        "workflow.\n\n"
+        f"{format_allowed_label_section('Allowed capability_classification labels', CAPABILITY_CLASSIFICATION_LABELS)}"
         "Use this output structure:\n\n"
         "# ServiceDesk skill plan\n\n"
         "## Metadata\n\n"
@@ -876,6 +938,7 @@ def build_servicedesk_skill_plan_prompt(
         "- Work status: <not_started/in_progress/completed/blocked/unclear>\n"
         "- Current unresolved issue: <short description, or none>\n"
         "- Automation status: draft_only\n"
+        "- Capability classification: <one allowed capability_classification label>\n"
         "- Risk level: <low/medium/high/risky>\n\n"
         "## Why this skill matches\n\n"
         "<brief explanation. Mention whether the match is for current work or historical ticket context.>\n\n"
