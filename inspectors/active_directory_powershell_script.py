@@ -86,6 +86,50 @@ _AD_USER_CALCULATED_PROJECTION = (
 )
 
 
+_AD_GROUP_PLAIN_PROJECTION_FIELDS = (
+    "Name",
+    "SamAccountName",
+    "Mail",
+    "DistinguishedName",
+)
+
+_AD_PRINCIPAL_GROUP_MEMBERSHIP_PLAIN_PROJECTION_FIELDS = (
+    "Name",
+    "SamAccountName",
+    "DistinguishedName",
+)
+
+
+def _build_enum_to_string_select_lines(
+    plain_fields: tuple[str, ...],
+    enum_fields: tuple[str, ...],
+) -> list[str]:
+    """Emit `Select-Object` lines projecting plain fields plus enum-typed
+    fields rendered through `.ToString()` so JSON gets readable enum names
+    (for example "Global"/"Security") instead of raw numeric values.
+    """
+    lines: list[str] = []
+    last_index = len(plain_fields) + len(enum_fields) - 1
+    written = 0
+
+    for field in plain_fields:
+        suffix = ", `" if written < last_index else ""
+        lines.append(f"            {field}{suffix}")
+        written += 1
+
+    for field in enum_fields:
+        suffix = ", `" if written < last_index else ""
+        lines.append(
+            f"            @{{Name='{field}'; Expression={{ "
+            f"if ($null -ne $_.{field}) {{ $_.{field}.ToString() }} "
+            "else { $null } }}"
+            f"{suffix}"
+        )
+        written += 1
+
+    return lines
+
+
 def build_active_directory_powershell_script(
     command: ActiveDirectoryCommand,
 ) -> str:
@@ -94,10 +138,6 @@ def build_active_directory_powershell_script(
     payload_base64 = encode_active_directory_command_payload(command)
 
     user_properties_csv = ",".join(f"'{name}'" for name in AD_USER_PROPERTIES)
-    group_projection_csv = ",".join(AD_GROUP_PROJECTION_FIELDS)
-    membership_projection_csv = ",".join(
-        AD_PRINCIPAL_GROUP_MEMBERSHIP_PROJECTION_FIELDS
-    )
 
     user_select_lines: list[str] = ["        $result = $raw | Select-Object `"]
 
@@ -112,6 +152,24 @@ def build_active_directory_powershell_script(
         )
 
     user_select_lines.append("            Manager")
+
+    group_select_lines: list[str] = ["        $result = $raw | Select-Object `"]
+    group_select_lines.extend(
+        _build_enum_to_string_select_lines(
+            _AD_GROUP_PLAIN_PROJECTION_FIELDS,
+            ("GroupScope", "GroupCategory"),
+        )
+    )
+
+    membership_select_lines: list[str] = [
+        "        $result = $raw | Select-Object `"
+    ]
+    membership_select_lines.extend(
+        _build_enum_to_string_select_lines(
+            _AD_PRINCIPAL_GROUP_MEMBERSHIP_PLAIN_PROJECTION_FIELDS,
+            ("GroupScope", "GroupCategory"),
+        )
+    )
 
     lines = [
         "$ErrorActionPreference = 'Stop'",
@@ -142,15 +200,12 @@ def build_active_directory_powershell_script(
         "    }",
         "    'Get-ADGroup' {",
         "        $raw = Get-ADGroup @params",
-        f"        $result = $raw | Select-Object {group_projection_csv}",
+        *group_select_lines,
         "        break",
         "    }",
         "    'Get-ADPrincipalGroupMembership' {",
         "        $raw = Get-ADPrincipalGroupMembership @params",
-        (
-            "        $result = $raw | Select-Object "
-            f"{membership_projection_csv}"
-        ),
+        *membership_select_lines,
         "        break",
         "    }",
         "    default { throw \"Active Directory command is not allowlisted "

@@ -267,9 +267,21 @@ def test_build_active_directory_powershell_script_group_projection_fields():
     )
 
     assert "Get-ADGroup @params" in script
+    # Plain projected fields appear unmodified.
+    for field in ("Name", "SamAccountName", "Mail", "DistinguishedName"):
+        assert field in script
+    # GroupScope and GroupCategory are projected as readable strings via
+    # calculated properties using .ToString() so JSON gets enum names
+    # ("Global"/"Security") rather than raw numeric values like "1".
+    assert "Name='GroupScope'" in script
+    assert "$_.GroupScope.ToString()" in script
+    assert "Name='GroupCategory'" in script
+    assert "$_.GroupCategory.ToString()" in script
+    # The old comma-joined plain projection must no longer appear since
+    # those enum fields have been moved into calculated properties.
     assert (
         "Select-Object Name,SamAccountName,Mail,GroupScope,GroupCategory,"
-        "DistinguishedName" in script
+        "DistinguishedName" not in script
     )
 
 
@@ -282,9 +294,15 @@ def test_build_active_directory_powershell_script_principal_group_membership_pro
     )
 
     assert "Get-ADPrincipalGroupMembership @params" in script
+    for field in ("Name", "SamAccountName", "DistinguishedName"):
+        assert field in script
+    assert "Name='GroupScope'" in script
+    assert "$_.GroupScope.ToString()" in script
+    assert "Name='GroupCategory'" in script
+    assert "$_.GroupCategory.ToString()" in script
     assert (
         "Select-Object Name,SamAccountName,DistinguishedName,GroupScope,"
-        "GroupCategory" in script
+        "GroupCategory" not in script
     )
 
 

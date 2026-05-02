@@ -24,6 +24,117 @@ from inspectors.active_directory_user import (
 )
 
 
+def _escape_ldap_filter_value(value: str) -> str:
+    """RFC 4515 escape an LDAP filter assertion value.
+
+    Escapes the special characters that would otherwise change the meaning
+    of a filter: NUL, `*`, `(`, `)`, and the backslash itself.
+    """
+    out: list[str] = []
+
+    for ch in value:
+        if ch == "\\":
+            out.append(r"\5c")
+        elif ch == "*":
+            out.append(r"\2a")
+        elif ch == "(":
+            out.append(r"\28")
+        elif ch == ")":
+            out.append(r"\29")
+        elif ch == "\x00":
+            out.append(r"\00")
+        else:
+            out.append(ch)
+
+    return "".join(out)
+
+
+def _looks_like_email(value: str) -> bool:
+    return "@" in value
+
+
+def _build_user_email_filter(value: str) -> str:
+    escaped = _escape_ldap_filter_value(value)
+    return f"(|(userPrincipalName={escaped})(mail={escaped}))"
+
+
+def _build_user_lookup_command(user_identifier: str) -> ActiveDirectoryCommand:
+    if _looks_like_email(user_identifier):
+        return ActiveDirectoryCommand(
+            name="Get-ADUser",
+            parameters={"LDAPFilter": _build_user_email_filter(user_identifier)},
+        )
+
+    return ActiveDirectoryCommand(
+        name="Get-ADUser",
+        parameters={"Identity": user_identifier},
+    )
+
+
+# ---- Error sanitization ------------------------------------------------
+
+
+_RAW_POWERSHELL_DIAGNOSTIC_MARKERS = (
+    "At line:",
+    "CategoryInfo",
+    "FullyQualifiedErrorId",
+    "Get-ADUser @params",
+    "Get-ADGroup @params",
+    "Get-ADPrincipalGroupMembership @params",
+    "$ErrorActionPreference",
+    "Import-Module",
+    "ConvertTo-Json",
+    "ConvertFrom-Json",
+    "$payload",
+    "$params",
+    "$result",
+)
+
+
+def _classify_runner_error(error: str) -> str:
+    normalized = error.lower()
+
+    if (
+        "not found" in normalized
+        or "couldn't be found" in normalized
+        or "cannot find an object with identity" in normalized
+        or "objectnotfound" in normalized
+    ):
+        return "not_found"
+
+    if (
+        "access is denied" in normalized
+        or "access denied" in normalized
+        or "insufficient access rights" in normalized
+        or "unauthorized" in normalized
+    ):
+        return "access_denied"
+
+    return "other"
+
+
+def _sanitize_ad_command_error(
+    *,
+    command: str,
+    error: str,
+    fallback: str,
+) -> str:
+    """Return a sanitized error string suitable for inspector summaries.
+
+    Never echoes raw PowerShell diagnostics. Maps to a small set of stable
+    messages plus a generic fallback.
+    """
+    classification = _classify_runner_error(error)
+
+    if classification == "access_denied":
+        return "Active Directory inspection failed: access denied."
+
+    return f"{command} {fallback}"
+
+
+# ---- User client -------------------------------------------------------
+
+
 class ActiveDirectoryPowerShellUserClient(ActiveDirectoryUserInspectorClient):
     """Adapts a read-only AD command runner into the user inspector client."""
 
@@ -33,12 +144,7 @@ class ActiveDirectoryPowerShellUserClient(ActiveDirectoryUserInspectorClient):
     def get_user_snapshot(
         self, user_identifier: str
     ) -> ActiveDirectoryUserSnapshot:
-        result = self.runner.run(
-            ActiveDirectoryCommand(
-                name="Get-ADUser",
-                parameters={"Identity": user_identifier},
-            )
-        )
+        result = self.runner.run(_build_user_lookup_command(user_identifier))
 
         row = _required_row_for_user(result, user_identifier=user_identifier)
 
@@ -96,12 +202,15 @@ class ActiveDirectoryPowerShellGroupMembershipClient(
 ):
     """Adapts a read-only AD command runner into the membership inspector client.
 
-    Uses Get-ADPrincipalGroupMembership against the user, then checks whether
-    the requested group identifier matches any returned group by Name,
-    SamAccountName, or DistinguishedName. The effective list returned by
-    Get-ADPrincipalGroupMembership can include nested membership; this
-    adapter therefore reports `direct_or_nested_unknown` rather than
-    overclaiming direct membership.
+    On-prem AD's `Get-ADPrincipalGroupMembership` does not accept an email
+    address as `-Identity`. When the caller passes an email/UPN, the
+    adapter first resolves the user via `Get-ADUser -LDAPFilter ...` and
+    then issues the membership lookup against the resolved
+    DistinguishedName / SamAccountName / UserPrincipalName.
+
+    The effective list returned by `Get-ADPrincipalGroupMembership` can
+    include nested membership; this adapter therefore reports
+    `direct_or_nested_unknown` rather than overclaiming direct membership.
     """
 
     MEMBERSHIP_SOURCE = "direct_or_nested_unknown"
@@ -115,20 +224,27 @@ class ActiveDirectoryPowerShellGroupMembershipClient(
         user_identifier: str,
         group_identifier: str,
     ) -> ActiveDirectoryGroupMembershipSnapshot:
+        resolved_identity = self._resolve_user_identity_for_membership(
+            user_identifier
+        )
+
         result = self.runner.run(
             ActiveDirectoryCommand(
                 name="Get-ADPrincipalGroupMembership",
-                parameters={"Identity": user_identifier},
+                parameters={"Identity": resolved_identity},
             )
         )
 
         if not result.ok:
-            error = result.error or "Group membership lookup failed."
-            raise ActiveDirectoryGroupMembershipInspectionError(
-                f"{result.command} failed: {error}"
+            error = result.error or "command failed."
+            sanitized = _sanitize_ad_command_error(
+                command=result.command,
+                error=error,
+                fallback="failed during Active Directory inspection.",
             )
+            raise ActiveDirectoryGroupMembershipInspectionError(sanitized)
 
-        rows = _normalize_rows(
+        rows = _normalize_membership_rows(
             result.data,
             command_name="Get-ADPrincipalGroupMembership",
         )
@@ -145,6 +261,57 @@ class ActiveDirectoryPowerShellGroupMembershipClient(
             membership_source=self.MEMBERSHIP_SOURCE,
         )
 
+    def _resolve_user_identity_for_membership(self, user_identifier: str) -> str:
+        if not _looks_like_email(user_identifier):
+            return user_identifier
+
+        result = self.runner.run(_build_user_lookup_command(user_identifier))
+
+        if not result.ok:
+            classification = _classify_runner_error(result.error or "")
+
+            if classification == "not_found":
+                raise ActiveDirectoryGroupMembershipInspectionError(
+                    "AD user not found for membership inspection: "
+                    f"{user_identifier}"
+                )
+
+            if classification == "access_denied":
+                raise ActiveDirectoryGroupMembershipInspectionError(
+                    "Active Directory inspection failed: access denied."
+                )
+
+            raise ActiveDirectoryGroupMembershipInspectionError(
+                "Get-ADUser failed during Active Directory inspection."
+            )
+
+        row = _first_row(
+            result.data,
+            on_unsupported=lambda: ActiveDirectoryGroupMembershipInspectionError(
+                "Active Directory command returned unsupported data shape."
+            ),
+        )
+
+        if row is None:
+            raise ActiveDirectoryGroupMembershipInspectionError(
+                "AD user not found for membership inspection: "
+                f"{user_identifier}"
+            )
+
+        for key in ("DistinguishedName", "SamAccountName", "UserPrincipalName"):
+            value = _optional_str(row.get(key))
+
+            if value:
+                return value
+
+        raise ActiveDirectoryGroupMembershipInspectionError(
+            "AD user not found for membership inspection: "
+            f"{user_identifier}"
+        )
+
+
+# ---- Row helpers -------------------------------------------------------
+
 
 def _required_row_for_user(
     result: ActiveDirectoryCommandResult,
@@ -153,14 +320,20 @@ def _required_row_for_user(
 ) -> dict[str, object]:
     if not result.ok:
         error = result.error or "AD user lookup failed."
+        classification = _classify_runner_error(error)
 
-        if _looks_like_not_found(error):
+        if classification == "not_found":
             raise ActiveDirectoryUserNotFoundError(
                 f"AD user not found: {user_identifier}"
             )
 
+        if classification == "access_denied":
+            raise ActiveDirectoryUserInspectionError(
+                "Active Directory inspection failed: access denied."
+            )
+
         raise ActiveDirectoryUserInspectionError(
-            f"{result.command} failed: {error}"
+            f"{result.command} failed during Active Directory inspection."
         )
 
     row = _first_row(
@@ -185,14 +358,20 @@ def _required_row_for_group(
 ) -> dict[str, object]:
     if not result.ok:
         error = result.error or "AD group lookup failed."
+        classification = _classify_runner_error(error)
 
-        if _looks_like_not_found(error):
+        if classification == "not_found":
             raise ActiveDirectoryGroupNotFoundError(
                 f"AD group not found: {group_identifier}"
             )
 
+        if classification == "access_denied":
+            raise ActiveDirectoryGroupInspectionError(
+                "Active Directory inspection failed: access denied."
+            )
+
         raise ActiveDirectoryGroupInspectionError(
-            f"{result.command} failed: {error}"
+            f"{result.command} failed during Active Directory inspection."
         )
 
     row = _first_row(
@@ -235,7 +414,7 @@ def _first_row(
     raise on_unsupported()
 
 
-def _normalize_rows(
+def _normalize_membership_rows(
     data: Any,
     *,
     command_name: str,
@@ -280,16 +459,6 @@ def _row_matches_group(
             return True
 
     return False
-
-
-def _looks_like_not_found(error: str) -> bool:
-    normalized = error.lower()
-
-    return (
-        "not found" in normalized
-        or "couldn't be found" in normalized
-        or "cannot find an object with identity" in normalized
-    )
 
 
 def _optional_str(value: object) -> str | None:

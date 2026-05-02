@@ -58,7 +58,8 @@ def test_textual_app_handles_active_directory_config_error_in_inspect_skill():
 
 def test_textual_app_logs_real_exchange_and_real_active_directory_separately():
     """Real Exchange and real AD must each have their own log line; the
-    mock-only message must only appear when neither backend is real.
+    mock-only message must only appear when neither selected family will
+    actually contact a real backend.
     """
     from pathlib import Path
 
@@ -71,10 +72,19 @@ def test_textual_app_logs_real_exchange_and_real_active_directory_separately():
     assert "Running real Active Directory read-only inspector(s). " in source
     assert "On-prem AD will be contacted via PowerShell when called." in source
 
-    # The mock-only branch must be guarded by both flags being False.
-    assert "not configured_registry.uses_real_external_backend" in source
-    assert (
-        "not configured_registry.uses_real_active_directory_backend" in source
-    )
+    # Family-aware logging: real-backend log lines are gated on both the
+    # selected inspector family AND the configured registry's real-backend
+    # flag. This keeps "Exchange Online will be contacted" out of an
+    # AD-only run when Exchange is configured real but unselected.
+    assert 'inspector_id.startswith("exchange.")' in source
+    assert 'inspector_id.startswith("active_directory.")' in source
+    assert "real_exchange_will_be_contacted = (" in source
+    assert "real_ad_will_be_contacted = (" in source
+    assert "selected_includes_exchange" in source
+    assert "selected_includes_ad" in source
+
+    # The mock-only branch is now guarded by the family-aware flags.
+    assert "not real_exchange_will_be_contacted" in source
+    assert "not real_ad_will_be_contacted" in source
     assert "Running mock/registered inspector(s) only. " in source
     assert "No external systems will be contacted." in source
