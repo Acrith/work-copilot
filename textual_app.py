@@ -68,6 +68,7 @@ from interactive_session import (
 )
 from permissions import PermissionContext
 from providers.base import Provider
+from servicedesk_skill_plan import validate_skill_plan_text_as_lines
 from skills.loader import format_skill_definitions_for_prompt, load_skill_definitions
 from textual_approval import TextualApprovalHandler
 from textual_approval_screen import ApprovalScreen
@@ -466,6 +467,7 @@ class WorkCopilotTextualApp(App):
         user_prompt: str,
         save_output_path: str | None = None,
         save_latest_path: str | None = None,
+        post_save_callback: Callable[[str], list[str]] | None = None,
     ) -> None:
         log = self.query_one("#activity-log", RichLog)
         event_sink = TextualEventSink(
@@ -505,6 +507,20 @@ class WorkCopilotTextualApp(App):
                         self._log_system_message,
                         f"Latest output saved to: {latest_path}",
                     )
+
+                if post_save_callback is not None:
+                    try:
+                        advisory_lines = post_save_callback(final_text)
+                    except Exception as exc:  # noqa: BLE001
+                        advisory_lines = [
+                            f"Skill plan validation unavailable: {exc}"
+                        ]
+
+                    for advisory_line in advisory_lines:
+                        self.call_from_thread(
+                            self._log_system_message,
+                            advisory_line,
+                        )
 
             if final_text is None:
                 self.call_from_thread(
@@ -771,6 +787,7 @@ class WorkCopilotTextualApp(App):
                 skill_plan_prompt,
                 save_output_path=str(skill_plan_path),
                 save_latest_path=str(latest_skill_plan_path),
+                post_save_callback=validate_skill_plan_text_as_lines,
             )
             return
 
