@@ -144,12 +144,14 @@ def test_validate_runner_config_rejects_non_positive_timeout(timeout):
 def test_runner_invokes_powershell_with_expected_argv(monkeypatch):
     captured = {}
 
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         captured["argv"] = argv
         captured["capture_output"] = capture_output
         captured["text"] = text
         captured["timeout"] = timeout
         captured["check"] = check
+        captured["encoding"] = encoding
+        captured["errors"] = errors
         return subprocess.CompletedProcess(
             argv,
             0,
@@ -166,6 +168,8 @@ def test_runner_invokes_powershell_with_expected_argv(monkeypatch):
     assert result.data == {"DisplayName": "Example User"}
     assert captured["capture_output"] is True
     assert captured["text"] is True
+    assert captured["encoding"] == "utf-8"
+    assert captured["errors"] == "replace"
     assert captured["timeout"] == 60
     assert captured["check"] is False
     argv = captured["argv"]
@@ -178,7 +182,7 @@ def test_runner_invokes_powershell_with_expected_argv(monkeypatch):
 def test_runner_uses_configured_executable(monkeypatch):
     captured = {}
 
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         captured["argv"] = argv
         return subprocess.CompletedProcess(argv, 0, "{}", "")
 
@@ -191,7 +195,7 @@ def test_runner_uses_configured_executable(monkeypatch):
 
 
 def test_runner_accepts_list_of_dicts_json(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         return subprocess.CompletedProcess(
             argv,
             0,
@@ -213,7 +217,7 @@ def test_runner_accepts_list_of_dicts_json(monkeypatch):
 
 
 def test_runner_returns_data_none_for_empty_stdout(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     monkeypatch.setattr(runner_subprocess, "run", fake_run)
@@ -275,7 +279,7 @@ def test_runner_rejects_unknown_get_command_before_subprocess(monkeypatch):
 
 
 def test_runner_returns_formatted_error_for_nonzero_exit(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         return subprocess.CompletedProcess(
             argv,
             1,
@@ -294,7 +298,7 @@ def test_runner_returns_formatted_error_for_nonzero_exit(monkeypatch):
 
 
 def test_runner_falls_back_to_stdout_when_stderr_empty(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         return subprocess.CompletedProcess(
             argv,
             5,
@@ -314,7 +318,7 @@ def test_runner_falls_back_to_stdout_when_stderr_empty(monkeypatch):
 def test_runner_truncates_long_process_error(monkeypatch):
     long_stderr = "X" * 5000
 
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         return subprocess.CompletedProcess(argv, 1, "", long_stderr)
 
     monkeypatch.setattr(runner_subprocess, "run", fake_run)
@@ -327,7 +331,7 @@ def test_runner_truncates_long_process_error(monkeypatch):
 
 
 def test_runner_returns_invalid_json_error(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         return subprocess.CompletedProcess(argv, 0, "not-json", "")
 
     monkeypatch.setattr(runner_subprocess, "run", fake_run)
@@ -340,8 +344,47 @@ def test_runner_returns_invalid_json_error(monkeypatch):
     )
 
 
+def test_runner_handles_replacement_character_output_without_raising(monkeypatch):
+    # Simulate stdout that has already been decoded with errors="replace"
+    # and now contains a U+FFFD replacement character, leaving invalid JSON.
+    # The runner must surface this as a typed invalid-JSON result instead
+    # of letting an exception bubble into the TUI.
+    polluted_stdout = '{"DisplayName": "Test�Account"'  # missing closing brace too
+
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
+        assert encoding == "utf-8"
+        assert errors == "replace"
+        return subprocess.CompletedProcess(argv, 0, polluted_stdout, "")
+
+    monkeypatch.setattr(runner_subprocess, "run", fake_run)
+
+    result = make_runner().run(make_command())
+
+    assert result.ok is False
+    assert result.error == (
+        "Active Directory PowerShell returned invalid JSON output."
+    )
+
+
+def test_runner_decodes_utf8_output_with_replacement_chars(monkeypatch):
+    # Even when stdout was decoded with errors="replace" and contains a
+    # U+FFFD inside a string value, valid JSON should still parse and the
+    # replaced character should make it through into the snapshot.
+    payload = '{"DisplayName": "Test�Account"}'
+
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
+        return subprocess.CompletedProcess(argv, 0, payload, "")
+
+    monkeypatch.setattr(runner_subprocess, "run", fake_run)
+
+    result = make_runner().run(make_command())
+
+    assert result.ok is True
+    assert result.data == {"DisplayName": "Test�Account"}
+
+
 def test_runner_returns_unsupported_shape_error(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         return subprocess.CompletedProcess(argv, 0, '"just-a-string"', "")
 
     monkeypatch.setattr(runner_subprocess, "run", fake_run)
@@ -355,7 +398,7 @@ def test_runner_returns_unsupported_shape_error(monkeypatch):
 
 
 def test_runner_returns_unsupported_shape_for_list_with_nondict_items(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         return subprocess.CompletedProcess(argv, 0, '[{"a": 1}, "string"]', "")
 
     monkeypatch.setattr(runner_subprocess, "run", fake_run)
@@ -369,7 +412,7 @@ def test_runner_returns_unsupported_shape_for_list_with_nondict_items(monkeypatc
 
 
 def test_runner_returns_timeout_error(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         raise subprocess.TimeoutExpired(cmd=argv, timeout=timeout)
 
     monkeypatch.setattr(runner_subprocess, "run", fake_run)
@@ -383,7 +426,7 @@ def test_runner_returns_timeout_error(monkeypatch):
 
 
 def test_runner_returns_oserror_error(monkeypatch):
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, capture_output, text, timeout, check, encoding=None, errors=None):
         raise OSError("powershell.exe: not found")
 
     monkeypatch.setattr(runner_subprocess, "run", fake_run)
