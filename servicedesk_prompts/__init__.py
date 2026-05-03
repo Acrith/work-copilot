@@ -26,7 +26,10 @@ from servicedesk_prompts.labels import (
 )
 from servicedesk_prompts.note_prompt import build_servicedesk_draft_note_prompt
 from servicedesk_prompts.reply_prompt import build_servicedesk_draft_reply_prompt
-from servicedesk_prompts.skill_plan_prompt import build_servicedesk_skill_plan_prompt
+from servicedesk_prompts.skill_plan_prompt import (
+    build_servicedesk_skill_plan_prompt,
+    build_servicedesk_skill_plan_repair_prompt,
+)
 
 __all__ = [
     "AUTOMATION_CANDIDATE_LABELS",
@@ -45,6 +48,7 @@ __all__ = [
     "build_servicedesk_draft_note_prompt",
     "build_servicedesk_draft_reply_prompt",
     "build_servicedesk_skill_plan_prompt",
+    "build_servicedesk_skill_plan_repair_prompt",
     "format_allowed_label_section",
     "format_allowed_labels",
 ]

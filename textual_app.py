@@ -54,6 +54,7 @@ from interactive_commands import (
     build_servicedesk_draft_note_prompt,
     build_servicedesk_draft_reply_prompt,
     build_servicedesk_skill_plan_prompt,
+    build_servicedesk_skill_plan_repair_prompt,
     build_servicedesk_triage_prompt,
     format_interactive_status,
     parse_interactive_command,
@@ -788,6 +789,87 @@ class WorkCopilotTextualApp(App):
             self._set_running(True)
             self._run_model_turn_worker(
                 skill_plan_prompt,
+                save_output_path=str(skill_plan_path),
+                save_latest_path=str(latest_skill_plan_path),
+                post_save_callback=validate_skill_plan_text_as_lines,
+            )
+            return
+
+        if command == "sdp_repair_skill_plan":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp repair-skill-plan <request_id>")
+                return
+
+            latest_skill_plan_path = build_servicedesk_latest_skill_plan_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+            latest_skill_plan = read_text_if_exists(latest_skill_plan_path)
+
+            if latest_skill_plan is None:
+                self._log_blank()
+                self._log(
+                    f"No local skill plan found for request {request_id}. "
+                    f"Run /sdp skill-plan {request_id} first."
+                )
+                return
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                "Validating saved skill plan for request "
+                f"{request_id} before repair."
+            )
+
+            validation_result = validate_skill_plan_text_for_inspection(
+                latest_skill_plan
+            )
+
+            for line in validation_result.lines:
+                self._log_system_message(line)
+
+            first_line = (
+                validation_result.lines[0] if validation_result.lines else ""
+            )
+            validation_unavailable = first_line.startswith(
+                "Skill plan validation unavailable"
+            )
+
+            if validation_unavailable:
+                self._log_system_message(
+                    "Skill plan repair unavailable because validation "
+                    "could not be completed."
+                )
+                return
+
+            if not validation_result.has_errors:
+                self._log_system_message(
+                    "No skill plan repair needed; no validation errors "
+                    "were found."
+                )
+                return
+
+            repair_prompt = build_servicedesk_skill_plan_repair_prompt(
+                request_id=request_id,
+                saved_skill_plan=latest_skill_plan,
+                validation_lines=validation_result.lines,
+            )
+
+            skill_plan_path = build_servicedesk_skill_plan_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+
+            self._log_system_message(
+                "Repairing skill plan locally based on validation findings. "
+                "No inspector or external system will be contacted."
+            )
+
+            self._set_running(True)
+            self._run_model_turn_worker(
+                repair_prompt,
                 save_output_path=str(skill_plan_path),
                 save_latest_path=str(latest_skill_plan_path),
                 post_save_callback=validate_skill_plan_text_as_lines,

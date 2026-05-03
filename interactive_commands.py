@@ -28,6 +28,7 @@ from servicedesk_prompts import (
     build_servicedesk_draft_note_prompt,
     build_servicedesk_draft_reply_prompt,
     build_servicedesk_skill_plan_prompt,
+    build_servicedesk_skill_plan_repair_prompt,
     format_allowed_label_section,
     format_allowed_labels,
 )
@@ -42,6 +43,7 @@ InteractiveCommand = Literal[
     "sdp_draft_reply",
     "sdp_save_draft",
     "sdp_skill_plan",
+    "sdp_repair_skill_plan",
     "sdp_inspect_skill",
     "sdp_inspection_report",
     "sdp_draft_note",
@@ -58,6 +60,10 @@ COMMAND_HELP = [
     ("/sdp draft-reply <id>", "Draft a requester reply and save it locally"),
     ("/sdp save-draft <id>", "Save latest local reply as a ServiceDesk draft"),
     ("/sdp skill-plan <id>", "Prepare a read-only skill plan for ServiceDesk request"),
+    (
+        "/sdp repair-skill-plan <id>",
+        "Repair latest local skill plan using validation findings",
+    ),
     ("/sdp inspect-skill <id>", "Run registered read-only inspectors from the latest skill plan"),
     (
         "/sdp inspection-report <id>",
@@ -111,6 +117,14 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand:
 
         if len(parts) >= 2 and parts[1].lower() in {"save-draft", "save_draft"}:
             return "sdp_save_draft"
+
+        if len(parts) >= 2 and parts[1].lower() in {
+            "repair-skill-plan",
+            "repair_skill_plan",
+            "repair-plan",
+            "repair_plan",
+        }:
+            return "sdp_repair_skill_plan"
 
         if len(parts) >= 2 and parts[1].lower() in {"skill-plan", "skill_plan"}:
             return "sdp_skill_plan"
@@ -294,6 +308,7 @@ __all__ = [
     "build_servicedesk_draft_note_prompt",
     "build_servicedesk_draft_reply_prompt",
     "build_servicedesk_skill_plan_prompt",
+    "build_servicedesk_skill_plan_repair_prompt",
     "build_servicedesk_triage_prompt",
     "format_allowed_label_section",
     "format_allowed_labels",

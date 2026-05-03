@@ -5,6 +5,7 @@ from interactive_commands import (
     build_servicedesk_draft_note_prompt,
     build_servicedesk_draft_reply_prompt,
     build_servicedesk_skill_plan_prompt,
+    build_servicedesk_skill_plan_repair_prompt,
     build_servicedesk_triage_prompt,
     format_interactive_help,
     format_interactive_status,
@@ -75,6 +76,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/sdp inspection-report" in help_text
     assert "/sdp draft-note" in help_text
     assert "/sdp save-note" in help_text
+    assert "/sdp repair-skill-plan" in help_text
     assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
@@ -1255,3 +1257,175 @@ def test_build_servicedesk_draft_note_prompt_forbids_secret_and_content_leakage(
 
     for token in forbidden_lines:
         assert token in prompt, f"Prompt missing safety mention: {token}"
+
+
+# --------------------- /sdp repair-skill-plan parsing -------------------
+
+
+def test_parse_sdp_repair_skill_plan_command():
+    assert (
+        parse_interactive_command("/sdp repair-skill-plan 123")
+        == "sdp_repair_skill_plan"
+    )
+
+
+def test_parse_sdp_repair_skill_plan_underscore_alias():
+    assert (
+        parse_interactive_command("/sdp repair_skill_plan 123")
+        == "sdp_repair_skill_plan"
+    )
+
+
+def test_parse_sdp_repair_plan_short_alias():
+    assert (
+        parse_interactive_command("/sdp repair-plan 123")
+        == "sdp_repair_skill_plan"
+    )
+
+
+def test_parse_sdp_repair_plan_short_underscore_alias():
+    assert (
+        parse_interactive_command("/sdp repair_plan 123")
+        == "sdp_repair_skill_plan"
+    )
+
+
+# --------------------- Repair prompt builder ----------------------------
+
+
+def test_build_servicedesk_skill_plan_repair_prompt_includes_saved_plan_and_validation():
+    saved_plan = "# ServiceDesk skill plan\n\n## Metadata\n\n- Ticket: 56999\n"
+    validation_lines = [
+        "Skill plan validation: found 2 issue(s).",
+        "- ERROR [ready_for_execution_must_be_no]: Automation handoff `Ready for execution` must be `no`; got `yes`.",
+        "- WARNING [clean_identifier_values]: Inspector-bound field `target_user` value `user: x` is prefixed.",
+    ]
+
+    prompt = build_servicedesk_skill_plan_repair_prompt(
+        request_id="56999",
+        saved_skill_plan=saved_plan,
+        validation_lines=validation_lines,
+    )
+
+    # Saved plan and validation findings appear inside dedicated blocks.
+    assert "<saved_skill_plan>" in prompt
+    assert "</saved_skill_plan>" in prompt
+    assert saved_plan.strip() in prompt
+    assert "<validation_findings>" in prompt
+    assert "</validation_findings>" in prompt
+    for line in validation_lines:
+        assert line in prompt
+
+    # Local-only / no-side-effects framing.
+    assert "local-only repair" in prompt
+    assert "Do not run any inspector." in prompt
+    assert "Do not contact Active Directory or Exchange." in prompt
+    assert "Do not modify ServiceDesk." in prompt
+
+
+def test_build_servicedesk_skill_plan_repair_prompt_fix_only_validation_issues():
+    prompt = build_servicedesk_skill_plan_repair_prompt(
+        request_id="56999",
+        saved_skill_plan="## Metadata\n\n- Ticket: 56999\n",
+        validation_lines=["Skill plan validation: no issues found."],
+    )
+
+    assert (
+        "Fix ONLY the parts of the saved skill plan that the validation "
+        "findings flagged." in prompt
+    )
+    assert "Preserve every other section" in prompt
+    assert "Do not invent facts" in prompt
+
+
+def test_build_servicedesk_skill_plan_repair_prompt_blocks_unsupported_inspectors_and_execute_tools():
+    prompt = build_servicedesk_skill_plan_repair_prompt(
+        request_id="56999",
+        saved_skill_plan="## Metadata\n",
+        validation_lines=["Skill plan validation: no issues found."],
+    )
+
+    # Unsupported inspector IDs must be dropped, not added.
+    assert (
+        "Do not add unsupported inspector IDs to `Suggested inspector "
+        "tools`." in prompt
+    )
+    assert "`exchange.mailbox.inspect`" in prompt
+    assert "`active_directory.user.inspect`" in prompt
+    assert "`active_directory.group.inspect`" in prompt
+    assert "`active_directory.group_membership.inspect`" in prompt
+
+    # No execute tools may be added.
+    assert "Do not add any execute tools." in prompt
+    assert "`Suggested execute tools` must be `none`" in prompt
+    assert "Keep `Ready for execution: no`" in prompt
+
+
+def test_build_servicedesk_skill_plan_repair_prompt_returns_only_repaired_markdown():
+    prompt = build_servicedesk_skill_plan_repair_prompt(
+        request_id="56999",
+        saved_skill_plan="## Metadata\n",
+        validation_lines=["Skill plan validation: no issues found."],
+    )
+
+    assert "Return ONLY the repaired skill plan Markdown." in prompt
+    assert (
+        "Do not add commentary, explanations, diffs, or surrounding "
+        "prose before or after the Markdown." in prompt
+    )
+    # Output structure preservation reminder.
+    assert "Keep `# ServiceDesk skill plan`" in prompt
+    assert "## Metadata" in prompt
+    assert "## Automation handoff" in prompt
+
+
+# --------------------- Repair handler source-level guard ---------------
+
+
+def test_textual_app_repair_skill_plan_branch_is_validation_gated():
+    """Source-level guard: the /sdp repair-skill-plan handler must
+    validate before building any repair prompt or running a model turn,
+    must not run inspectors, and must save through the existing
+    skill-plan paths.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    assert 'if command == "sdp_repair_skill_plan":' in source
+
+    branch_index = source.index('if command == "sdp_repair_skill_plan":')
+    next_branch_index = source.index(
+        'if command == "sdp_inspect_skill":', branch_index
+    )
+    branch = source[branch_index:next_branch_index]
+
+    # Validation runs before the repair prompt is built.
+    assert "validate_skill_plan_text_for_inspection(" in branch
+    validation_call = branch.index("validate_skill_plan_text_for_inspection(")
+    repair_prompt_call = branch.index(
+        "build_servicedesk_skill_plan_repair_prompt("
+    )
+    assert validation_call < repair_prompt_call
+
+    # No inspector path is reached from the repair branch.
+    assert "select_inspectors_for_skill_plan(" not in branch
+    assert "create_configured_inspector_registry_from_env(" not in branch
+    assert "run_inspector_and_save(" not in branch
+
+    # Repair output goes through the existing skill-plan save paths so
+    # /sdp inspect-skill picks up the repaired version.
+    assert "build_servicedesk_skill_plan_path(" in branch
+    assert "build_servicedesk_latest_skill_plan_path(" in branch
+
+    # Post-save validation runs again so the user sees whether repair
+    # succeeded.
+    assert "post_save_callback=validate_skill_plan_text_as_lines" in branch
+
+    # No-error and validation-unavailable short circuits are present.
+    # (Source uses Python adjacent-string-literal concatenation; assert
+    # against the individual literals rather than the joined runtime string.)
+    assert "No skill plan repair needed; no validation errors " in branch
+    assert "were found." in branch
+    assert "Skill plan repair unavailable because validation " in branch
+    assert "could not be completed." in branch
