@@ -1504,3 +1504,273 @@ def test_missing_draft_note_skips_validation_and_keeps_existing_routing(
         "- draft note validation: skipped (no fresh draft note)"
         in joined
     )
+
+
+# --------------------- Executor preview planning -----------------------
+
+
+_EXCHANGE_FULL_ACCESS_STRUCTURED_PAYLOAD = {
+    "schema_version": 1,
+    "request_id": REQUEST_ID,
+    "metadata": {
+        "Skill match": "exchange.shared_mailbox.grant_full_access",
+        "Capability classification": "draft_only_manual_now",
+    },
+    "extracted_inputs": [
+        {
+            "field": "shared_mailbox_address",
+            "status": "present",
+            "value": "shared@example.com",
+            "evidence": "from request body",
+            "needed_now": "yes",
+        },
+        {
+            "field": "target_user",
+            "status": "present",
+            "value": "alice@example.com",
+            "evidence": "from request body",
+            "needed_now": "yes",
+        },
+    ],
+    "missing_information_needed_now": [],
+    "current_blocker": None,
+    "automation_handoff": {
+        "ready_for_inspection": "no",
+        "ready_for_execution": "no",
+        "suggested_inspector_tools": [],
+        "suggested_execute_tools": [],
+        "automation_blocker": None,
+    },
+}
+
+
+def _exchange_payload_without_input(field_name: str) -> dict:
+    payload = {
+        **_EXCHANGE_FULL_ACCESS_STRUCTURED_PAYLOAD,
+        "extracted_inputs": [
+            item
+            for item in _EXCHANGE_FULL_ACCESS_STRUCTURED_PAYLOAD[
+                "extracted_inputs"
+            ]
+            if item["field"] != field_name
+        ],
+    }
+    return payload
+
+
+def test_exchange_full_access_preview_summary_when_inputs_present(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json(
+        tmp_path, _EXCHANGE_FULL_ACCESS_STRUCTURED_PAYLOAD
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.executor_preview_summary
+    assert summary.applicable is True
+    assert summary.preview_available is True
+    assert summary.executor_id == (
+        "exchange.mailbox_permission.grant_full_access"
+    )
+    assert summary.title == "Grant Full Access mailbox permission"
+    assert summary.summary is not None
+    assert "shared@example.com" in summary.summary
+    assert "alice@example.com" in summary.summary
+    assert summary.missing_inputs == []
+    assert any("Mock/no-op executor" in w for w in summary.warnings)
+
+    joined = "\n".join(state.status_lines)
+    assert "- executor preview: available" in joined
+    assert (
+        "- executor: exchange.mailbox_permission.grant_full_access"
+        in joined
+    )
+    assert (
+        "- executor preview title: Grant Full Access mailbox permission"
+        in joined
+    )
+    assert "- executor preview summary: " in joined
+    assert "- executor requires approval: yes" in joined
+    assert "- executor warning: Mock/no-op executor" in joined
+
+    # Workflow stage / next_action are not affected by the executor
+    # preview planner. With clean validation, missing structured-
+    # sidecar suggested-inspectors is fine because the structured
+    # sidecar IS present and readable; route to RUN_INSPECTION.
+    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
+
+
+def test_exchange_full_access_preview_summary_missing_mailbox(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json(
+        tmp_path,
+        _exchange_payload_without_input("shared_mailbox_address"),
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.executor_preview_summary
+    assert summary.applicable is True
+    assert summary.preview_available is False
+    assert summary.executor_id is None
+    assert "mailbox" in summary.missing_inputs
+
+    joined = "\n".join(state.status_lines)
+    assert "- executor preview: missing inputs" in joined
+    assert "- executor missing inputs: mailbox" in joined
+
+
+def test_exchange_full_access_preview_summary_missing_trustee(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json(
+        tmp_path,
+        _exchange_payload_without_input("target_user"),
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.executor_preview_summary
+    assert summary.applicable is True
+    assert summary.preview_available is False
+    assert "trustee" in summary.missing_inputs
+
+    joined = "\n".join(state.status_lines)
+    assert "- executor preview: missing inputs" in joined
+    assert "- executor missing inputs: trustee" in joined
+
+
+def test_executor_preview_summary_unsupported_skill_emits_concise_none(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    # _CLEAN_STRUCTURED_PAYLOAD has Skill match
+    # = "active_directory.user.update_profile_attributes" — not
+    # supported by the Exchange Full Access planner.
+    _seed_clean_skill_plan_json(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.executor_preview_summary
+    assert summary.applicable is False
+    assert summary.preview_available is False
+    assert summary.executor_id is None
+
+    joined = "\n".join(state.status_lines)
+    # Concise single line for the not-applicable case.
+    assert "- executor preview: none" in joined
+    # And no "available"/"missing inputs" wording leaks in.
+    assert "- executor preview: available" not in joined
+    assert "- executor preview: missing inputs" not in joined
+
+
+def test_executor_preview_summary_skipped_when_sidecar_stale(tmp_path):
+    """A stale structured sidecar must not be trusted by the executor
+    planner. The planner is skipped and no preview is produced.
+    """
+    import os
+
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json(
+        tmp_path, _EXCHANGE_FULL_ACCESS_STRUCTURED_PAYLOAD
+    )
+
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    md_mtime = md_path.stat().st_mtime
+    # Roll the structured sidecar back behind the Markdown so the
+    # loader marks it stale, but keep the validation sidecar fresh
+    # so the validation-side branch doesn't preempt.
+    os.utime(json_path, (md_mtime - 60.0, md_mtime - 60.0))
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    os.utime(validation_path, (md_mtime + 60.0, md_mtime + 60.0))
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    # Existing stale-structured-sidecar routing is preserved.
+    assert state.skill_plan_summary.stale is True
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
+
+    summary = state.executor_preview_summary
+    assert summary.applicable is False
+    assert summary.preview_available is False
+    assert summary.executor_id is None
+
+    joined = "\n".join(state.status_lines)
+    assert "- executor preview: none" in joined
+
+
+def test_workflow_state_module_does_not_execute_executors_or_call_writes():
+    """Source-level guard: servicedesk_workflow_state must remain
+    read-only. It must not call the executor execute handler, must
+    not import Exchange command runners, and must not import
+    ServiceDesk write helpers. The planner is the only executor-side
+    surface allowed.
+    """
+    from pathlib import Path
+
+    source = Path("servicedesk_workflow_state.py").read_text(
+        encoding="utf-8"
+    )
+
+    forbidden = [
+        # Real PowerShell write tokens
+        "Add-MailboxPermission",
+        "Remove-MailboxPermission",
+        "Set-Mailbox",
+        "Enable-Mailbox",
+        "Set-ADUser",
+        "New-ADUser",
+        "powershell.exe",
+        # Real Exchange runners / scripts
+        "exchange_command_runner",
+        "exchange_powershell_runner",
+        "exchange_powershell_script",
+        # ServiceDesk write helpers
+        "servicedesk_add_request_note",
+        "servicedesk_update_request",
+        # Executor execute paths — only the planner is allowed.
+        "execute_exchange_grant_full_access_mock",
+        "build_persisting_validation_callback",
+        # Save workers
+        "_save_servicedesk_note_worker",
+        "_save_servicedesk_draft_worker",
+    ]
+    for needle in forbidden:
+        assert needle not in source, (
+            f"servicedesk_workflow_state must not reference {needle!r}"
+        )
+
+    # The planner is referenced (positive guard).
+    assert (
+        "plan_exchange_grant_full_access_preview_from_skill_plan"
+        in source
+    )

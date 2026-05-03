@@ -22,6 +22,9 @@ from draft_exports import (
     build_servicedesk_latest_skill_plan_path,
     build_servicedesk_latest_skill_plan_validation_path,
 )
+from executors.exchange import (
+    plan_exchange_grant_full_access_preview_from_skill_plan,
+)
 from inspectors.inspection_report import (
     SUPPORTED_REPORT_INSPECTOR_IDS,
     build_servicedesk_inspection_report_path,
@@ -103,6 +106,27 @@ class ServiceDeskSkillPlanSummary:
 
 
 @dataclass(frozen=True)
+class ServiceDeskExecutorPreviewSummary:
+    """Display-only summary of the preview-only executor planner.
+
+    Built from a fresh, readable structured skill plan via the
+    executor planner (`plan_exchange_grant_full_access_preview_from_skill_plan`).
+    Never executes the executor and never affects workflow stage or
+    next_action. Empty for unsupported skills, stale/unreadable
+    sidecars, or when no plan exists.
+    """
+
+    applicable: bool = False
+    preview_available: bool = False
+    executor_id: str | None = None
+    title: str | None = None
+    summary: str | None = None
+    missing_inputs: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    unsupported_reason: str | None = None
+
+
+@dataclass(frozen=True)
 class ServiceDeskWorkflowState:
     request_id: str
     context_exists: bool = False
@@ -122,6 +146,9 @@ class ServiceDeskWorkflowState:
     )
     skill_plan_summary: ServiceDeskSkillPlanSummary = field(
         default_factory=ServiceDeskSkillPlanSummary
+    )
+    executor_preview_summary: ServiceDeskExecutorPreviewSummary = field(
+        default_factory=ServiceDeskExecutorPreviewSummary
     )
     stage: ServiceDeskWorkflowStage = ServiceDeskWorkflowStage.UNKNOWN
     next_action: ServiceDeskWorkflowNextAction = (
@@ -214,8 +241,14 @@ def read_servicedesk_workflow_state(
     else:
         draft_note_validation_findings = []
 
-    skill_plan_summary = _build_skill_plan_summary_from_loader(
+    sidecar_load_result = load_skill_plan_json_sidecar(
         workspace=workspace, request_id=request_id
+    )
+    skill_plan_summary = _build_skill_plan_summary_from_loader_result(
+        sidecar_load_result
+    )
+    executor_preview_summary = _build_executor_preview_summary_from_loader_result(
+        sidecar_load_result, request_id=request_id
     )
 
     stage, next_action, blocked, blocker = _decide_stage_and_next_action(
@@ -247,6 +280,7 @@ def read_servicedesk_workflow_state(
         draft_note_stale=draft_note_stale,
         draft_note_validation_findings=draft_note_validation_findings,
         skill_plan_summary=skill_plan_summary,
+        executor_preview_summary=executor_preview_summary,
         stage=stage,
         next_action=next_action,
         blocked=blocked,
@@ -267,6 +301,7 @@ def read_servicedesk_workflow_state(
         draft_note_stale=draft_note_stale,
         draft_note_validation_findings=draft_note_validation_findings,
         skill_plan_summary=skill_plan_summary,
+        executor_preview_summary=executor_preview_summary,
         stage=stage,
         next_action=next_action,
         blocked=blocked,
@@ -388,30 +423,23 @@ _CAPABILITY_CLASSIFICATION_KEYS = (
 )
 
 
-def _build_skill_plan_summary_from_loader(
-    *,
-    workspace: str,
-    request_id: str,
+def _build_skill_plan_summary_from_loader_result(
+    result,
 ) -> ServiceDeskSkillPlanSummary:
-    """Build a display summary by delegating to the typed structured
-    skill-plan loader. Never raises.
+    """Render a `SkillPlanJsonLoadResult` into a display summary.
 
-    The loader handles missing / unreadable / unsupported-schema /
-    stale sidecars uniformly. This module's only responsibilities are
-    to render the loader result into the display shape and to keep
-    `metadata` key lookup tolerant for the labels the parser currently
-    emits ("Skill match", "Capability classification") and possible
-    future snake_case payloads.
+    Never raises. The loader handles missing / unreadable /
+    unsupported-schema / stale sidecars uniformly; this module's only
+    responsibilities are to render the loader result into the display
+    shape and to keep `metadata` key lookup tolerant for the labels
+    the parser currently emits ("Skill match", "Capability
+    classification") and possible future snake_case payloads.
 
     Stale sidecars are surfaced as `exists=True, readable=False,
     stale=True` with the loader's `error` string so the workflow
     status display does not present possibly outdated structured
     fields as authoritative.
     """
-    result = load_skill_plan_json_sidecar(
-        workspace=workspace, request_id=request_id
-    )
-
     if not result.exists:
         return ServiceDeskSkillPlanSummary()
 
@@ -445,6 +473,61 @@ def _build_skill_plan_summary_from_loader(
         ),
         error=None,
         stale=False,
+    )
+
+
+def _build_executor_preview_summary_from_loader_result(
+    result,
+    *,
+    request_id: str,
+) -> ServiceDeskExecutorPreviewSummary:
+    """Display-only executor preview summary, built from a fresh and
+    readable structured skill plan.
+
+    Never executes the executor and never affects workflow stage or
+    next_action. Returns an empty (`applicable=False`) summary when
+    the sidecar is missing, stale, or unreadable. The planner itself
+    is pure/local and never raises; this wrapper additionally swallows
+    unexpected errors so workflow status display stays robust.
+    """
+    if not result.readable or result.plan is None:
+        return ServiceDeskExecutorPreviewSummary()
+
+    try:
+        planning = (
+            plan_exchange_grant_full_access_preview_from_skill_plan(
+                result.plan, request_id=request_id
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - state read must not raise
+        return ServiceDeskExecutorPreviewSummary(
+            applicable=False,
+            unsupported_reason=(
+                f"Executor preview planner failed: {exc}"
+            ),
+        )
+
+    if not planning.applicable:
+        return ServiceDeskExecutorPreviewSummary(
+            applicable=False,
+            unsupported_reason=planning.unsupported_reason,
+        )
+
+    if planning.preview is None:
+        return ServiceDeskExecutorPreviewSummary(
+            applicable=True,
+            preview_available=False,
+            missing_inputs=list(planning.missing_inputs),
+            warnings=list(planning.warnings),
+        )
+
+    return ServiceDeskExecutorPreviewSummary(
+        applicable=True,
+        preview_available=True,
+        executor_id=planning.preview.executor_id,
+        title=planning.preview.title,
+        summary=planning.preview.summary,
+        warnings=list(planning.preview.warnings),
     )
 
 
@@ -889,6 +972,7 @@ def _format_status_lines(
     draft_note_stale: bool,
     draft_note_validation_findings: list[DraftNoteValidationFinding],
     skill_plan_summary: ServiceDeskSkillPlanSummary,
+    executor_preview_summary: ServiceDeskExecutorPreviewSummary,
     stage: ServiceDeskWorkflowStage,
     next_action: ServiceDeskWorkflowNextAction,
     blocked: bool,
@@ -934,6 +1018,9 @@ def _format_status_lines(
     ]
 
     lines.extend(_format_skill_plan_summary_lines(skill_plan_summary))
+    lines.extend(
+        _format_executor_preview_summary_lines(executor_preview_summary)
+    )
 
     lines.extend(
         [
@@ -990,3 +1077,42 @@ def _format_tool_list(tools: list[str]) -> str:
     if not tools:
         return "none"
     return ", ".join(tools)
+
+
+def _format_executor_preview_summary_lines(
+    summary: ServiceDeskExecutorPreviewSummary,
+) -> list[str]:
+    """Render the executor preview summary as concise status lines.
+
+    Display-only. Does not execute, does not contact Exchange, does
+    not call ServiceDesk. Single `- executor preview: none` line for
+    the unsupported / not-applicable case keeps `/sdp status` quiet.
+    """
+    if not summary.applicable:
+        return ["- executor preview: none"]
+
+    if not summary.preview_available:
+        return [
+            "- executor preview: missing inputs",
+            (
+                "- executor missing inputs: "
+                f"{_format_missing_inputs(summary.missing_inputs)}"
+            ),
+        ]
+
+    lines = [
+        "- executor preview: available",
+        f"- executor: {summary.executor_id or 'unknown'}",
+        f"- executor preview title: {summary.title or 'unknown'}",
+        f"- executor preview summary: {summary.summary or 'unknown'}",
+        "- executor requires approval: yes",
+    ]
+    for warning in summary.warnings:
+        lines.append(f"- executor warning: {warning}")
+    return lines
+
+
+def _format_missing_inputs(missing_inputs: list[str]) -> str:
+    if not missing_inputs:
+        return "none"
+    return ", ".join(missing_inputs)
