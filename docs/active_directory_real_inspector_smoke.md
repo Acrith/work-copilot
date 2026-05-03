@@ -144,6 +144,15 @@ inspectors; it just rewrites
 the current Markdown so the next `/sdp work <request_id>` step sees
 consistent structured data.
 
+Explicit `/sdp inspect-skill <request_id>` performs the same local
+sidecar refresh first when `latest_skill_plan.json` is missing, stale,
+or unreadable, then reloads the structured sidecar. If the reload
+produces a usable structured plan, inspection runs on the structured
+path; otherwise it falls back to parsing `latest_skill_plan.md`
+directly. Validation still runs before any AD inspector executes, and
+the refresh itself does not contact AD or Exchange and does not run
+any inspector.
+
 ## Known limitations after smoke test
 
 - **No AD writes.** Real AD inspection is read-only. Mutating skills
