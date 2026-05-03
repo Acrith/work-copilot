@@ -1708,6 +1708,9 @@ def test_textual_app_sdp_work_branch_is_state_driven_and_save_safe():
         "After this step completes, run " in branch
         and "`/sdp work {request_id}` again to continue." in branch
     )
+    # Dispatched-action guidance also points the operator at /sdp
+    # status to inspect the asynchronously-updated state.
+    assert "`/sdp status {request_id}` to see the updated state " in branch
     assert "self._submit_prompt(suggested_command)" in branch
     assert branch.count("self._submit_prompt(") == 1
 
@@ -1774,3 +1777,32 @@ def test_textual_app_sdp_work_branch_runs_local_sidecar_refresh():
     )
     assert "run_inspector_and_save(" not in refresh_section
     assert "self._submit_prompt(" not in refresh_section
+
+    # Refresh runs synchronously, so /sdp work must re-read local
+    # workflow state after refresh and surface the updated state to
+    # the operator before returning.
+    assert "read_servicedesk_workflow_state(" in refresh_section
+    assert "Updated ServiceDesk workflow state:" in refresh_section
+    # The /sdp work branch reads workflow state at least twice: once
+    # at entry, once after the refresh helper finishes.
+    assert branch.count("read_servicedesk_workflow_state(") >= 2
+    # Order: refresh helper → re-read → updated header → again-to-continue.
+    refresh_call_index = refresh_section.index(
+        "refresh_skill_plan_sidecars_from_markdown("
+    )
+    reread_index = refresh_section.index(
+        "read_servicedesk_workflow_state(", refresh_call_index
+    )
+    updated_header_index = refresh_section.index(
+        "Updated ServiceDesk workflow state:", reread_index
+    )
+    again_in_refresh_index = refresh_section.index(
+        "`/sdp work {request_id}` again to continue.",
+        updated_header_index,
+    )
+    assert (
+        refresh_call_index
+        < reread_index
+        < updated_header_index
+        < again_in_refresh_index
+    )
