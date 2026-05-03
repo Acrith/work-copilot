@@ -307,6 +307,26 @@ def _decide_stage_and_next_action(
         )
 
     if validation_has_errors:
+        # An unreadable validation sidecar is a state problem, not a
+        # skill-plan-content problem. /sdp repair-skill-plan validates
+        # the Markdown itself and can short-circuit without rewriting
+        # the sidecar, which would loop /sdp work forever. Route the
+        # caller to regenerate the skill plan / validation state.
+        if any(
+            finding.code == "validation_sidecar_unreadable"
+            for finding in validation_findings
+        ):
+            return (
+                ServiceDeskWorkflowStage.UNKNOWN,
+                ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN,
+                True,
+                (
+                    "Skill plan validation sidecar is unreadable; "
+                    "regenerate the skill plan or validation state "
+                    "before inspection."
+                ),
+            )
+
         first_error = next(
             (
                 finding

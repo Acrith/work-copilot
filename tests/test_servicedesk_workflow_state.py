@@ -274,13 +274,19 @@ def test_malformed_validation_sidecar_blocks_without_raising(tmp_path):
     assert state.validation_exists is True
     assert state.validation_has_errors is True
     assert state.blocked is True
-    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_INVALID
-    assert state.next_action == ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN
 
     codes = {finding.code for finding in state.validation_findings}
     assert "validation_sidecar_unreadable" in codes
+
+    # Unreadable sidecars must NOT route to repair-skill-plan, because
+    # /sdp repair-skill-plan validates the Markdown itself and can
+    # short-circuit without rewriting the sidecar — that would loop
+    # /sdp work forever. Recommend regenerating the skill plan /
+    # validation state instead.
+    assert state.stage == ServiceDeskWorkflowStage.UNKNOWN
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
     assert state.blocker is not None
-    assert "validation_sidecar_unreadable" in state.blocker
+    assert "Skill plan validation sidecar is unreadable" in state.blocker
 
 
 def test_validation_sidecar_with_non_object_payload_is_treated_as_unreadable(
@@ -303,6 +309,9 @@ def test_validation_sidecar_with_non_object_payload_is_treated_as_unreadable(
     assert state.blocked is True
     codes = {finding.code for finding in state.validation_findings}
     assert "validation_sidecar_unreadable" in codes
+    # Same routing as malformed JSON: regenerate, do not repair Markdown.
+    assert state.stage == ServiceDeskWorkflowStage.UNKNOWN
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
 
 
 def test_validation_sidecar_without_explicit_has_errors_infers_from_findings(

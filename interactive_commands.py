@@ -49,6 +49,7 @@ InteractiveCommand = Literal[
     "sdp_draft_note",
     "sdp_save_note",
     "sdp_status",
+    "sdp_work",
     "sdp_triage",
     "unknown",
 ]
@@ -82,6 +83,7 @@ COMMAND_HELP = [
         "/sdp status <id>",
         "Show local ServiceDesk workflow state and next safe action",
     ),
+    ("/sdp work <id>", "Advance ServiceDesk workflow by one safe step"),
     ("/sdp triage <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
     ("/exit", "Exit interactive mode"),
 ]
@@ -162,6 +164,9 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand:
             "workflow_status",
         }:
             return "sdp_status"
+
+        if len(parts) >= 2 and parts[1].lower() in {"work", "continue"}:
+            return "sdp_work"
 
         if len(parts) >= 2 and parts[1].lower() == "triage":
             return "sdp_triage"
