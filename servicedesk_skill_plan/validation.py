@@ -519,6 +519,26 @@ def validate_skill_plan_text_for_inspection(
     """
     try:
         plan = parse_servicedesk_skill_plan(text)
+    except Exception as exc:  # noqa: BLE001 - safety gate must not raise
+        return SkillPlanValidationDisplayResult(
+            lines=[f"Skill plan validation unavailable: {exc}"],
+            has_errors=True,
+        )
+
+    return validate_parsed_skill_plan_for_inspection(plan)
+
+
+def validate_parsed_skill_plan_for_inspection(
+    plan,
+) -> SkillPlanValidationDisplayResult:
+    """Validate an already-parsed `ParsedServiceDeskSkillPlan` for the
+    inspection gate.
+
+    Same display-result shape as `validate_skill_plan_text_for_inspection`
+    so callers using either source (Markdown reparse vs structured JSON
+    sidecar) gate identically. Errors block; warnings do not.
+    """
+    try:
         findings = validate_servicedesk_skill_plan(plan)
     except Exception as exc:  # noqa: BLE001 - safety gate must not raise
         return SkillPlanValidationDisplayResult(

@@ -1435,6 +1435,65 @@ def test_textual_app_repair_skill_plan_branch_is_validation_gated():
     assert "could not be completed." in branch
 
 
+# --------------------- /sdp inspect-skill structured-source guard -------
+
+
+def test_textual_app_sdp_inspect_skill_branch_prefers_structured_sidecar():
+    """Source-level guard for /sdp inspect-skill structured-plan path.
+
+    Required behavior:
+    - branch loads latest_skill_plan.json via load_skill_plan_json_sidecar(...).
+    - if the structured sidecar is readable+plan, inspector selection and
+      validation use the parsed-plan helpers
+      (select_inspectors_for_parsed_skill_plan,
+      validate_parsed_skill_plan_for_inspection).
+    - if the sidecar exists but is stale/unreadable, an advisory line is
+      logged and the branch falls back to the Markdown helpers.
+    - if the sidecar is missing, the branch silently uses the Markdown
+      helpers as before.
+    - validation gate is preserved before inspector execution.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    assert 'if command == "sdp_inspect_skill":' in source
+
+    branch_index = source.index('if command == "sdp_inspect_skill":')
+    # Slice to the next top-level command branch or the end of file.
+    after = source[branch_index:]
+    next_marker = "        if command == "
+    next_offset = after.find(next_marker, len("        if command == "))
+    branch = after if next_offset == -1 else after[:next_offset]
+
+    # Loader is invoked for the structured sidecar.
+    assert "load_skill_plan_json_sidecar(" in branch
+
+    # Both validation surfaces are referenced: parsed-plan path and
+    # Markdown fallback.
+    assert "validate_parsed_skill_plan_for_inspection(" in branch
+    assert "validate_skill_plan_text_for_inspection(" in branch
+
+    # Both inspector-selection surfaces are referenced.
+    assert "select_inspectors_for_parsed_skill_plan(" in branch
+    assert "select_inspectors_for_skill_plan(" in branch
+
+    # Stale/unreadable sidecar emits a fallback advisory mentioning
+    # latest_skill_plan.md.
+    assert "Structured skill plan sidecar could not be used" in branch
+    assert "latest_skill_plan.md" in branch
+
+    # Validation gate still blocks inspector execution.
+    assert "validation_result.has_errors" in branch
+    block_index = branch.index("Skill plan inspection blocked")
+    inspector_run_index = branch.index("run_inspector_and_save(")
+    assert block_index < inspector_run_index
+
+    # Inspector request building still uses the Markdown skill plan
+    # text — request builders unchanged in this PR.
+    assert "skill_plan_text=latest_skill_plan" in branch
+
+
 # --------------------- /sdp status parsing ------------------------------
 
 

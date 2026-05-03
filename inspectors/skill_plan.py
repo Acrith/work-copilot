@@ -441,3 +441,63 @@ def select_inspectors_for_skill_plan(
         ]
 
     return []
+
+
+_PARSED_SKILL_MATCH_KEYS = ("Skill match", "skill_match")
+
+
+def _parsed_skill_match(plan) -> str | None:
+    metadata = getattr(plan, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    for key in _PARSED_SKILL_MATCH_KEYS:
+        raw = metadata.get(key)
+        if not isinstance(raw, str):
+            continue
+        cleaned = _clean_markdown_value(raw)
+        if not cleaned or cleaned.lower() == "none":
+            return None
+        return cleaned
+    return None
+
+
+def select_inspectors_for_parsed_skill_plan(
+    plan,
+) -> list[SkillPlanInspectorSelection]:
+    """Pick all supported inspectors from a parsed skill plan.
+
+    Same selection semantics as `select_inspectors_for_skill_plan` but
+    sourced from `ParsedServiceDeskSkillPlan` instead of Markdown:
+    `plan.automation_handoff.suggested_inspector_tools` is normalized
+    and deduplicated via `select_supported_inspector_tools`. When no
+    suggested tool is supported, falls back to the `Skill match` value
+    in `plan.metadata` if it normalizes to a supported id.
+    """
+    suggested_tools = list(plan.automation_handoff.suggested_inspector_tools)
+    selected_ids = select_supported_inspector_tools(suggested_tools)
+
+    if selected_ids:
+        return [
+            SkillPlanInspectorSelection(
+                inspector_id=inspector_id,
+                source="suggested_inspector_tools",
+            )
+            for inspector_id in selected_ids
+        ]
+
+    skill_match = _parsed_skill_match(plan)
+
+    if skill_match is None:
+        return []
+
+    normalized_skill_match = normalize_inspector_id(skill_match)
+
+    if normalized_skill_match in SUPPORTED_INSPECTOR_IDS:
+        return [
+            SkillPlanInspectorSelection(
+                inspector_id=normalized_skill_match,
+                source="skill_match",
+            )
+        ]
+
+    return []

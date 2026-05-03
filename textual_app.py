@@ -46,6 +46,7 @@ from inspectors.skill_plan import (
     SUPPORTED_INSPECTOR_IDS,
     build_inspector_request_from_skill_plan,
     parse_suggested_inspector_tools,
+    select_inspectors_for_parsed_skill_plan,
     select_inspectors_for_skill_plan,
 )
 from interactive_commands import (
@@ -71,6 +72,8 @@ from permissions import PermissionContext
 from providers.base import Provider
 from servicedesk_skill_plan import (
     build_persisting_validation_callback,
+    load_skill_plan_json_sidecar,
+    validate_parsed_skill_plan_for_inspection,
     validate_skill_plan_text_for_inspection,
 )
 from servicedesk_workflow_state import (
@@ -909,9 +912,37 @@ class WorkCopilotTextualApp(App):
                 )
                 return
 
-            validation_result = validate_skill_plan_text_for_inspection(
-                latest_skill_plan
+            sidecar_load_result = load_skill_plan_json_sidecar(
+                workspace=self.config.workspace,
+                request_id=request_id,
             )
+
+            use_structured_plan = (
+                sidecar_load_result.readable
+                and sidecar_load_result.plan is not None
+            )
+
+            if use_structured_plan:
+                self._log_system_message(
+                    "Using structured skill plan sidecar "
+                    "(latest_skill_plan.json) for inspector selection."
+                )
+                validation_result = validate_parsed_skill_plan_for_inspection(
+                    sidecar_load_result.plan
+                )
+            else:
+                if sidecar_load_result.exists:
+                    advisory = (
+                        sidecar_load_result.error
+                        or "structured skill plan sidecar is unusable"
+                    )
+                    self._log_system_message(
+                        "Structured skill plan sidecar could not be used "
+                        f"({advisory}). Falling back to latest_skill_plan.md."
+                    )
+                validation_result = validate_skill_plan_text_for_inspection(
+                    latest_skill_plan
+                )
 
             for line in validation_result.lines:
                 self._log_system_message(line)
@@ -933,8 +964,21 @@ class WorkCopilotTextualApp(App):
                     )
                 return
 
-            suggested_tools = parse_suggested_inspector_tools(latest_skill_plan)
-            selections = select_inspectors_for_skill_plan(latest_skill_plan)
+            if use_structured_plan:
+                suggested_tools = list(
+                    sidecar_load_result.plan.automation_handoff
+                    .suggested_inspector_tools
+                )
+                selections = select_inspectors_for_parsed_skill_plan(
+                    sidecar_load_result.plan
+                )
+            else:
+                suggested_tools = parse_suggested_inspector_tools(
+                    latest_skill_plan
+                )
+                selections = select_inspectors_for_skill_plan(
+                    latest_skill_plan
+                )
 
             if not selections:
                 self._log_blank()

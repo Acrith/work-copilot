@@ -10,9 +10,14 @@ from inspectors.skill_plan import (
     parse_skill_match,
     parse_suggested_inspector_tools,
     select_inspector_for_skill_plan,
+    select_inspectors_for_parsed_skill_plan,
     select_inspectors_for_skill_plan,
     select_supported_inspector_tool,
     select_supported_inspector_tools,
+)
+from servicedesk_skill_plan import (
+    ParsedServiceDeskSkillPlan,
+    SkillPlanAutomationHandoff,
 )
 
 
@@ -723,3 +728,135 @@ def test_build_inspector_request_reports_per_inspector_failure_when_inputs_missi
             skill_plan_text=skill_plan_user_only,
             inspector_id="active_directory.group_membership.inspect",
         )
+
+
+# --------------------- Parsed-plan inspector selection ------------------
+
+
+def _make_parsed_plan(
+    *,
+    metadata: dict[str, str] | None = None,
+    suggested_inspector_tools: list[str] | None = None,
+) -> ParsedServiceDeskSkillPlan:
+    return ParsedServiceDeskSkillPlan(
+        metadata=metadata or {},
+        automation_handoff=SkillPlanAutomationHandoff(
+            ready_for_inspection="yes",
+            ready_for_execution="no",
+            suggested_inspector_tools=list(suggested_inspector_tools or []),
+            suggested_execute_tools=[],
+            automation_blocker=None,
+        ),
+    )
+
+
+def test_select_inspectors_for_parsed_skill_plan_returns_supported_in_order():
+    plan = _make_parsed_plan(
+        suggested_inspector_tools=[
+            "active_directory.user.inspect",
+            "active_directory.group.inspect",
+            "active_directory.group_membership.inspect",
+        ],
+    )
+
+    selections = select_inspectors_for_parsed_skill_plan(plan)
+
+    assert [selection.inspector_id for selection in selections] == [
+        "active_directory.user.inspect",
+        "active_directory.group.inspect",
+        "active_directory.group_membership.inspect",
+    ]
+    assert all(
+        selection.source == "suggested_inspector_tools"
+        for selection in selections
+    )
+
+
+def test_select_inspectors_for_parsed_skill_plan_normalizes_and_dedupes():
+    plan = _make_parsed_plan(
+        suggested_inspector_tools=[
+            "active_directory.user.lookup",
+            "active_directory.user.inspect",
+            "exchange.mailbox.get_statistics",
+            "exchange.mailbox.inspect",
+        ],
+    )
+
+    selections = select_inspectors_for_parsed_skill_plan(plan)
+
+    assert [selection.inspector_id for selection in selections] == [
+        "active_directory.user.inspect",
+        "exchange.mailbox.inspect",
+    ]
+
+
+def test_select_inspectors_for_parsed_skill_plan_falls_back_to_skill_match():
+    plan = _make_parsed_plan(
+        metadata={"Skill match": "exchange.mailbox.inspect"},
+        suggested_inspector_tools=[
+            "exchange.shared_mailbox.get_full_access_permissions",
+        ],
+    )
+
+    selections = select_inspectors_for_parsed_skill_plan(plan)
+
+    assert selections == [
+        SkillPlanInspectorSelection(
+            inspector_id="exchange.mailbox.inspect",
+            source="skill_match",
+        )
+    ]
+
+
+def test_select_inspectors_for_parsed_skill_plan_accepts_snake_case_skill_match():
+    plan = _make_parsed_plan(
+        metadata={"skill_match": "active_directory.user.inspect"},
+        suggested_inspector_tools=[],
+    )
+
+    selections = select_inspectors_for_parsed_skill_plan(plan)
+
+    assert selections == [
+        SkillPlanInspectorSelection(
+            inspector_id="active_directory.user.inspect",
+            source="skill_match",
+        )
+    ]
+
+
+def test_select_inspectors_for_parsed_skill_plan_returns_empty_when_no_supported():
+    plan = _make_parsed_plan(
+        metadata={"Skill match": "active_directory.user.provision_standard_account"},
+        suggested_inspector_tools=[],
+    )
+
+    assert select_inspectors_for_parsed_skill_plan(plan) == []
+
+
+def test_select_inspectors_for_parsed_skill_plan_unsupported_tool_falls_back_or_empty():
+    """An unsupported suggested tool must not be returned. With a
+    supported skill_match, fall back; without one, return empty.
+    """
+    plan_with_match = _make_parsed_plan(
+        metadata={"Skill match": "active_directory.user.inspect"},
+        suggested_inspector_tools=[
+            "exchange.shared_mailbox.update_full_access_permissions",
+        ],
+    )
+
+    selections = select_inspectors_for_parsed_skill_plan(plan_with_match)
+    assert selections == [
+        SkillPlanInspectorSelection(
+            inspector_id="active_directory.user.inspect",
+            source="skill_match",
+        )
+    ]
+
+    plan_no_match = _make_parsed_plan(
+        metadata={},
+        suggested_inspector_tools=[
+            "exchange.shared_mailbox.update_full_access_permissions",
+        ],
+    )
+
+    assert select_inspectors_for_parsed_skill_plan(plan_no_match) == []
