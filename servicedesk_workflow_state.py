@@ -363,6 +363,36 @@ def _decide_stage_and_next_action(
     )
 
 
+_NEXT_ACTION_TO_COMMAND_NAME: dict[ServiceDeskWorkflowNextAction, str] = {
+    ServiceDeskWorkflowNextAction.RUN_CONTEXT: "context",
+    ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN: "skill-plan",
+    ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN: "repair-skill-plan",
+    ServiceDeskWorkflowNextAction.RUN_INSPECTION: "inspect-skill",
+    ServiceDeskWorkflowNextAction.BUILD_INSPECTION_REPORT: "inspection-report",
+    ServiceDeskWorkflowNextAction.DRAFT_NOTE: "draft-note",
+    ServiceDeskWorkflowNextAction.SAVE_NOTE: "save-note",
+}
+
+
+def suggested_next_command_for_next_action(
+    *,
+    next_action: ServiceDeskWorkflowNextAction,
+    request_id: str,
+) -> str | None:
+    """Map a workflow next-action enum to a `/sdp <command> <id>` line.
+
+    Returns None for actions that have no safe automatic command mapping
+    (currently `review_draft_note` and `none`). The mapping never invents
+    an action that the local state didn't already recommend.
+    """
+    command = _NEXT_ACTION_TO_COMMAND_NAME.get(next_action)
+
+    if command is None:
+        return None
+
+    return f"/sdp {command} {request_id}"
+
+
 def _yes_no(value: bool) -> str:
     return "yes" if value else "no"
 
