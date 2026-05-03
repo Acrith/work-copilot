@@ -74,6 +74,7 @@ from providers.base import Provider
 from servicedesk_skill_plan import (
     build_persisting_validation_callback,
     load_skill_plan_json_sidecar,
+    refresh_skill_plan_sidecars_from_markdown,
     validate_parsed_skill_plan_for_inspection,
     validate_skill_plan_text_for_inspection,
 )
@@ -1376,6 +1377,31 @@ class WorkCopilotTextualApp(App):
                 self._log_system_message(
                     "No next workflow action is available. Run "
                     f"`/sdp status {request_id}` for details."
+                )
+                return
+
+            # Sidecar refresh runs locally from the existing
+            # latest_skill_plan.md. It does not call the model, does
+            # not contact ServiceDesk/AD/Exchange, and does not
+            # dispatch any other slash command — manually-edited
+            # Markdown must be preserved.
+            if (
+                next_action
+                == ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+            ):
+                self._log_system_message(
+                    "Refreshing skill-plan sidecars from "
+                    "latest_skill_plan.md."
+                )
+                refresh_lines = refresh_skill_plan_sidecars_from_markdown(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+                for line in refresh_lines:
+                    self._log_system_message(line)
+                self._log_system_message(
+                    "After this step completes, run "
+                    f"`/sdp work {request_id}` again to continue."
                 )
                 return
 

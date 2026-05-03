@@ -875,3 +875,123 @@ def test_load_skill_plan_json_sidecar_not_stale_when_json_is_newer(tmp_path):
     assert result.readable is True
     assert result.stale is False
     assert result.plan is not None
+
+
+# --------------------- refresh_skill_plan_sidecars_from_markdown --------
+
+
+def test_refresh_writes_both_sidecars_from_existing_markdown(tmp_path):
+    from servicedesk_skill_plan import refresh_skill_plan_sidecars_from_markdown
+
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path), request_id="56050"
+    )
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(_CLEAN_PLAN, encoding="utf-8")
+
+    lines = refresh_skill_plan_sidecars_from_markdown(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    # Validation lines come first; clean success adds no JSON-side
+    # advisory.
+    assert lines == ["Skill plan validation: no issues found."]
+
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    assert validation_path.exists()
+    assert json_path.exists()
+
+    validation_payload = json.loads(
+        validation_path.read_text(encoding="utf-8")
+    )
+    json_payload = json.loads(json_path.read_text(encoding="utf-8"))
+
+    assert validation_payload == {"has_errors": False, "findings": []}
+    assert json_payload["request_id"] == "56050"
+
+
+def test_refresh_returns_advisory_when_markdown_missing(tmp_path):
+    from servicedesk_skill_plan import refresh_skill_plan_sidecars_from_markdown
+
+    lines = refresh_skill_plan_sidecars_from_markdown(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    assert len(lines) == 1
+    assert "No local skill plan found for request 56050" in lines[0]
+    assert "cannot refresh sidecars" in lines[0]
+
+    # Helper must not write either sidecar when the Markdown is missing.
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    assert not validation_path.exists()
+    assert not json_path.exists()
+
+
+def test_refresh_handles_unparseable_markdown_without_raising(
+    tmp_path, monkeypatch
+):
+    """If parsing the existing Markdown fails inside the persistence
+    helpers, refresh must still return advisory lines and must not
+    raise. The structured sidecar's existing parse-failure cleanup
+    behavior (remove stale latest_skill_plan.json) is preserved.
+    """
+    import servicedesk_skill_plan.persistence as persistence_module
+    from servicedesk_skill_plan import refresh_skill_plan_sidecars_from_markdown
+
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path), request_id="56050"
+    )
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(_CLEAN_PLAN, encoding="utf-8")
+
+    # Pre-create a stale latest_skill_plan.json so we can verify the
+    # parse-failure cleanup still runs.
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path), request_id="56050"
+    )
+    json_path.write_text(
+        '{"schema_version": 1, "request_id": "56050", "stale": true}\n',
+        encoding="utf-8",
+    )
+
+    def _boom(_text: str):
+        raise RuntimeError("synthetic parser failure")
+
+    monkeypatch.setattr(
+        persistence_module, "parse_servicedesk_skill_plan", _boom
+    )
+
+    lines = refresh_skill_plan_sidecars_from_markdown(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    # Validation falls back to a "validation unavailable" advisory and
+    # the structured-sidecar persistence falls back to a JSON sidecar
+    # advisory. Both lines must be present.
+    assert any(
+        "Skill plan validation unavailable" in line for line in lines
+    ), lines
+    assert any(
+        "Skill plan JSON sidecar unavailable" in line for line in lines
+    ), lines
+
+    # Stale structured sidecar must have been cleaned up by the
+    # underlying helper.
+    assert not json_path.exists()

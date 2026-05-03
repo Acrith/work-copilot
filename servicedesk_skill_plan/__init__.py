@@ -24,6 +24,7 @@ from servicedesk_skill_plan.persistence import (
     persist_and_format_skill_plan_validation,
     persist_skill_plan_json_sidecar,
     persist_skill_plan_validation_payload,
+    refresh_skill_plan_sidecars_from_markdown,
     serialize_parsed_skill_plan,
     validate_skill_plan_text_for_persistence,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "persist_and_format_skill_plan_validation",
     "persist_skill_plan_json_sidecar",
     "persist_skill_plan_validation_payload",
+    "refresh_skill_plan_sidecars_from_markdown",
     "serialize_parsed_skill_plan",
     "validate_parsed_skill_plan_for_inspection",
     "validate_servicedesk_skill_plan",

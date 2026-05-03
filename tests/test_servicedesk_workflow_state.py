@@ -282,10 +282,12 @@ def test_malformed_validation_sidecar_blocks_without_raising(tmp_path):
     # Unreadable sidecars must NOT route to repair-skill-plan, because
     # /sdp repair-skill-plan validates the Markdown itself and can
     # short-circuit without rewriting the sidecar — that would loop
-    # /sdp work forever. Recommend regenerating the skill plan /
-    # validation state instead.
-    assert state.stage == ServiceDeskWorkflowStage.UNKNOWN
-    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
+    # /sdp work forever. Refresh sidecars from the existing
+    # latest_skill_plan.md so manual edits are preserved.
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
     assert state.blocker is not None
     assert "Skill plan validation sidecar is unreadable" in state.blocker
 
@@ -310,9 +312,11 @@ def test_validation_sidecar_with_non_object_payload_is_treated_as_unreadable(
     assert state.blocked is True
     codes = {finding.code for finding in state.validation_findings}
     assert "validation_sidecar_unreadable" in codes
-    # Same routing as malformed JSON: regenerate, do not repair Markdown.
-    assert state.stage == ServiceDeskWorkflowStage.UNKNOWN
-    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
+    # Same routing as malformed JSON: refresh sidecars locally.
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
 
 
 def test_validation_sidecar_without_explicit_has_errors_infers_from_findings(
@@ -396,8 +400,12 @@ def test_skill_plan_without_validation_blocks_and_does_not_run_inspection(
     assert (
         state.next_action != ServiceDeskWorkflowNextAction.RUN_INSPECTION
     )
-    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
-    assert state.stage == ServiceDeskWorkflowStage.UNKNOWN
+    # Skill plan Markdown exists; refresh sidecars locally rather than
+    # re-prompting the model so manual edits are preserved.
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE
     assert state.blocker is not None
     assert "validation sidecar is missing" in state.blocker
 
@@ -684,7 +692,7 @@ def test_structured_skill_plan_unknown_when_metadata_missing(tmp_path):
     assert "- suggested execute tools: none" in joined
 
 
-def test_unreadable_structured_skill_plan_does_not_change_workflow_decision(
+def test_unreadable_structured_skill_plan_routes_to_refresh_sidecars(
     tmp_path,
 ):
     _seed_context(tmp_path)
@@ -705,12 +713,17 @@ def test_unreadable_structured_skill_plan_does_not_change_workflow_decision(
     joined = "\n".join(state.status_lines)
     assert "- structured skill plan: yes (unreadable:" in joined
 
-    # Workflow decisions are not changed only because the structured
-    # sidecar is unreadable. With clean validation and no inspector
-    # outputs, /sdp work should still recommend inspection.
-    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
-    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
-    assert state.blocked is False
+    # An unreadable structured sidecar (with fresh clean validation) is
+    # not a content problem; refresh both sidecars locally from the
+    # existing latest_skill_plan.md so display layers and inspectors
+    # see consistent structured data.
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
+    assert state.blocked is True
+    assert state.blocker is not None
+    assert "Structured skill plan sidecar is unreadable" in state.blocker
 
 
 def test_non_object_structured_skill_plan_is_treated_as_unreadable(tmp_path):
@@ -734,14 +747,15 @@ def test_non_object_structured_skill_plan_is_treated_as_unreadable(tmp_path):
     assert "- structured skill plan: yes (unreadable:" in joined
 
 
-def test_stale_structured_skill_plan_is_visible_and_does_not_change_decision(
-    tmp_path,
-):
+def test_stale_structured_skill_plan_routes_to_refresh_sidecars(tmp_path):
     """latest_skill_plan.md newer than latest_skill_plan.json triggers
-    the loader's freshness check. Status display must surface this as
-    `stale=True` and a clearly labeled status line, but workflow
-    stage/next_action must come unchanged from the existing artifact +
-    validation sidecar checks.
+    the loader's freshness check. Workflow now refreshes the sidecars
+    locally so display and inspectors see consistent structured data
+    without re-prompting the model.
+
+    Note: clean fresh validation is required to land in this branch —
+    a stale validation sidecar would route to REFRESH first via the
+    earlier branch.
     """
     import os
 
@@ -753,12 +767,20 @@ def test_stale_structured_skill_plan_is_visible_and_does_not_change_decision(
     json_path = build_servicedesk_latest_skill_plan_json_path(
         workspace=str(tmp_path), request_id=REQUEST_ID
     )
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
     md_path = build_servicedesk_latest_skill_plan_path(
         workspace=str(tmp_path), request_id=REQUEST_ID
     )
     md_mtime = md_path.stat().st_mtime
     older = md_mtime - 60.0
+    # Roll only the JSON sidecar back; keep the validation sidecar
+    # ahead of the Markdown so the validation-side branch does not
+    # win first.
     os.utime(json_path, (older, older))
+    newer = md_mtime + 60.0
+    os.utime(validation_path, (newer, newer))
 
     state = read_servicedesk_workflow_state(
         workspace=str(tmp_path), request_id=REQUEST_ID
@@ -778,11 +800,15 @@ def test_stale_structured_skill_plan_is_visible_and_does_not_change_decision(
     assert "- structured skill plan: yes (stale:" in joined
     assert "older than latest_skill_plan.md" in joined
 
-    # Workflow decision is unchanged: clean validation + no inspector
-    # outputs still recommends inspection.
-    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
-    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
-    assert state.blocked is False
+    # Stale structured sidecar (with fresh clean validation) routes to
+    # local refresh.
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
+    assert state.blocked is True
+    assert state.blocker is not None
+    assert "Structured skill plan sidecar is older" in state.blocker
 
 
 def test_workflow_state_module_uses_typed_loader_not_raw_json_for_skill_plan():
@@ -817,14 +843,15 @@ def test_workflow_state_module_uses_typed_loader_not_raw_json_for_skill_plan():
 # --------------------- Stale validation sidecar -------------------------
 
 
-def test_stale_validation_sidecar_blocks_and_recommends_run_skill_plan(
+def test_stale_validation_sidecar_blocks_and_routes_to_refresh_sidecars(
     tmp_path,
 ):
     """latest_skill_plan_validation.json older than latest_skill_plan.md
     cannot be trusted to describe the current Markdown plan. The
     workflow must surface a synthetic `validation_sidecar_stale`
-    finding, block the workflow, and recommend regenerating the skill
-    plan + validation state.
+    finding, block the workflow, and route to local sidecar refresh
+    (not RUN_SKILL_PLAN — that would re-prompt the model and discard
+    manual edits to the Markdown).
     """
     import os
 
@@ -850,8 +877,10 @@ def test_stale_validation_sidecar_blocks_and_recommends_run_skill_plan(
     assert state.validation_exists is True
     assert state.validation_has_errors is True
     assert state.blocked is True
-    assert state.stage == ServiceDeskWorkflowStage.UNKNOWN
-    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
 
     assert len(state.validation_findings) == 1
     finding = state.validation_findings[0]
@@ -908,3 +937,88 @@ def test_fresh_validation_sidecar_keeps_running_inspection_recommendation(
         finding.code != "validation_sidecar_stale"
         for finding in state.validation_findings
     )
+
+
+# --------------------- Refresh routing -----------------------------------
+
+
+def test_no_skill_plan_md_still_routes_to_run_skill_plan(tmp_path):
+    """When latest_skill_plan.md is missing entirely, refresh has
+    nothing to do. The workflow must still recommend RUN_SKILL_PLAN.
+    """
+    _seed_context(tmp_path)
+    # Intentionally do not seed latest_skill_plan.md.
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.skill_plan_exists is False
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
+    assert state.stage == ServiceDeskWorkflowStage.MISSING_SKILL_PLAN
+
+
+def test_fresh_real_validation_error_still_routes_to_repair(tmp_path):
+    """A fresh validation sidecar with real errors must continue to
+    route to REPAIR_SKILL_PLAN; the refresh path is only for stale /
+    missing / unreadable sidecars.
+    """
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_error_validation(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_has_errors is True
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN
+    )
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_INVALID
+
+
+def test_refresh_skill_plan_sidecars_maps_to_sdp_work():
+    """REFRESH_SKILL_PLAN_SIDECARS has no separate user-facing command;
+    its suggested mapping must be `/sdp work <id>` so /sdp status
+    points users at the right entrypoint.
+    """
+    from servicedesk_workflow_state import (
+        suggested_next_command_for_next_action,
+    )
+
+    suggested = suggested_next_command_for_next_action(
+        next_action=ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS,
+        request_id="56050",
+    )
+
+    assert suggested == "/sdp work 56050"
+
+
+def test_workflow_state_with_refresh_is_new_stage_label(tmp_path):
+    """SKILL_PLAN_SIDECARS_STALE stage value must be visible in
+    /sdp status output so the operator can see why /sdp work picks
+    refresh instead of inspection.
+    """
+    import os
+
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    md_mtime = md_path.stat().st_mtime
+    os.utime(validation_path, (md_mtime - 60.0, md_mtime - 60.0))
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    joined = "\n".join(state.status_lines)
+    assert "- stage: skill_plan_sidecars_stale" in joined
+    assert "- next action: refresh_skill_plan_sidecars" in joined
