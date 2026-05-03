@@ -68,7 +68,10 @@ from interactive_session import (
 )
 from permissions import PermissionContext
 from providers.base import Provider
-from servicedesk_skill_plan import validate_skill_plan_text_as_lines
+from servicedesk_skill_plan import (
+    validate_skill_plan_text_as_lines,
+    validate_skill_plan_text_for_inspection,
+)
 from skills.loader import format_skill_definitions_for_prompt, load_skill_definitions
 from textual_approval import TextualApprovalHandler
 from textual_approval_screen import ApprovalScreen
@@ -811,6 +814,30 @@ class WorkCopilotTextualApp(App):
                     f"No local skill plan found for request {request_id}. "
                     f"Run /sdp skill-plan {request_id} first."
                 )
+                return
+
+            validation_result = validate_skill_plan_text_for_inspection(
+                latest_skill_plan
+            )
+
+            for line in validation_result.lines:
+                self._log_system_message(line)
+
+            if validation_result.has_errors:
+                first_line = (
+                    validation_result.lines[0] if validation_result.lines else ""
+                )
+                if first_line.startswith("Skill plan validation unavailable"):
+                    self._log_system_message(
+                        "Skill plan inspection blocked because validation "
+                        "could not be completed."
+                    )
+                else:
+                    self._log_system_message(
+                        "Skill plan inspection blocked because validation "
+                        "errors were found. Regenerate or fix the skill "
+                        "plan before running inspectors."
+                    )
                 return
 
             suggested_tools = parse_suggested_inspector_tools(latest_skill_plan)

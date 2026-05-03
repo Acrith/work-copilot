@@ -17,10 +17,12 @@ from servicedesk_skill_plan.validation import (
     INSPECTOR_BOUND_FIELD_NAMES,
     SUPPORTED_INSPECTOR_TOOL_IDS,
     UNSUPPORTED_HYPOTHETICAL_EXECUTE_TOOL_IDS,
+    SkillPlanValidationDisplayResult,
     SkillPlanValidationFinding,
     format_skill_plan_validation_findings,
     validate_servicedesk_skill_plan,
     validate_skill_plan_text_as_lines,
+    validate_skill_plan_text_for_inspection,
 )
 
 __all__ = [
@@ -29,10 +31,12 @@ __all__ = [
     "ParsedServiceDeskSkillPlan",
     "SUPPORTED_INSPECTOR_TOOL_IDS",
     "SkillPlanAutomationHandoff",
+    "SkillPlanValidationDisplayResult",
     "SkillPlanValidationFinding",
     "UNSUPPORTED_HYPOTHETICAL_EXECUTE_TOOL_IDS",
     "format_skill_plan_validation_findings",
     "parse_servicedesk_skill_plan",
     "validate_servicedesk_skill_plan",
     "validate_skill_plan_text_as_lines",
+    "validate_skill_plan_text_for_inspection",
 ]

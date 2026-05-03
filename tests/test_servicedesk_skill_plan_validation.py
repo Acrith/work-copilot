@@ -6,6 +6,7 @@ from servicedesk_skill_plan import (
     format_skill_plan_validation_findings,
     validate_servicedesk_skill_plan,
     validate_skill_plan_text_as_lines,
+    validate_skill_plan_text_for_inspection,
 )
 
 
@@ -529,5 +530,128 @@ def test_validate_skill_plan_text_as_lines_handles_unexpected_error(monkeypatch)
     lines = validate_skill_plan_text_as_lines("ignored")
 
     assert lines == [
+        "Skill plan validation unavailable: synthetic parser failure",
+    ]
+
+
+# --------------------- Inspection safety gate ---------------------------
+
+
+_CLEAN_PLAN_FOR_INSPECTION = """\
+## Metadata
+
+- Capability classification: read_only_inspection_now
+
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: name.surname
+  evidence: from request body
+  needed_now: yes
+
+## Automation handoff
+
+- Ready for inspection: yes
+- Ready for execution: no
+- Suggested inspector tools: active_directory.user.inspect
+- Suggested execute tools: none
+- Automation blocker: none
+"""
+
+
+_WARNING_ONLY_PLAN_FOR_INSPECTION = """\
+## Metadata
+
+- Capability classification: read_only_inspection_now
+
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: Agata Piątek (agata.piatek@example.com)
+  evidence: from request body
+  needed_now: yes
+
+## Automation handoff
+
+- Ready for inspection: yes
+- Ready for execution: no
+- Suggested inspector tools: active_directory.user.inspect
+- Suggested execute tools: none
+- Automation blocker: none
+"""
+
+
+_ERROR_PLAN_FOR_INSPECTION = """\
+## Metadata
+
+- Capability classification: read_only_inspection_now
+
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: name.surname
+  evidence: from request body
+  needed_now: yes
+
+## Automation handoff
+
+- Ready for inspection: yes
+- Ready for execution: yes
+- Suggested inspector tools: active_directory.user.inspect
+- Suggested execute tools: active_directory.user.update_attributes
+- Automation blocker: none
+"""
+
+
+def test_validate_skill_plan_text_for_inspection_clean_plan_does_not_block():
+    result = validate_skill_plan_text_for_inspection(_CLEAN_PLAN_FOR_INSPECTION)
+
+    assert result.has_errors is False
+    assert result.lines == ["Skill plan validation: no issues found."]
+
+
+def test_validate_skill_plan_text_for_inspection_warning_only_does_not_block():
+    result = validate_skill_plan_text_for_inspection(
+        _WARNING_ONLY_PLAN_FOR_INSPECTION
+    )
+
+    assert result.has_errors is False
+    assert result.lines[0].startswith("Skill plan validation: found ")
+    joined = "\n".join(result.lines)
+    assert "WARNING [clean_identifier_values]" in joined
+    assert "ERROR " not in joined
+
+
+def test_validate_skill_plan_text_for_inspection_blocks_on_errors():
+    result = validate_skill_plan_text_for_inspection(_ERROR_PLAN_FOR_INSPECTION)
+
+    assert result.has_errors is True
+    assert result.lines[0].startswith("Skill plan validation: found ")
+    joined = "\n".join(result.lines)
+    assert "ERROR [ready_for_execution_must_be_no]" in joined
+    assert "ERROR [suggested_execute_tools_must_be_none]" in joined
+
+
+def test_validate_skill_plan_text_for_inspection_blocks_on_unexpected_error(
+    monkeypatch,
+):
+    import servicedesk_skill_plan.validation as validation_module
+
+    def _boom(_text: str):
+        raise RuntimeError("synthetic parser failure")
+
+    monkeypatch.setattr(
+        validation_module,
+        "parse_servicedesk_skill_plan",
+        _boom,
+    )
+
+    result = validate_skill_plan_text_for_inspection("ignored")
+
+    assert result.has_errors is True
+    assert result.lines == [
         "Skill plan validation unavailable: synthetic parser failure",
     ]
