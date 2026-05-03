@@ -171,6 +171,36 @@ runs a local sidecar refresh from the existing Markdown:
 After the refresh, the next `/sdp work <id>` invocation continues with
 the next safe step.
 
+## Downstream artifact freshness
+
+Workflow state also checks the freshness of artifacts downstream of
+inspection so `/sdp status <id>` and `/sdp work <id>` recommend
+rebuilding when an upstream change has invalidated a saved
+intermediate. The checks are local-only timestamp comparisons; they
+do not contact ServiceDesk, Active Directory, or Exchange, and they
+do not run any inspector themselves.
+
+- **Inspection report** — if any saved inspector output JSON under
+  `.work_copilot/servicedesk/<request_id>/inspectors/` has an mtime
+  newer than `inspection_report.md`, the report is flagged stale.
+  `/sdp status` shows `- inspection report: yes (stale)`. `/sdp work`
+  recommends `/sdp inspection-report <id>` to rebuild the report
+  before drafting the note.
+- **Draft note** — if `inspection_report.md` is newer than
+  `draft_note.md`, the draft is flagged stale. `/sdp status` shows
+  `- draft note: yes (stale)`. `/sdp work` recommends
+  `/sdp draft-note <id>` to regenerate the draft before the operator
+  reviews and saves it.
+
+If a freshness `stat()` check itself fails, the affected artifact is
+conservatively treated as stale so the workflow recommends a rebuild
+rather than trusting a possibly-outdated render.
+
+`/sdp work` still advances exactly one safe step per invocation, and
+the freshness check never auto-saves notes, never writes to
+ServiceDesk, and never runs an inspector. `/sdp save-note <id>`
+remains the explicit approval-gated ServiceDesk write boundary.
+
 ## Initial target inspector
 
 The initial future inspector target is:
