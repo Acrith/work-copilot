@@ -431,6 +431,18 @@ are the same test user/group you just verified directly.
 
    Drafts are local-only until you choose to post them.
 
+   Immediately after writing `draft_note.md`, `/sdp draft-note` runs
+   the same local draft-note validation pass that `/sdp save-note`
+   uses. A clean draft logs `Draft note validation: no issues
+   found.`; an invalid draft logs the findings plus `Draft note has
+   validation errors. Regenerate or edit the draft before saving.`
+   The post-generation validation does not call the model again,
+   does not contact AD or Exchange, does not run inspectors, and
+   does not save anything to ServiceDesk. Invalid drafts remain
+   local — inspect `draft_note.md`, edit it directly, or re-run
+   `/sdp draft-note <request_id>`. `/sdp save-note <request_id>`
+   remains the explicit approval-gated ServiceDesk write boundary.
+
 ## Expected local output
 
 Inspector results are written under the workspace at:

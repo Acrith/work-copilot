@@ -102,6 +102,13 @@ The per-step commands `/sdp work` orchestrates are:
    - drafts a local internal technician note from saved context and
      the inspection report
    - remains local-only
+   - runs the same local draft-note validation pass immediately
+     after writing `draft_note.md`. The post-generation validation
+     does not call the model again, does not contact ServiceDesk,
+     Active Directory, or Exchange, does not run any inspector, and
+     does not save anything to ServiceDesk. Validation errors do not
+     block draft generation — the draft remains local and can be
+     inspected, edited, or regenerated.
 
 7. `/sdp save-note <id>`
    - explicit approval-gated ServiceDesk write boundary
@@ -205,6 +212,33 @@ rather than trusting a possibly-outdated render.
 the freshness check never auto-saves notes, never writes to
 ServiceDesk, and never runs an inspector. `/sdp save-note <id>`
 remains the explicit approval-gated ServiceDesk write boundary.
+
+## Draft-note validation after generation
+
+`/sdp draft-note <id>` runs the same local draft-note validation pass
+immediately after it writes `draft_note.md`. The post-generation
+validation is local-only — it does not call the model again, does not
+contact ServiceDesk, Active Directory, or Exchange, does not run any
+inspector, and does not save anything to ServiceDesk.
+
+A clean draft logs:
+
+```text
+Draft note validation: no issues found.
+```
+
+An invalid draft logs formatted findings followed by:
+
+```text
+Draft note has validation errors. Regenerate or edit the draft before saving.
+```
+
+Invalid drafts remain local. The operator can inspect `draft_note.md`,
+edit it directly, or regenerate it by re-running
+`/sdp draft-note <id>`. Generation is never blocked by these
+findings — only `/sdp save-note <id>` is the explicit approval-gated
+write boundary, and its own gate (below) is the final check before
+any ServiceDesk write.
 
 ## Draft-note validation at the save boundary
 
