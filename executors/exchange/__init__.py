@@ -23,15 +23,23 @@ from executors.exchange.mailbox_permission import (
     execute_exchange_grant_full_access_mock,
     register_mock_exchange_executors,
 )
+from executors.exchange.planning import (
+    SUPPORTED_SKILL_IDS,
+    ExecutorPlanningResult,
+    plan_exchange_grant_full_access_preview_from_skill_plan,
+)
 
 __all__ = [
     "EXCHANGE_GRANT_FULL_ACCESS_EXECUTOR_ID",
     "EXCHANGE_GRANT_FULL_ACCESS_OPERATION",
     "EXCHANGE_GRANT_FULL_ACCESS_RIGHTS",
+    "ExecutorPlanningResult",
+    "SUPPORTED_SKILL_IDS",
     "build_exchange_grant_full_access_preview",
     "build_exchange_grant_full_access_request",
     "create_exchange_grant_full_access_executor_definition",
     "create_mock_exchange_executor_registry",
     "execute_exchange_grant_full_access_mock",
+    "plan_exchange_grant_full_access_preview_from_skill_plan",
     "register_mock_exchange_executors",
 ]
