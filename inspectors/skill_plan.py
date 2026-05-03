@@ -144,6 +144,77 @@ def build_inspector_request_from_skill_plan(
 
     extracted_inputs = parse_extracted_inputs(skill_plan_text)
 
+    return _build_inspector_request_from_extracted_inputs(
+        request_id=request_id,
+        inspector_id=inspector_id,
+        extracted_inputs=extracted_inputs,
+    )
+
+
+def build_inspector_request_from_parsed_skill_plan(
+    *,
+    request_id: str,
+    plan,
+    inspector_id: str,
+) -> InspectorRequest:
+    """Build an `InspectorRequest` from a `ParsedServiceDeskSkillPlan`.
+
+    Same per-inspector field acceptance, identifier preference, error
+    messages, and `InspectorRequest` shape as
+    `build_inspector_request_from_skill_plan`. The two paths share the
+    inspector-specific logic via `_build_inspector_request_from_extracted_inputs`,
+    so structured-source and Markdown-source request building stay in
+    lockstep.
+    """
+    inspector_id = normalize_inspector_id(inspector_id)
+
+    if inspector_id not in SUPPORTED_INSPECTOR_IDS:
+        raise ValueError(
+            f"Unsupported inspector for skill-plan handoff: {inspector_id}"
+        )
+
+    extracted_inputs = _extracted_inputs_from_parsed_plan(plan)
+
+    return _build_inspector_request_from_extracted_inputs(
+        request_id=request_id,
+        inspector_id=inspector_id,
+        extracted_inputs=extracted_inputs,
+    )
+
+
+def _extracted_inputs_from_parsed_plan(plan) -> dict[str, SkillPlanInput]:
+    """Convert `ParsedServiceDeskSkillPlan.extracted_inputs` into the
+    same `dict[str, SkillPlanInput]` shape produced by
+    `parse_extracted_inputs(text)`.
+
+    The parser already strips/cleans string fields, so values pass
+    through; `needed_now` is converted from its `"yes"`/`"no"` string
+    to the bool `SkillPlanInput.needed_now` expects.
+    """
+    parsed: dict[str, SkillPlanInput] = {}
+
+    for item in plan.extracted_inputs:
+        field_name = (item.field or "").strip()
+        if not field_name:
+            continue
+
+        parsed[field_name] = SkillPlanInput(
+            field=field_name,
+            status=(item.status or "").strip(),
+            value=_clean_markdown_value(item.value or ""),
+            evidence=(item.evidence or "").strip(),
+            needed_now=(item.needed_now or "").strip().lower() == "yes",
+        )
+
+    return parsed
+
+
+def _build_inspector_request_from_extracted_inputs(
+    *,
+    request_id: str,
+    inspector_id: str,
+    extracted_inputs: dict[str, SkillPlanInput],
+) -> InspectorRequest:
     if inspector_id == "exchange.mailbox.inspect":
         mailbox_address = _first_present_input_value(
             extracted_inputs,

@@ -4,6 +4,7 @@ from inspectors.models import InspectorRequest
 from inspectors.skill_plan import (
     SkillPlanInput,
     SkillPlanInspectorSelection,
+    build_inspector_request_from_parsed_skill_plan,
     build_inspector_request_from_skill_plan,
     normalize_inspector_id,
     parse_extracted_inputs,
@@ -16,8 +17,10 @@ from inspectors.skill_plan import (
     select_supported_inspector_tools,
 )
 from servicedesk_skill_plan import (
+    ExtractedInput,
     ParsedServiceDeskSkillPlan,
     SkillPlanAutomationHandoff,
+    parse_servicedesk_skill_plan,
 )
 
 
@@ -860,3 +863,363 @@ def test_select_inspectors_for_parsed_skill_plan_unsupported_tool_falls_back_or_
     )
 
     assert select_inspectors_for_parsed_skill_plan(plan_no_match) == []
+
+
+# --------------------- Parsed-plan request building ---------------------
+
+
+def _matches_markdown_request(
+    *,
+    request_id: str,
+    skill_plan_text: str,
+    inspector_id: str,
+):
+    """Build the same request via Markdown and parsed-plan paths and
+    assert they are equal. Returns the parsed-plan request for further
+    assertions.
+    """
+    markdown_request = build_inspector_request_from_skill_plan(
+        request_id=request_id,
+        skill_plan_text=skill_plan_text,
+        inspector_id=inspector_id,
+    )
+
+    plan = parse_servicedesk_skill_plan(skill_plan_text)
+    parsed_request = build_inspector_request_from_parsed_skill_plan(
+        request_id=request_id,
+        plan=plan,
+        inspector_id=inspector_id,
+    )
+
+    assert parsed_request == markdown_request
+    return parsed_request
+
+
+def test_parsed_request_matches_markdown_for_exchange_mailbox():
+    skill_plan = """
+## Extracted inputs
+
+- field: mailbox_address
+  status: present
+  value: user@example.com
+  evidence: saved context
+  needed_now: yes
+
+## Automation handoff
+
+- Suggested inspector tools: exchange.mailbox.inspect
+"""
+
+    request = _matches_markdown_request(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="exchange.mailbox.inspect",
+    )
+
+    assert isinstance(request, InspectorRequest)
+    assert request.target.id == "user@example.com"
+    assert request.inputs["mailbox_address"] == "user@example.com"
+
+
+def test_parsed_request_matches_markdown_for_exchange_target_user_fallback():
+    skill_plan = """
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: user@example.com
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = _matches_markdown_request(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="exchange.mailbox.inspect",
+    )
+    assert request.target.id == "user@example.com"
+
+
+def test_parsed_request_matches_markdown_for_ad_user_with_upn():
+    skill_plan = """
+## Extracted inputs
+
+- field: user_principal_name
+  status: present
+  value: name.surname@example.com
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = _matches_markdown_request(
+        request_id="56050",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.user.inspect",
+    )
+    assert request.target.type == "active_directory_user"
+    assert request.target.id == "name.surname@example.com"
+    assert request.inputs["user_identifier"] == "name.surname@example.com"
+
+
+def test_parsed_request_matches_markdown_for_ad_user_with_target_user_email():
+    skill_plan = """
+## Extracted inputs
+
+- field: target_user_email
+  status: present
+  value: name.surname@example.com
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = _matches_markdown_request(
+        request_id="56050",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.user.inspect",
+    )
+    assert request.target.id == "name.surname@example.com"
+    assert request.inputs["user_identifier"] == "name.surname@example.com"
+
+
+def test_parsed_request_matches_markdown_for_ad_group():
+    skill_plan = """
+## Extracted inputs
+
+- field: group_name
+  status: present
+  value: usr.podpis.test
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = _matches_markdown_request(
+        request_id="56050",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.group.inspect",
+    )
+    assert request.target.type == "active_directory_group"
+    assert request.target.id == "usr.podpis.test"
+    assert request.inputs["group_identifier"] == "usr.podpis.test"
+
+
+def test_parsed_request_matches_markdown_for_ad_group_membership():
+    skill_plan = """
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: name.surname@example.com
+  evidence: saved context
+  needed_now: yes
+
+- field: target_group
+  status: present
+  value: usr.podpis.test
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = _matches_markdown_request(
+        request_id="56050",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.group_membership.inspect",
+    )
+    assert request.target.type == "active_directory_group_membership"
+    assert request.target.id == "name.surname@example.com@usr.podpis.test"
+    assert request.inputs["user_identifier"] == "name.surname@example.com"
+    assert request.inputs["group_identifier"] == "usr.podpis.test"
+
+
+def test_parsed_request_raises_when_required_input_missing_for_exchange():
+    plan = parse_servicedesk_skill_plan(
+        """
+## Extracted inputs
+
+- field: mailbox_address
+  status: missing
+  value:
+  evidence: none
+  needed_now: yes
+"""
+    )
+
+    with pytest.raises(ValueError, match="missing mailbox_address"):
+        build_inspector_request_from_parsed_skill_plan(
+            request_id="55948",
+            plan=plan,
+            inspector_id="exchange.mailbox.inspect",
+        )
+
+
+def test_parsed_request_raises_when_required_input_missing_for_ad_user():
+    plan = parse_servicedesk_skill_plan(
+        """
+## Extracted inputs
+
+- field: target_user
+  status: missing
+  value:
+  evidence: none
+  needed_now: yes
+"""
+    )
+
+    with pytest.raises(ValueError, match="missing user_principal_name"):
+        build_inspector_request_from_parsed_skill_plan(
+            request_id="56050",
+            plan=plan,
+            inspector_id="active_directory.user.inspect",
+        )
+
+
+def test_parsed_request_raises_when_inspector_unsupported():
+    plan = parse_servicedesk_skill_plan("")
+
+    with pytest.raises(ValueError, match="Unsupported inspector"):
+        build_inspector_request_from_parsed_skill_plan(
+            request_id="55948",
+            plan=plan,
+            inspector_id="exchange.shared_mailbox.get_full_access_permissions",
+        )
+
+
+def test_parsed_request_raises_when_group_membership_missing_inputs():
+    user_only_plan = parse_servicedesk_skill_plan(
+        """
+## Extracted inputs
+
+- field: target_user
+  status: present
+  value: name.surname@example.com
+  evidence: saved context
+  needed_now: yes
+"""
+    )
+
+    with pytest.raises(
+        ValueError, match="missing user and/or group identifier"
+    ):
+        build_inspector_request_from_parsed_skill_plan(
+            request_id="56050",
+            plan=user_only_plan,
+            inspector_id="active_directory.group_membership.inspect",
+        )
+
+
+def test_parsed_request_strips_backticks_in_values_like_markdown_path():
+    """Markdown parser strips backticks from values; the parser feeding
+    the parsed-plan path also strips backticks. The two paths must
+    produce identical requests for backtick-quoted values.
+    """
+    skill_plan = """
+## Extracted inputs
+
+- field: target_user_email
+  status: present
+  value: `name.surname@example.com`
+  evidence: saved context
+  needed_now: yes
+"""
+
+    request = _matches_markdown_request(
+        request_id="56050",
+        skill_plan_text=skill_plan,
+        inspector_id="active_directory.user.inspect",
+    )
+    assert request.inputs["user_identifier"] == "name.surname@example.com"
+
+
+def test_parsed_request_skill_plan_inputs_match_markdown_serialization():
+    """The `skill_plan_inputs` payload serialized inside `inputs` must
+    match the Markdown path exactly so downstream consumers cannot tell
+    the two sources apart.
+    """
+    skill_plan = """
+## Extracted inputs
+
+- field: mailbox_address
+  status: present
+  value: user@example.com
+  evidence: saved context
+  needed_now: yes
+
+- field: approval_status
+  status: unclear
+  value:
+  evidence: no explicit approval visible
+  needed_now: yes
+
+- field: effective_date
+  status: not_needed_now
+  value:
+  evidence: no effective date needed
+  needed_now: no
+"""
+
+    parsed_request = _matches_markdown_request(
+        request_id="55948",
+        skill_plan_text=skill_plan,
+        inspector_id="exchange.mailbox.inspect",
+    )
+
+    assert parsed_request.inputs["skill_plan_inputs"] == {
+        "mailbox_address": {
+            "field": "mailbox_address",
+            "status": "present",
+            "value": "user@example.com",
+            "evidence": "saved context",
+            "needed_now": True,
+        },
+        "approval_status": {
+            "field": "approval_status",
+            "status": "unclear",
+            "value": "",
+            "evidence": "no explicit approval visible",
+            "needed_now": True,
+        },
+        "effective_date": {
+            "field": "effective_date",
+            "status": "not_needed_now",
+            "value": "",
+            "evidence": "no effective date needed",
+            "needed_now": False,
+        },
+    }
+
+
+def test_parsed_request_handles_directly_constructed_plan():
+    """Directly constructed ParsedServiceDeskSkillPlan (no Markdown
+    parsing) should also produce a valid request, using the existing
+    `ExtractedInput` shape with string `needed_now`.
+    """
+    plan = ParsedServiceDeskSkillPlan(
+        metadata={},
+        extracted_inputs=[
+            ExtractedInput(
+                field="user_principal_name",
+                status="present",
+                value="name.surname@example.com",
+                evidence="from request body",
+                needed_now="yes",
+            )
+        ],
+        automation_handoff=SkillPlanAutomationHandoff(
+            ready_for_inspection="yes",
+            ready_for_execution="no",
+            suggested_inspector_tools=["active_directory.user.inspect"],
+            suggested_execute_tools=[],
+        ),
+    )
+
+    request = build_inspector_request_from_parsed_skill_plan(
+        request_id="56050",
+        plan=plan,
+        inspector_id="active_directory.user.inspect",
+    )
+
+    assert request.inspector == "active_directory.user.inspect"
+    assert request.target.id == "name.surname@example.com"
+    assert request.inputs["user_identifier"] == "name.surname@example.com"
+    assert request.inputs["skill_plan_inputs"]["user_principal_name"][
+        "needed_now"
+    ] is True

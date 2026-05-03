@@ -1489,9 +1489,24 @@ def test_textual_app_sdp_inspect_skill_branch_prefers_structured_sidecar():
     inspector_run_index = branch.index("run_inspector_and_save(")
     assert block_index < inspector_run_index
 
-    # Inspector request building still uses the Markdown skill plan
-    # text — request builders unchanged in this PR.
+    # Both request builders are referenced. Structured-source path uses
+    # build_inspector_request_from_parsed_skill_plan; Markdown fallback
+    # path uses build_inspector_request_from_skill_plan.
+    assert "build_inspector_request_from_parsed_skill_plan(" in branch
+    assert "build_inspector_request_from_skill_plan(" in branch
     assert "skill_plan_text=latest_skill_plan" in branch
+    assert "plan=sidecar_load_result.plan" in branch
+
+    # The dispatch is gated on the same flag that selected validation /
+    # selection source, so structured and Markdown paths stay in lockstep.
+    assert "if use_structured_plan:" in branch
+
+    # run_inspector_and_save still runs after request building.
+    request_build_index = branch.index(
+        "build_inspector_request_from_parsed_skill_plan("
+    )
+    inspector_run_index_2 = branch.index("run_inspector_and_save(")
+    assert request_build_index < inspector_run_index_2
 
 
 # --------------------- /sdp status parsing ------------------------------

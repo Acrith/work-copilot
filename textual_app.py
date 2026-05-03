@@ -44,6 +44,7 @@ from inspectors.inspection_report import (
 from inspectors.runner import run_inspector_and_save
 from inspectors.skill_plan import (
     SUPPORTED_INSPECTOR_IDS,
+    build_inspector_request_from_parsed_skill_plan,
     build_inspector_request_from_skill_plan,
     parse_suggested_inspector_tools,
     select_inspectors_for_parsed_skill_plan,
@@ -1078,11 +1079,22 @@ class WorkCopilotTextualApp(App):
                     continue
 
                 try:
-                    inspector_request = build_inspector_request_from_skill_plan(
-                        request_id=request_id,
-                        skill_plan_text=latest_skill_plan,
-                        inspector_id=inspector_id,
-                    )
+                    if use_structured_plan:
+                        inspector_request = (
+                            build_inspector_request_from_parsed_skill_plan(
+                                request_id=request_id,
+                                plan=sidecar_load_result.plan,
+                                inspector_id=inspector_id,
+                            )
+                        )
+                    else:
+                        inspector_request = (
+                            build_inspector_request_from_skill_plan(
+                                request_id=request_id,
+                                skill_plan_text=latest_skill_plan,
+                                inspector_id=inspector_id,
+                            )
+                        )
                 except ValueError as exc:
                     self._log_system_message(
                         f"Could not build {inspector_id} request: {exc}"
