@@ -565,12 +565,24 @@ def _decide_stage_and_next_action(
             blocker,
         )
 
-    # Validation sidecar is fresh and clean. The structured skill-plan
-    # JSON sidecar is non-essential (existing Markdown fallback works)
-    # but if it exists and is stale or unreadable, refresh it before
-    # inspection so /sdp inspect-skill and /sdp status see consistent
-    # structured data.
-    if skill_plan_summary.exists and not skill_plan_summary.readable:
+    # Validation sidecar is fresh and clean (errors-or-warnings did not
+    # block above). The structured skill-plan JSON sidecar must also be
+    # present, fresh, and readable so /sdp status / /sdp work / and
+    # downstream consumers see consistent structured data. Missing,
+    # stale, or unreadable → refresh locally from the existing
+    # latest_skill_plan.md.
+    if not skill_plan_summary.exists:
+        return (
+            ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE,
+            ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS,
+            True,
+            (
+                "Structured skill plan sidecar is missing; refresh "
+                "sidecars from latest_skill_plan.md before inspection."
+            ),
+        )
+
+    if not skill_plan_summary.readable:
         if skill_plan_summary.stale:
             blocker = (
                 "Structured skill plan sidecar is older than "
