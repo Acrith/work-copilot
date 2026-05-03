@@ -117,6 +117,24 @@ approval-gated and posts only the `## Note body` section of the
 generated draft as an internal ServiceDesk note. Up to and including
 `/sdp draft-note`, no ServiceDesk write happens.
 
+The same flow can also be driven one safe step at a time using the
+state-driven workflow commands:
+
+```text
+/sdp status <request_id>
+/sdp work <request_id>
+/sdp work <request_id>
+...
+/sdp save-note <request_id>
+```
+
+`/sdp work` reuses the same per-step commands and the same safety
+gates. It advances exactly one step per invocation, never auto-saves
+notes, and stops before the ServiceDesk write boundary so the operator
+can review the local draft and explicitly run `/sdp save-note
+<request_id>`. `/sdp continue <request_id>` is an alias for `/sdp work
+<request_id>`.
+
 ## Known limitations after smoke test
 
 - **No AD writes.** Real AD inspection is read-only. Mutating skills

@@ -186,6 +186,92 @@ Command behavior:
 - `/exit` exits the current interactive mode.
 - `/quit` is an alias for `/exit`.
 
+## ServiceDesk workflow
+
+Work Copilot has a state-driven ServiceDesk workflow that prepares an
+internal technician note for a ServiceDesk request without writing to
+ServiceDesk, Active Directory, or Exchange until the operator explicitly
+approves the final write.
+
+The recommended workflow per request is:
+
+```text
+/sdp status <id>
+/sdp work <id>
+/sdp work <id>
+...
+/sdp save-note <id>
+```
+
+`/sdp work` advances exactly one safe next step per invocation. It can
+walk through:
+
+- context summary
+- skill plan
+- skill-plan validation and repair
+- read-only inspection
+- inspection report
+- draft note
+
+It stops before the ServiceDesk write boundary and tells the operator to
+review the local draft and explicitly run `/sdp save-note <id>` if
+approved.
+
+### Recommended commands
+
+- `/sdp status <id>`
+  - Shows local workflow state and the suggested next command.
+  - Local/read-only state display only.
+  - Does not contact ServiceDesk, Active Directory, or Exchange.
+  - Does not run the model or any inspectors.
+- `/sdp work <id>`
+  - Advances the request by exactly one safe next workflow step.
+  - Uses local workflow state to decide the next action.
+  - Reuses the existing per-step command handlers and safety gates.
+  - May perform local, model, or read-only inspector work depending on
+    the next step.
+  - Does not run the whole pipeline in one invocation.
+  - Never auto-saves notes to ServiceDesk.
+  - At the ready-to-save stage, prints guidance to review the local
+    draft and explicitly run `/sdp save-note <id>`.
+- `/sdp continue <id>`
+  - Alias for `/sdp work <id>`.
+- `/sdp save-note <id>`
+  - Explicit approval-gated ServiceDesk write boundary.
+  - Posts the prepared internal note as a ServiceDesk note only when
+    the operator intentionally runs this command and approves the
+    write.
+
+### Lower-level commands
+
+The per-step commands still exist for advanced, manual, or debugging
+use, and `/sdp work` reuses them internally:
+
+- `/sdp context <id>`
+- `/sdp skill-plan <id>`
+- `/sdp repair-skill-plan <id>`
+- `/sdp inspect-skill <id>`
+- `/sdp inspection-report <id>`
+- `/sdp draft-note <id>`
+
+### Local state on disk
+
+Per-request workflow artifacts live under the workspace at:
+
+```text
+.work_copilot/servicedesk/<request_id>/
+```
+
+Including the validation sidecar that `/sdp status` and `/sdp work` use
+to decide the next safe step:
+
+```text
+.work_copilot/servicedesk/<request_id>/latest_skill_plan_validation.json
+```
+
+These files are local-only. Up to and including `/sdp draft-note`, no
+ServiceDesk, Active Directory, or Exchange write happens.
+
 ## Textual mode status
 
 Textual mode is experimental but functional for normal prompt turns and approval-gated write/exec actions.
