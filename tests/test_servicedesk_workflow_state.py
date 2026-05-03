@@ -4,6 +4,7 @@ from pathlib import Path
 from draft_exports import (
     build_servicedesk_draft_note_path,
     build_servicedesk_latest_context_path,
+    build_servicedesk_latest_skill_plan_json_path,
     build_servicedesk_latest_skill_plan_path,
     build_servicedesk_latest_skill_plan_validation_path,
 )
@@ -491,3 +492,243 @@ def test_suggested_next_command_returns_none_for_review_only_or_none():
         )
         is None
     )
+
+
+# --------------------- Structured skill-plan sidecar --------------------
+
+
+def _seed_skill_plan_json(workspace: Path, payload: dict) -> None:
+    _write(
+        build_servicedesk_latest_skill_plan_json_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        json.dumps(payload, indent=2) + "\n",
+    )
+
+
+def _seed_skill_plan_json_raw(workspace: Path, raw: str) -> None:
+    _write(
+        build_servicedesk_latest_skill_plan_json_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        raw,
+    )
+
+
+_CLEAN_STRUCTURED_PAYLOAD = {
+    "schema_version": 1,
+    "request_id": REQUEST_ID,
+    "metadata": {
+        "Skill match": (
+            "active_directory.user.update_profile_attributes"
+        ),
+        "Capability classification": "draft_only_manual_now",
+    },
+    "extracted_inputs": [],
+    "missing_information_needed_now": [],
+    "current_blocker": None,
+    "automation_handoff": {
+        "ready_for_inspection": "yes",
+        "ready_for_execution": "no",
+        "suggested_inspector_tools": ["active_directory.user.inspect"],
+        "suggested_execute_tools": [],
+        "automation_blocker": None,
+    },
+}
+
+
+def test_missing_structured_skill_plan_does_not_block_and_status_says_no(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    # Intentionally do not seed latest_skill_plan.json.
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.skill_plan_summary.exists is False
+    assert state.skill_plan_summary.readable is False
+    assert state.skill_plan_summary.error is None
+    assert state.skill_plan_summary.suggested_inspector_tools == []
+    assert state.skill_plan_summary.suggested_execute_tools == []
+
+    joined = "\n".join(state.status_lines)
+    assert "- structured skill plan: no" in joined
+
+    # Workflow decisions still come from existing artifact + validation
+    # checks. Clean validation with no inspector outputs recommends
+    # inspection.
+    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
+    assert state.blocked is False
+
+
+def test_readable_structured_skill_plan_populates_summary_and_status_lines(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json(tmp_path, _CLEAN_STRUCTURED_PAYLOAD)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.skill_plan_summary
+    assert summary.exists is True
+    assert summary.readable is True
+    assert summary.error is None
+    assert summary.schema_version == 1
+    assert (
+        summary.skill_match
+        == "active_directory.user.update_profile_attributes"
+    )
+    assert summary.capability_classification == "draft_only_manual_now"
+    assert summary.ready_for_inspection == "yes"
+    assert summary.ready_for_execution == "no"
+    assert summary.suggested_inspector_tools == [
+        "active_directory.user.inspect"
+    ]
+    assert summary.suggested_execute_tools == []
+
+    joined = "\n".join(state.status_lines)
+    assert "- structured skill plan: yes" in joined
+    assert (
+        "- skill match: active_directory.user.update_profile_attributes"
+        in joined
+    )
+    assert "- capability classification: draft_only_manual_now" in joined
+    assert "- ready for inspection: yes" in joined
+    assert "- ready for execution: no" in joined
+    assert (
+        "- suggested inspectors: active_directory.user.inspect" in joined
+    )
+    assert "- suggested execute tools: none" in joined
+
+
+def test_structured_skill_plan_accepts_snake_case_metadata_keys(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "request_id": REQUEST_ID,
+            "metadata": {
+                "skill_match": "active_directory.user.inspect_only",
+                "capability_classification": "read_only_inspection_now",
+            },
+            "automation_handoff": {
+                "ready_for_inspection": "yes",
+                "ready_for_execution": "no",
+                "suggested_inspector_tools": [
+                    "active_directory.user.inspect"
+                ],
+                "suggested_execute_tools": [],
+            },
+        },
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.skill_plan_summary
+    assert summary.skill_match == "active_directory.user.inspect_only"
+    assert summary.capability_classification == "read_only_inspection_now"
+
+    joined = "\n".join(state.status_lines)
+    assert "- skill match: active_directory.user.inspect_only" in joined
+    assert (
+        "- capability classification: read_only_inspection_now" in joined
+    )
+
+
+def test_structured_skill_plan_unknown_when_metadata_missing(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "request_id": REQUEST_ID,
+            "metadata": {},
+            "automation_handoff": {},
+        },
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.skill_plan_summary
+    assert summary.exists is True
+    assert summary.readable is True
+    assert summary.skill_match is None
+    assert summary.capability_classification is None
+    assert summary.ready_for_inspection is None
+    assert summary.ready_for_execution is None
+
+    joined = "\n".join(state.status_lines)
+    assert "- skill match: unknown" in joined
+    assert "- capability classification: unknown" in joined
+    assert "- ready for inspection: unknown" in joined
+    assert "- ready for execution: unknown" in joined
+    assert "- suggested inspectors: none" in joined
+    assert "- suggested execute tools: none" in joined
+
+
+def test_unreadable_structured_skill_plan_does_not_change_workflow_decision(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json_raw(tmp_path, "{this is not valid json")
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.skill_plan_summary
+    assert summary.exists is True
+    assert summary.readable is False
+    assert summary.error is not None
+    assert "could not be read" in summary.error
+
+    joined = "\n".join(state.status_lines)
+    assert "- structured skill plan: yes (unreadable:" in joined
+
+    # Workflow decisions are not changed only because the structured
+    # sidecar is unreadable. With clean validation and no inspector
+    # outputs, /sdp work should still recommend inspection.
+    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
+    assert state.blocked is False
+
+
+def test_non_object_structured_skill_plan_is_treated_as_unreadable(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json_raw(tmp_path, json.dumps([1, 2, 3]))
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.skill_plan_summary
+    assert summary.exists is True
+    assert summary.readable is False
+    assert summary.error == (
+        "Local skill plan JSON sidecar is not a JSON object."
+    )
+
+    joined = "\n".join(state.status_lines)
+    assert "- structured skill plan: yes (unreadable:" in joined
