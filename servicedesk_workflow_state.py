@@ -30,6 +30,11 @@ from inspectors.storage import (
     build_inspector_output_dir,
     build_inspector_result_path,
 )
+from servicedesk_draft_note_validation import (
+    DraftNoteValidationFinding,
+    draft_note_findings_have_errors,
+    validate_servicedesk_draft_note_file,
+)
 from servicedesk_skill_plan import (
     SKILL_PLAN_JSON_SCHEMA_VERSION,
     load_skill_plan_json_sidecar,
@@ -112,6 +117,9 @@ class ServiceDeskWorkflowState:
     inspection_report_stale: bool = False
     draft_note_exists: bool = False
     draft_note_stale: bool = False
+    draft_note_validation_findings: list[DraftNoteValidationFinding] = field(
+        default_factory=list
+    )
     skill_plan_summary: ServiceDeskSkillPlanSummary = field(
         default_factory=ServiceDeskSkillPlanSummary
     )
@@ -193,6 +201,19 @@ def read_servicedesk_workflow_state(
         )
     )
 
+    # Run local draft-note validation only when the draft exists and
+    # is fresh; missing/stale drafts already route to DRAFT_NOTE so
+    # validation findings would be redundant noise. Validation is
+    # filesystem-only and never raises.
+    if draft_note_exists and not draft_note_stale:
+        draft_note_validation_findings = (
+            validate_servicedesk_draft_note_file(
+                workspace=workspace, request_id=request_id
+            )
+        )
+    else:
+        draft_note_validation_findings = []
+
     skill_plan_summary = _build_skill_plan_summary_from_loader(
         workspace=workspace, request_id=request_id
     )
@@ -208,6 +229,7 @@ def read_servicedesk_workflow_state(
         inspection_report_stale=inspection_report_stale,
         draft_note_exists=draft_note_exists,
         draft_note_stale=draft_note_stale,
+        draft_note_validation_findings=draft_note_validation_findings,
         skill_plan_summary=skill_plan_summary,
     )
 
@@ -223,6 +245,7 @@ def read_servicedesk_workflow_state(
         inspection_report_stale=inspection_report_stale,
         draft_note_exists=draft_note_exists,
         draft_note_stale=draft_note_stale,
+        draft_note_validation_findings=draft_note_validation_findings,
         skill_plan_summary=skill_plan_summary,
         stage=stage,
         next_action=next_action,
@@ -242,6 +265,7 @@ def read_servicedesk_workflow_state(
         inspection_report_stale=inspection_report_stale,
         draft_note_exists=draft_note_exists,
         draft_note_stale=draft_note_stale,
+        draft_note_validation_findings=draft_note_validation_findings,
         skill_plan_summary=skill_plan_summary,
         stage=stage,
         next_action=next_action,
@@ -547,6 +571,7 @@ def _decide_stage_and_next_action(
     inspection_report_stale: bool,
     draft_note_exists: bool,
     draft_note_stale: bool,
+    draft_note_validation_findings: list[DraftNoteValidationFinding],
     skill_plan_summary: ServiceDeskSkillPlanSummary,
 ) -> tuple[
     ServiceDeskWorkflowStage,
@@ -737,6 +762,38 @@ def _decide_stage_and_next_action(
             ),
         )
 
+    # Fresh draft note that fails local validation (placeholder text,
+    # missing/empty body, forbidden write claim, …) must not be
+    # recommended for save. Route back to DRAFT_NOTE so /sdp work
+    # regenerates the draft. /sdp save-note's own validation gate
+    # remains unchanged and is the final write-time check.
+    if draft_note_findings_have_errors(draft_note_validation_findings):
+        first_error = next(
+            (
+                finding
+                for finding in draft_note_validation_findings
+                if finding.severity == "error"
+            ),
+            None,
+        )
+        if first_error is not None:
+            blocker = (
+                "Draft note has validation errors: "
+                f"[{first_error.code}] {first_error.message} "
+                "Regenerate the draft before saving the note."
+            )
+        else:
+            blocker = (
+                "Draft note has validation errors. Regenerate the "
+                "draft before saving the note."
+            )
+        return (
+            ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING,
+            ServiceDeskWorkflowNextAction.DRAFT_NOTE,
+            False,
+            blocker,
+        )
+
     return (
         ServiceDeskWorkflowStage.READY_TO_SAVE_NOTE,
         ServiceDeskWorkflowNextAction.SAVE_NOTE,
@@ -788,6 +845,31 @@ def _freshness_label(exists: bool, stale: bool) -> str:
     return "yes"
 
 
+def _draft_note_validation_label(
+    draft_note_exists: bool,
+    draft_note_stale: bool,
+    findings: list[DraftNoteValidationFinding],
+) -> str:
+    """Concise label for the draft-note validation line.
+
+    Skipped when there is no fresh draft note to validate (the
+    earlier missing/stale draft routing already explains the next
+    step). Otherwise reports clean / errors / warnings + finding
+    count, mirroring the skill-plan validation label style.
+    """
+    if not draft_note_exists or draft_note_stale:
+        return "skipped (no fresh draft note)"
+
+    finding_count = len(findings)
+    if finding_count == 0:
+        return "no issues found"
+
+    error_count = sum(1 for f in findings if f.severity == "error")
+    if error_count > 0:
+        return f"errors, {finding_count} finding(s)"
+    return f"warnings, {finding_count} finding(s)"
+
+
 def _yes_no(value: bool) -> str:
     return "yes" if value else "no"
 
@@ -805,6 +887,7 @@ def _format_status_lines(
     inspection_report_stale: bool,
     draft_note_exists: bool,
     draft_note_stale: bool,
+    draft_note_validation_findings: list[DraftNoteValidationFinding],
     skill_plan_summary: ServiceDeskSkillPlanSummary,
     stage: ServiceDeskWorkflowStage,
     next_action: ServiceDeskWorkflowNextAction,
@@ -844,6 +927,10 @@ def _format_status_lines(
         f"- inspector outputs: {_yes_no(inspector_outputs_exist)}",
         f"- inspection report: {_freshness_label(inspection_report_exists, inspection_report_stale)}",
         f"- draft note: {_freshness_label(draft_note_exists, draft_note_stale)}",
+        (
+            "- draft note validation: "
+            f"{_draft_note_validation_label(draft_note_exists, draft_note_stale, draft_note_validation_findings)}"
+        ),
     ]
 
     lines.extend(_format_skill_plan_summary_lines(skill_plan_summary))

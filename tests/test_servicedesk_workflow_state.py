@@ -144,12 +144,30 @@ def _seed_inspection_report(workspace: Path) -> None:
     )
 
 
+_VALID_DRAFT_NOTE = """\
+# ServiceDesk internal note draft
+
+## Note body
+
+Read-only inspection summary for the request.
+"""
+
+
 def _seed_draft_note(workspace: Path) -> None:
     _write(
         build_servicedesk_draft_note_path(
             workspace=str(workspace), request_id=REQUEST_ID
         ),
-        "# ServiceDesk internal note draft\n",
+        _VALID_DRAFT_NOTE,
+    )
+
+
+def _seed_draft_note_with_text(workspace: Path, text: str) -> None:
+    _write(
+        build_servicedesk_draft_note_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        text,
     )
 
 
@@ -1321,3 +1339,168 @@ def test_inspection_report_stat_failure_treated_as_stale(
 
     joined = "\n".join(state.status_lines)
     assert "- inspection report: yes (stale)" in joined
+
+
+# --------------------- Draft-note validation routing --------------------
+
+
+_DRAFT_NOTE_WITH_TODO = """\
+# ServiceDesk internal note draft
+
+## Note body
+
+Inspection summary.
+
+TODO: rewrite this section before saving.
+"""
+
+
+_DRAFT_NOTE_MISSING_BODY = """\
+# ServiceDesk internal note draft
+
+## Local draft metadata
+
+- Not posted to ServiceDesk yet.
+"""
+
+
+def _seed_full_chain_through_draft(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
+    _seed_inspector_output(tmp_path)
+    _seed_inspection_report(tmp_path)
+
+
+def test_valid_fresh_draft_note_routes_to_save_note(tmp_path):
+    _seed_full_chain_through_draft(tmp_path)
+    _seed_draft_note(tmp_path)  # uses _VALID_DRAFT_NOTE
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.draft_note_exists is True
+    assert state.draft_note_stale is False
+    assert state.draft_note_validation_findings == []
+    assert state.next_action in {
+        ServiceDeskWorkflowNextAction.SAVE_NOTE,
+        ServiceDeskWorkflowNextAction.REVIEW_DRAFT_NOTE,
+    }
+
+    joined = "\n".join(state.status_lines)
+    assert "- draft note validation: no issues found" in joined
+
+
+def test_fresh_draft_note_with_todo_routes_to_draft_note(tmp_path):
+    _seed_full_chain_through_draft(tmp_path)
+    _seed_draft_note_with_text(tmp_path, _DRAFT_NOTE_WITH_TODO)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    codes = {
+        finding.code for finding in state.draft_note_validation_findings
+    }
+    assert "placeholder_text_present" in codes
+
+    assert state.next_action == ServiceDeskWorkflowNextAction.DRAFT_NOTE
+    assert state.stage == ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING
+    assert state.blocker is not None
+    assert "Draft note has validation errors" in state.blocker
+    assert "placeholder_text_present" in state.blocker
+    assert "Regenerate the draft" in state.blocker
+
+    joined = "\n".join(state.status_lines)
+    assert "- draft note validation: errors, " in joined
+    assert "finding(s)" in joined
+
+
+def test_fresh_draft_note_with_missing_body_routes_to_draft_note(tmp_path):
+    _seed_full_chain_through_draft(tmp_path)
+    _seed_draft_note_with_text(tmp_path, _DRAFT_NOTE_MISSING_BODY)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    codes = {
+        finding.code for finding in state.draft_note_validation_findings
+    }
+    assert "note_body_missing" in codes
+
+    assert state.next_action == ServiceDeskWorkflowNextAction.DRAFT_NOTE
+    assert state.stage == ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING
+    assert state.blocker is not None
+    assert "note_body_missing" in state.blocker
+
+
+def test_stale_draft_note_skips_validation_and_keeps_stale_routing(tmp_path):
+    """When the draft is stale, the existing stale-routing wins and
+    draft-note validation is skipped — the user is going to regenerate
+    the draft anyway, and validating an outdated draft would be noise.
+    """
+    import os
+
+    _seed_full_chain_through_draft(tmp_path)
+    _seed_draft_note_with_text(tmp_path, _DRAFT_NOTE_WITH_TODO)
+
+    # Force the draft mtime behind the inspection report so it is
+    # treated as stale.
+    report_path = build_servicedesk_inspection_report_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    draft_path = build_servicedesk_draft_note_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    inspector_path = build_inspector_result_path(
+        workspace=str(tmp_path),
+        request_id=REQUEST_ID,
+        inspector_id="active_directory.user.inspect",
+    )
+    base = draft_path.stat().st_mtime
+    os.utime(inspector_path, (base - 120.0, base - 120.0))
+    os.utime(draft_path, (base - 60.0, base - 60.0))
+    os.utime(report_path, (base + 60.0, base + 60.0))
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.draft_note_stale is True
+    # Validation is skipped for stale drafts.
+    assert state.draft_note_validation_findings == []
+    assert state.next_action == ServiceDeskWorkflowNextAction.DRAFT_NOTE
+    assert state.stage == ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING
+    assert state.blocker is not None
+    assert "Draft note is stale" in state.blocker
+
+    joined = "\n".join(state.status_lines)
+    assert (
+        "- draft note validation: skipped (no fresh draft note)"
+        in joined
+    )
+
+
+def test_missing_draft_note_skips_validation_and_keeps_existing_routing(
+    tmp_path,
+):
+    _seed_full_chain_through_draft(tmp_path)
+    # Intentionally do not seed draft_note.md.
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.draft_note_exists is False
+    assert state.draft_note_validation_findings == []
+    assert state.next_action == ServiceDeskWorkflowNextAction.DRAFT_NOTE
+    assert state.stage == ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING
+
+    joined = "\n".join(state.status_lines)
+    assert (
+        "- draft note validation: skipped (no fresh draft note)"
+        in joined
+    )
