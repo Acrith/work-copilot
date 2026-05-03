@@ -1660,3 +1660,61 @@ def test_textual_app_sdp_work_branch_is_state_driven_and_save_safe():
     assert "Dispatching: " not in branch
     assert "Draft note appears ready" not in branch
     assert '_log_system_message("ServiceDesk workflow state:")' not in branch
+
+
+def test_textual_app_sdp_work_branch_runs_local_sidecar_refresh():
+    """Source-level guard for the REFRESH_SKILL_PLAN_SIDECARS short
+    circuit. Refresh must run locally from the existing
+    latest_skill_plan.md and must NOT call the model, ServiceDesk, AD,
+    Exchange, or any inspector. It must also not dispatch any other
+    slash command.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    branch_start = source.index('if command == "sdp_work":')
+    next_branch = source.index('if command == "unknown":', branch_start)
+    branch = source[branch_start:next_branch]
+
+    # The new short-circuit branches on the new enum.
+    assert (
+        "ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS"
+        in branch
+    )
+
+    # The refresh helper is invoked.
+    assert "refresh_skill_plan_sidecars_from_markdown(" in branch
+    assert "Refreshing skill-plan sidecars from " in branch
+    assert "latest_skill_plan.md" in branch
+
+    # The refresh branch logs the same "again to continue" advisory as
+    # other /sdp work steps so the operator knows to re-run /sdp work.
+    refresh_index = branch.index(
+        "refresh_skill_plan_sidecars_from_markdown("
+    )
+    again_index = branch.index(
+        "`/sdp work {request_id}` again to continue.", refresh_index
+    )
+    assert again_index > refresh_index
+
+    # Refresh must not call the model, ServiceDesk save workers, the
+    # inspector registry, or any inspector run helper. It also must not
+    # dispatch /sdp skill-plan via _submit_prompt — that would
+    # re-prompt the model and discard manual edits.
+    refresh_section_end = source.index(
+        "suggested_command = suggested_next_command_for_next_action(",
+        refresh_index,
+    )
+    refresh_section = branch[
+        branch.index("REFRESH_SKILL_PLAN_SIDECARS")
+        : refresh_section_end - branch_start
+    ]
+    assert "_run_model_turn_worker(" not in refresh_section
+    assert "_save_servicedesk_note_worker(" not in refresh_section
+    assert "_save_servicedesk_draft_worker(" not in refresh_section
+    assert "create_configured_inspector_registry_from_env(" not in (
+        refresh_section
+    )
+    assert "run_inspector_and_save(" not in refresh_section
+    assert "self._submit_prompt(" not in refresh_section

@@ -39,6 +39,7 @@ from servicedesk_skill_plan import (
 class ServiceDeskWorkflowStage(StrEnum):
     MISSING_CONTEXT = "missing_context"
     MISSING_SKILL_PLAN = "missing_skill_plan"
+    SKILL_PLAN_SIDECARS_STALE = "skill_plan_sidecars_stale"
     SKILL_PLAN_INVALID = "skill_plan_invalid"
     READY_FOR_INSPECTION = "ready_for_inspection"
     INSPECTION_MISSING = "inspection_missing"
@@ -52,6 +53,7 @@ class ServiceDeskWorkflowStage(StrEnum):
 class ServiceDeskWorkflowNextAction(StrEnum):
     RUN_CONTEXT = "run_context"
     RUN_SKILL_PLAN = "run_skill_plan"
+    REFRESH_SKILL_PLAN_SIDECARS = "refresh_skill_plan_sidecars"
     REPAIR_SKILL_PLAN = "repair_skill_plan"
     RUN_INSPECTION = "run_inspection"
     BUILD_INSPECTION_REPORT = "build_inspection_report"
@@ -186,6 +188,7 @@ def read_servicedesk_workflow_state(
         inspector_outputs_exist=inspector_outputs_exist,
         inspection_report_exists=inspection_report_exists,
         draft_note_exists=draft_note_exists,
+        skill_plan_summary=skill_plan_summary,
     )
 
     status_lines = _format_status_lines(
@@ -462,6 +465,7 @@ def _decide_stage_and_next_action(
     inspector_outputs_exist: bool,
     inspection_report_exists: bool,
     draft_note_exists: bool,
+    skill_plan_summary: ServiceDeskSkillPlanSummary,
 ) -> tuple[
     ServiceDeskWorkflowStage,
     ServiceDeskWorkflowNextAction,
@@ -484,56 +488,56 @@ def _decide_stage_and_next_action(
             None,
         )
 
-    # Skill plan exists. Honour validation sidecar if present.
+    # Skill plan exists. The validation sidecar may need refresh if
+    # missing/stale/unreadable. We refresh from the existing Markdown
+    # rather than re-prompting the model so manual edits to
+    # latest_skill_plan.md are preserved.
     if not validation_exists:
         return (
-            ServiceDeskWorkflowStage.UNKNOWN,
-            ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN,
+            ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE,
+            ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS,
             True,
             (
-                "Skill plan validation sidecar is missing; regenerate "
-                "the skill plan or validation state before inspection."
+                "Skill plan validation sidecar is missing; refresh "
+                "sidecars from latest_skill_plan.md before inspection."
             ),
         )
 
     if validation_has_errors:
         # An unreadable validation sidecar is a state problem, not a
-        # skill-plan-content problem. /sdp repair-skill-plan validates
-        # the Markdown itself and can short-circuit without rewriting
-        # the sidecar, which would loop /sdp work forever. Route the
-        # caller to regenerate the skill plan / validation state.
+        # skill-plan-content problem. Refresh the sidecars from the
+        # existing Markdown so the user's edits are preserved.
         if any(
             finding.code == "validation_sidecar_unreadable"
             for finding in validation_findings
         ):
             return (
-                ServiceDeskWorkflowStage.UNKNOWN,
-                ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN,
+                ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE,
+                ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS,
                 True,
                 (
                     "Skill plan validation sidecar is unreadable; "
-                    "regenerate the skill plan or validation state "
+                    "refresh sidecars from latest_skill_plan.md "
                     "before inspection."
                 ),
             )
 
         # A stale validation sidecar describes an older Markdown plan,
         # so its has_errors / findings cannot be trusted to reflect the
-        # current `latest_skill_plan.md`. Route the caller to regenerate
-        # the skill plan + validation state, same way as the unreadable
-        # case.
+        # current `latest_skill_plan.md`. Refresh the sidecars from the
+        # existing Markdown.
         if any(
             finding.code == "validation_sidecar_stale"
             for finding in validation_findings
         ):
             return (
-                ServiceDeskWorkflowStage.UNKNOWN,
-                ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN,
+                ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE,
+                ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS,
                 True,
                 (
                     "Skill plan validation sidecar is older than "
-                    "latest_skill_plan.md; regenerate the skill plan "
-                    "or validation state before inspection."
+                    "latest_skill_plan.md; refresh sidecars from "
+                    "latest_skill_plan.md before inspection."
                 ),
             )
 
@@ -557,6 +561,30 @@ def _decide_stage_and_next_action(
         return (
             ServiceDeskWorkflowStage.SKILL_PLAN_INVALID,
             ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN,
+            True,
+            blocker,
+        )
+
+    # Validation sidecar is fresh and clean. The structured skill-plan
+    # JSON sidecar is non-essential (existing Markdown fallback works)
+    # but if it exists and is stale or unreadable, refresh it before
+    # inspection so /sdp inspect-skill and /sdp status see consistent
+    # structured data.
+    if skill_plan_summary.exists and not skill_plan_summary.readable:
+        if skill_plan_summary.stale:
+            blocker = (
+                "Structured skill plan sidecar is older than "
+                "latest_skill_plan.md; refresh sidecars from "
+                "latest_skill_plan.md before inspection."
+            )
+        else:
+            blocker = (
+                "Structured skill plan sidecar is unreadable; refresh "
+                "sidecars from latest_skill_plan.md before inspection."
+            )
+        return (
+            ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE,
+            ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS,
             True,
             blocker,
         )
@@ -601,6 +629,11 @@ _NEXT_ACTION_TO_COMMAND_NAME: dict[ServiceDeskWorkflowNextAction, str] = {
     ServiceDeskWorkflowNextAction.BUILD_INSPECTION_REPORT: "inspection-report",
     ServiceDeskWorkflowNextAction.DRAFT_NOTE: "draft-note",
     ServiceDeskWorkflowNextAction.SAVE_NOTE: "save-note",
+    # Sidecar refresh has no separate user-facing command; it runs as
+    # an internal step inside `/sdp work <id>`. Mapping it back to
+    # `/sdp work <id>` lets `/sdp status` suggest the right command
+    # without inventing a public refresh command.
+    ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS: "work",
 }
 
 

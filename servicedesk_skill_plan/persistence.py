@@ -278,6 +278,54 @@ def build_persisting_validation_callback(
     return _callback
 
 
+def refresh_skill_plan_sidecars_from_markdown(
+    *,
+    workspace: str,
+    request_id: str,
+) -> list[str]:
+    """Local-only sidecar refresh: re-parse `latest_skill_plan.md` from
+    disk and rewrite both sidecars (validation JSON + structured JSON)
+    without calling the model or any external system. Never raises.
+
+    Use case: a manually-edited `latest_skill_plan.md` left the sidecars
+    stale or unreadable, and we want to bring them back in sync without
+    re-prompting the model (which would overwrite the manual edits).
+
+    Returns advisory log lines suitable for the TUI. If the Markdown is
+    missing, returns a single advisory line without touching either
+    sidecar.
+    """
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=workspace, request_id=request_id
+    )
+
+    if not md_path.exists():
+        return [
+            f"No local skill plan found for request {request_id}; "
+            "cannot refresh sidecars from latest_skill_plan.md.",
+        ]
+
+    try:
+        text = md_path.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 - refresh path must not raise
+        return [
+            "Skill plan sidecar refresh unavailable: "
+            f"could not read latest_skill_plan.md: {exc}",
+        ]
+
+    validation_lines = persist_and_format_skill_plan_validation(
+        workspace=workspace,
+        request_id=request_id,
+        text=text,
+    )
+    json_lines = persist_skill_plan_json_sidecar(
+        workspace=workspace,
+        request_id=request_id,
+        text=text,
+    )
+    return [*validation_lines, *json_lines]
+
+
 # ---------- Structured skill-plan JSON sidecar loader -------------------
 
 
