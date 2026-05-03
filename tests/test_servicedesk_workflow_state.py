@@ -812,3 +812,99 @@ def test_workflow_state_module_uses_typed_loader_not_raw_json_for_skill_plan():
     # No raw structured-sidecar JSON parsing remains for the skill plan
     # — checked indirectly: the old raw helper name is gone.
     assert "_read_skill_plan_json_summary" not in source
+
+
+# --------------------- Stale validation sidecar -------------------------
+
+
+def test_stale_validation_sidecar_blocks_and_recommends_run_skill_plan(
+    tmp_path,
+):
+    """latest_skill_plan_validation.json older than latest_skill_plan.md
+    cannot be trusted to describe the current Markdown plan. The
+    workflow must surface a synthetic `validation_sidecar_stale`
+    finding, block the workflow, and recommend regenerating the skill
+    plan + validation state.
+    """
+    import os
+
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    md_mtime = md_path.stat().st_mtime
+    older = md_mtime - 60.0
+    os.utime(validation_path, (older, older))
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_exists is True
+    assert state.validation_has_errors is True
+    assert state.blocked is True
+    assert state.stage == ServiceDeskWorkflowStage.UNKNOWN
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
+
+    assert len(state.validation_findings) == 1
+    finding = state.validation_findings[0]
+    assert finding.severity == "error"
+    assert finding.code == "validation_sidecar_stale"
+    assert "older than latest_skill_plan.md" in finding.message
+
+    assert state.blocker is not None
+    blocker_lower = state.blocker.lower()
+    assert "older" in blocker_lower or "stale" in blocker_lower
+    assert "latest_skill_plan.md" in state.blocker
+
+    joined = "\n".join(state.status_lines)
+    assert "- skill plan validation: yes (stale, 1 finding(s))" in joined
+    assert "- blocker:" in joined
+    # Validation sidecar is not modified by workflow state.
+    assert validation_path.exists()
+
+
+def test_fresh_validation_sidecar_keeps_running_inspection_recommendation(
+    tmp_path,
+):
+    """Pristine fresh sidecar (validation written after Markdown) must
+    keep behaving exactly like before: clean validation + no inspector
+    outputs → RUN_INSPECTION.
+    """
+    import os
+
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    md_mtime = md_path.stat().st_mtime
+    newer = md_mtime + 60.0
+    os.utime(validation_path, (newer, newer))
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_exists is True
+    assert state.validation_has_errors is False
+    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
+    assert state.blocked is False
+    # No stale-finding leakage when fresh.
+    assert all(
+        finding.code != "validation_sidecar_stale"
+        for finding in state.validation_findings
+    )

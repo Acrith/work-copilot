@@ -150,10 +150,18 @@ def read_servicedesk_workflow_state(
     validation_findings: list[ServiceDeskWorkflowValidationFinding]
 
     if validation_exists:
-        (
-            validation_has_errors,
-            validation_findings,
-        ) = _read_validation_sidecar(validation_path)
+        stale_finding = _validation_sidecar_stale_finding(
+            validation_path=validation_path,
+            skill_plan_path=skill_plan_path,
+        )
+        if stale_finding is not None:
+            validation_has_errors = True
+            validation_findings = [stale_finding]
+        else:
+            (
+                validation_has_errors,
+                validation_findings,
+            ) = _read_validation_sidecar(validation_path)
     else:
         validation_has_errors = None
         validation_findings = []
@@ -217,6 +225,51 @@ def read_servicedesk_workflow_state(
 
 
 # ---- Private helpers ---------------------------------------------------
+
+
+def _validation_sidecar_stale_finding(
+    *,
+    validation_path: Path,
+    skill_plan_path: Path,
+) -> ServiceDeskWorkflowValidationFinding | None:
+    """Return a synthetic stale finding when the validation sidecar is
+    older than `latest_skill_plan.md`, otherwise None. Never raises.
+
+    Conservative: only flags stale when both files exist and the mtime
+    comparison can be performed. If the freshness check itself fails
+    (e.g. transient FS error), returns a synthetic stale finding so the
+    caller blocks rather than trusting validation that may not match
+    the current Markdown plan. Workflow state never modifies the
+    validation sidecar on disk; the user must regenerate it via
+    `/sdp skill-plan` or `/sdp repair-skill-plan`.
+    """
+    if not skill_plan_path.exists():
+        return None
+
+    try:
+        validation_mtime = validation_path.stat().st_mtime
+        skill_plan_mtime = skill_plan_path.stat().st_mtime
+    except Exception as exc:  # noqa: BLE001 - state read must not raise
+        return ServiceDeskWorkflowValidationFinding(
+            severity="error",
+            code="validation_sidecar_stale",
+            message=(
+                "Skill plan validation sidecar freshness check failed: "
+                f"{exc}"
+            ),
+        )
+
+    if validation_mtime < skill_plan_mtime:
+        return ServiceDeskWorkflowValidationFinding(
+            severity="error",
+            code="validation_sidecar_stale",
+            message=(
+                "Skill plan validation sidecar is older than "
+                "latest_skill_plan.md."
+            ),
+        )
+
+    return None
 
 
 def _read_validation_sidecar(
@@ -464,6 +517,26 @@ def _decide_stage_and_next_action(
                 ),
             )
 
+        # A stale validation sidecar describes an older Markdown plan,
+        # so its has_errors / findings cannot be trusted to reflect the
+        # current `latest_skill_plan.md`. Route the caller to regenerate
+        # the skill plan + validation state, same way as the unreadable
+        # case.
+        if any(
+            finding.code == "validation_sidecar_stale"
+            for finding in validation_findings
+        ):
+            return (
+                ServiceDeskWorkflowStage.UNKNOWN,
+                ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN,
+                True,
+                (
+                    "Skill plan validation sidecar is older than "
+                    "latest_skill_plan.md; regenerate the skill plan "
+                    "or validation state before inspection."
+                ),
+            )
+
         first_error = next(
             (
                 finding
@@ -573,7 +646,15 @@ def _format_status_lines(
 ) -> list[str]:
     if validation_exists:
         finding_count = len(validation_findings)
-        if validation_has_errors:
+        is_stale = any(
+            finding.code == "validation_sidecar_stale"
+            for finding in validation_findings
+        )
+        if is_stale:
+            validation_label = (
+                f"yes (stale, {finding_count} finding(s))"
+            )
+        elif validation_has_errors:
             validation_label = (
                 f"yes (errors, {finding_count} finding(s))"
             )
