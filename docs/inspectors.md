@@ -105,6 +105,11 @@ The per-step commands `/sdp work` orchestrates are:
 
 7. `/sdp save-note <id>`
    - explicit approval-gated ServiceDesk write boundary
+   - runs a local draft-note validation pass before the
+     approval-gated write path. Validation is local-only: it does
+     not call the model, contact ServiceDesk, Active Directory, or
+     Exchange, run any inspector, or post anything. Errors block the
+     save before approval.
    - posts the prepared internal note only when the operator
      intentionally runs this command and approves the write
 
@@ -200,6 +205,36 @@ rather than trusting a possibly-outdated render.
 the freshness check never auto-saves notes, never writes to
 ServiceDesk, and never runs an inspector. `/sdp save-note <id>`
 remains the explicit approval-gated ServiceDesk write boundary.
+
+## Draft-note validation at the save boundary
+
+`/sdp save-note <id>` runs a local validation pass on the draft note
+before it continues to the existing approval-gated ServiceDesk write
+flow. Validation is local-only — it does not call the model, contact
+ServiceDesk, Active Directory, or Exchange, run any inspector, or
+post anything. Validation errors block the save before approval.
+
+Errors that block `/sdp save-note <id>`:
+
+- `## Note body` section is missing.
+- `## Note body` section is empty after stripping whitespace.
+- placeholder text remains in the body: `TODO`, `TBD`, `<fill in>`,
+  `[fill in]`, or `lorem ipsum`.
+- explicit first-person write claims appear in the body, such as
+  `I changed Active Directory`, `I updated Active Directory`,
+  `I modified the mailbox`, or `I enabled archive`. The workflow runs
+  read-only inspection only, so a draft cannot truthfully claim an
+  external write was completed.
+
+When validation blocks, `/sdp save-note <id>` logs the findings and a
+single `ServiceDesk note save blocked because draft note validation
+errors were found.` advisory, then returns without invoking the save
+worker. The operator can edit `draft_note.md` (or regenerate it via
+`/sdp draft-note <id>`) and re-run `/sdp save-note <id>`.
+
+When validation passes, the existing approval flow runs unchanged.
+`/sdp save-note <id>` is never automatic; the operator must
+intentionally run the command and approve the write.
 
 ## Initial target inspector
 
