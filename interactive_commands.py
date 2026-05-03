@@ -51,6 +51,7 @@ InteractiveCommand = Literal[
     "sdp_status",
     "sdp_work",
     "sdp_triage",
+    "sdp_execute",
     "unknown",
 ]
 
@@ -85,6 +86,11 @@ COMMAND_HELP = [
     ),
     ("/sdp work <id>", "Advance ServiceDesk workflow by one safe step"),
     ("/sdp triage <limit>", "Rank ServiceDesk tickets by ease/risk/readiness"),
+    (
+        "/sdp execute <id>",
+        "Preview and approval-test a mock ServiceDesk executor "
+        "(no external write)",
+    ),
     ("/exit", "Exit interactive mode"),
 ]
 
@@ -170,6 +176,9 @@ def parse_interactive_command(user_input: str) -> InteractiveCommand:
 
         if len(parts) >= 2 and parts[1].lower() == "triage":
             return "sdp_triage"
+
+        if len(parts) >= 2 and parts[1].lower() == "execute":
+            return "sdp_execute"
 
         return "unknown"
 
