@@ -332,6 +332,45 @@ unparseable), `/sdp inspect-skill` falls back to parsing
 In both paths, validation runs before any inspector executes, and
 inspector execution remains read-only.
 
+### Workflow artifact freshness
+
+Workflow state checks the freshness of downstream artifacts before
+recommending the next step, not just their existence. The freshness
+checks are local-only timestamp comparisons; they do not contact
+ServiceDesk, Active Directory, or Exchange, and they do not run any
+inspector.
+
+Detected staleness:
+
+- **Skill-plan sidecars** — if `latest_skill_plan.md` is newer than
+  `latest_skill_plan_validation.json` or `latest_skill_plan.json`,
+  the sidecars are treated as untrusted. `/sdp work <id>` refreshes
+  them locally from the existing Markdown.
+- **Inspection report** — if any saved inspector output JSON is
+  newer than `inspection_report.md`, the report is flagged stale.
+  `/sdp work <id>` recommends `/sdp inspection-report <id>` to
+  rebuild it.
+- **Draft note** — if `inspection_report.md` is newer than
+  `draft_note.md`, the draft is flagged stale. `/sdp work <id>`
+  recommends `/sdp draft-note <id>` to regenerate it.
+
+`/sdp status <id>` surfaces stale artifacts in its status lines, for
+example:
+
+```text
+- inspection report: yes (stale)
+- draft note: yes (stale)
+```
+
+`/sdp work <id>` still advances exactly one safe step per invocation.
+It does not auto-save notes, does not write to ServiceDesk, and does
+not run inspectors as part of the freshness check itself; rebuilding
+a stale report or regenerating a stale draft happens through the
+existing per-step commands.
+
+`/sdp save-note <id>` remains the explicit approval-gated ServiceDesk
+write boundary; freshness checks never trigger an external write.
+
 ## Textual mode status
 
 Textual mode is experimental but functional for normal prompt turns and approval-gated write/exec actions.

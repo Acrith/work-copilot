@@ -153,6 +153,20 @@ directly. Validation still runs before any AD inspector executes, and
 the refresh itself does not contact AD or Exchange and does not run
 any inspector.
 
+Workflow state also tracks freshness of downstream artifacts. If any
+saved AD inspector output under `.work_copilot/servicedesk/<request_id>/inspectors/`
+is newer than `inspection_report.md`, `/sdp status <request_id>` shows
+`- inspection report: yes (stale)` and `/sdp work <request_id>`
+recommends `/sdp inspection-report <request_id>` to rebuild the
+report. If `inspection_report.md` is newer than `draft_note.md`, the
+draft is flagged stale and `/sdp work <request_id>` recommends
+`/sdp draft-note <request_id>` to regenerate it. These freshness
+checks are local-only timestamp comparisons and never contact AD or
+Exchange, never run an inspector, and never write to ServiceDesk.
+`/sdp work` still advances one step per invocation, and
+`/sdp save-note <request_id>` remains the explicit approval-gated
+write boundary.
+
 ## Known limitations after smoke test
 
 - **No AD writes.** Real AD inspection is read-only. Mutating skills
