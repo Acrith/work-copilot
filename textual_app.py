@@ -924,6 +924,32 @@ class WorkCopilotTextualApp(App):
                 and sidecar_load_result.plan is not None
             )
 
+            # If the structured sidecar cannot be used immediately,
+            # attempt a local refresh from latest_skill_plan.md before
+            # falling back to Markdown. The refresh re-parses the
+            # existing Markdown locally; it does not call the model
+            # and does not contact ServiceDesk, AD, or Exchange.
+            if not use_structured_plan:
+                self._log_system_message(
+                    "Structured skill plan sidecar unavailable; "
+                    "refreshing sidecars from latest_skill_plan.md."
+                )
+                refresh_lines = refresh_skill_plan_sidecars_from_markdown(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+                for line in refresh_lines:
+                    self._log_system_message(line)
+
+                sidecar_load_result = load_skill_plan_json_sidecar(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+                use_structured_plan = (
+                    sidecar_load_result.readable
+                    and sidecar_load_result.plan is not None
+                )
+
             if use_structured_plan:
                 self._log_system_message(
                     "Using structured skill plan sidecar "
@@ -933,15 +959,10 @@ class WorkCopilotTextualApp(App):
                     sidecar_load_result.plan
                 )
             else:
-                if sidecar_load_result.exists:
-                    advisory = (
-                        sidecar_load_result.error
-                        or "structured skill plan sidecar is unusable"
-                    )
-                    self._log_system_message(
-                        "Structured skill plan sidecar could not be used "
-                        f"({advisory}). Falling back to latest_skill_plan.md."
-                    )
+                self._log_system_message(
+                    "Structured skill plan sidecar still could not be "
+                    "used. Falling back to latest_skill_plan.md."
+                )
                 validation_result = validate_skill_plan_text_for_inspection(
                     latest_skill_plan
                 )

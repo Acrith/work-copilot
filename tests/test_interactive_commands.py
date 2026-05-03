@@ -1478,15 +1478,48 @@ def test_textual_app_sdp_inspect_skill_branch_prefers_structured_sidecar():
     assert "select_inspectors_for_parsed_skill_plan(" in branch
     assert "select_inspectors_for_skill_plan(" in branch
 
-    # Stale/unreadable sidecar emits a fallback advisory mentioning
-    # latest_skill_plan.md.
-    assert "Structured skill plan sidecar could not be used" in branch
-    assert "latest_skill_plan.md" in branch
+    # When the structured sidecar is not immediately usable, the branch
+    # attempts a local refresh from latest_skill_plan.md before falling
+    # back to Markdown.
+    assert "refresh_skill_plan_sidecars_from_markdown(" in branch
+    # Source uses Python's adjacent-string-literal concatenation; assert
+    # against the individual literals rather than the joined runtime
+    # string.
+    assert "Structured skill plan sidecar unavailable; " in branch
+    assert "refreshing sidecars from latest_skill_plan.md." in branch
+    # Refresh runs before the Markdown-fallback path is selected.
+    refresh_index = branch.index(
+        "refresh_skill_plan_sidecars_from_markdown("
+    )
+    fallback_index = branch.index(
+        "used. Falling back to latest_skill_plan.md."
+    )
+    assert refresh_index < fallback_index
+    # After refresh, the loader is invoked again before the
+    # source-decision flag is recomputed.
+    assert branch.count("load_skill_plan_json_sidecar(") >= 2
+    second_load_index = branch.index(
+        "load_skill_plan_json_sidecar(", refresh_index
+    )
+    assert refresh_index < second_load_index < fallback_index
+    # Refresh runs before any inspector executes.
+    inspector_run_index = branch.index("run_inspector_and_save(")
+    assert refresh_index < inspector_run_index
+    # Refresh path must not call the model or any save worker.
+    refresh_section = branch[refresh_index:fallback_index]
+    assert "_run_model_turn_worker(" not in refresh_section
+    assert "_save_servicedesk_note_worker(" not in refresh_section
+    assert "_save_servicedesk_draft_worker(" not in refresh_section
+
+    # Stale/unreadable-after-refresh advisory still mentions
+    # latest_skill_plan.md fallback. Adjacent-string-literal layout in
+    # source: assert each literal piece.
+    assert "Structured skill plan sidecar still could not be " in branch
+    assert "used. Falling back to latest_skill_plan.md." in branch
 
     # Validation gate still blocks inspector execution.
     assert "validation_result.has_errors" in branch
     block_index = branch.index("Skill plan inspection blocked")
-    inspector_run_index = branch.index("run_inspector_and_save(")
     assert block_index < inspector_run_index
 
     # Both request builders are referenced. Structured-source path uses
