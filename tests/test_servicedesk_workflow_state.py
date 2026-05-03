@@ -1109,3 +1109,215 @@ def test_real_validation_error_with_missing_structured_still_routes_to_repair(
     assert state.next_action == (
         ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN
     )
+
+
+# --------------------- Stale downstream artifacts -----------------------
+
+
+def _set_mtime(path: Path, mtime: float) -> None:
+    import os
+
+    os.utime(path, (mtime, mtime))
+
+
+def test_inspection_report_older_than_inspector_output_is_stale(tmp_path):
+    """If a supported inspector output JSON is newer than the
+    inspection report, the workflow must recommend rebuilding the
+    report (BUILD_INSPECTION_REPORT) and surface a stale advisory.
+    """
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
+    _seed_inspector_output(tmp_path)
+    _seed_inspection_report(tmp_path)
+
+    report_path = build_servicedesk_inspection_report_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    inspector_path = build_inspector_result_path(
+        workspace=str(tmp_path),
+        request_id=REQUEST_ID,
+        inspector_id="active_directory.user.inspect",
+    )
+    base = report_path.stat().st_mtime
+    _set_mtime(report_path, base - 60.0)
+    _set_mtime(inspector_path, base + 60.0)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.inspection_report_exists is True
+    assert state.inspection_report_stale is True
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.BUILD_INSPECTION_REPORT
+    )
+    assert state.stage == ServiceDeskWorkflowStage.INSPECTION_REPORT_MISSING
+    assert state.blocker is not None
+    assert "Inspection report is stale" in state.blocker
+
+    joined = "\n".join(state.status_lines)
+    assert "- inspection report: yes (stale)" in joined
+
+
+def test_fresh_inspection_report_still_advances_to_draft_note(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
+    _seed_inspector_output(tmp_path)
+    _seed_inspection_report(tmp_path)
+
+    report_path = build_servicedesk_inspection_report_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    inspector_path = build_inspector_result_path(
+        workspace=str(tmp_path),
+        request_id=REQUEST_ID,
+        inspector_id="active_directory.user.inspect",
+    )
+    base = report_path.stat().st_mtime
+    _set_mtime(inspector_path, base - 60.0)
+    _set_mtime(report_path, base + 60.0)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.inspection_report_stale is False
+    assert state.draft_note_exists is False
+    assert state.stage == ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING
+    assert state.next_action == ServiceDeskWorkflowNextAction.DRAFT_NOTE
+
+
+def test_inspection_report_newer_than_draft_note_routes_to_draft_note(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
+    _seed_inspector_output(tmp_path)
+    _seed_inspection_report(tmp_path)
+    _seed_draft_note(tmp_path)
+
+    report_path = build_servicedesk_inspection_report_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    draft_path = build_servicedesk_draft_note_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    inspector_path = build_inspector_result_path(
+        workspace=str(tmp_path),
+        request_id=REQUEST_ID,
+        inspector_id="active_directory.user.inspect",
+    )
+    base = draft_path.stat().st_mtime
+    # Keep inspector output older than the report so report-stale
+    # check does not preempt the draft-stale check.
+    _set_mtime(inspector_path, base - 120.0)
+    _set_mtime(draft_path, base - 60.0)
+    _set_mtime(report_path, base + 60.0)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.draft_note_exists is True
+    assert state.draft_note_stale is True
+    assert state.inspection_report_stale is False
+    assert state.stage == ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING
+    assert state.next_action == ServiceDeskWorkflowNextAction.DRAFT_NOTE
+    assert state.blocker is not None
+    assert "Draft note is stale" in state.blocker
+    assert "inspection_report.md is newer" in state.blocker
+
+    joined = "\n".join(state.status_lines)
+    assert "- draft note: yes (stale)" in joined
+
+
+def test_fresh_draft_note_still_routes_to_save_note(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
+    _seed_inspector_output(tmp_path)
+    _seed_inspection_report(tmp_path)
+    _seed_draft_note(tmp_path)
+
+    report_path = build_servicedesk_inspection_report_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    draft_path = build_servicedesk_draft_note_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    inspector_path = build_inspector_result_path(
+        workspace=str(tmp_path),
+        request_id=REQUEST_ID,
+        inspector_id="active_directory.user.inspect",
+    )
+    base = draft_path.stat().st_mtime
+    _set_mtime(inspector_path, base - 120.0)
+    _set_mtime(report_path, base - 60.0)
+    _set_mtime(draft_path, base + 60.0)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.inspection_report_stale is False
+    assert state.draft_note_stale is False
+    # Save-note routing is unchanged for the all-fresh case (the
+    # actual SAVE_NOTE / REVIEW_DRAFT_NOTE choice is up to existing
+    # logic; we just assert it is in the save-note family and that no
+    # stale finding was injected).
+    assert state.next_action in {
+        ServiceDeskWorkflowNextAction.SAVE_NOTE,
+        ServiceDeskWorkflowNextAction.REVIEW_DRAFT_NOTE,
+    }
+
+
+def test_inspection_report_stat_failure_treated_as_stale(
+    tmp_path, monkeypatch
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
+    _seed_inspector_output(tmp_path)
+    _seed_inspection_report(tmp_path)
+
+    import servicedesk_workflow_state as workflow_state_module
+
+    real_stat = Path.stat
+    # `Path.exists()` calls `Path.stat()` internally and re-raises
+    # OSError that is not in its ignored-errno set, so the existence
+    # probe at the start of read_servicedesk_workflow_state would
+    # also blow up. Let the first call through (the existence probe)
+    # and only blow up on the helper's `path.stat().st_mtime` call.
+    counter = {"calls": 0}
+
+    def _boom_stat(self, *args, **kwargs):
+        if self.name == "inspection_report.md":
+            counter["calls"] += 1
+            if counter["calls"] >= 2:
+                raise OSError("synthetic stat failure")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(
+        workflow_state_module.Path, "stat", _boom_stat
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.inspection_report_exists is True
+    assert state.inspection_report_stale is True
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.BUILD_INSPECTION_REPORT
+    )
+
+    joined = "\n".join(state.status_lines)
+    assert "- inspection report: yes (stale)" in joined
