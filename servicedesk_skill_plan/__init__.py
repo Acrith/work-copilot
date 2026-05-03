@@ -14,10 +14,13 @@ from servicedesk_skill_plan.models import (
 )
 from servicedesk_skill_plan.parser import parse_servicedesk_skill_plan
 from servicedesk_skill_plan.persistence import (
+    SKILL_PLAN_JSON_SCHEMA_VERSION,
     SkillPlanValidationPersistenceResult,
     build_persisting_validation_callback,
     persist_and_format_skill_plan_validation,
+    persist_skill_plan_json_sidecar,
     persist_skill_plan_validation_payload,
+    serialize_parsed_skill_plan,
     validate_skill_plan_text_for_persistence,
 )
 from servicedesk_skill_plan.validation import (
@@ -36,6 +39,7 @@ __all__ = [
     "ExtractedInput",
     "INSPECTOR_BOUND_FIELD_NAMES",
     "ParsedServiceDeskSkillPlan",
+    "SKILL_PLAN_JSON_SCHEMA_VERSION",
     "SUPPORTED_INSPECTOR_TOOL_IDS",
     "SkillPlanAutomationHandoff",
     "SkillPlanValidationDisplayResult",
@@ -46,7 +50,9 @@ __all__ = [
     "format_skill_plan_validation_findings",
     "parse_servicedesk_skill_plan",
     "persist_and_format_skill_plan_validation",
+    "persist_skill_plan_json_sidecar",
     "persist_skill_plan_validation_payload",
+    "serialize_parsed_skill_plan",
     "validate_servicedesk_skill_plan",
     "validate_skill_plan_text_as_lines",
     "validate_skill_plan_text_for_inspection",

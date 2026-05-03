@@ -186,6 +186,16 @@ def build_servicedesk_latest_skill_plan_validation_path(
     return output_dir / "latest_skill_plan_validation.json"
 
 
+def build_servicedesk_latest_skill_plan_json_path(
+    *, workspace: str, request_id: str
+) -> Path:
+    output_dir = build_servicedesk_output_dir(
+        workspace=workspace,
+        request_id=request_id,
+    )
+    return output_dir / "latest_skill_plan.json"
+
+
 def build_servicedesk_draft_note_path(*, workspace: str, request_id: str) -> Path:
     output_dir = build_servicedesk_output_dir(
         workspace=workspace,
