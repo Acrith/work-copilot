@@ -184,6 +184,92 @@ def test_build_servicedesk_triage_prompt_is_read_only():
     assert "Do not download or inspect attachment contents" in prompt
 
 
+def test_build_servicedesk_triage_prompt_lists_fit_categories():
+    prompt = build_servicedesk_triage_prompt(5)
+
+    # Each fit category must appear as both a per-request label and a
+    # definition entry so the model knows what to emit and what each
+    # value means.
+    assert "`ready_for_work`" in prompt
+    assert "`needs_missing_info`" in prompt
+    assert "`draft_only_manual`" in prompt
+    assert "`unsupported_or_risky`" in prompt
+
+
+def test_build_servicedesk_triage_prompt_suggests_sdp_work_only_for_suitable_fits():
+    prompt = build_servicedesk_triage_prompt(5)
+
+    # /sdp work <id> is the recommended next command for ready_for_work
+    # and conditionally for draft_only_manual; needs_missing_info and
+    # unsupported_or_risky must explicitly route to manual review.
+    assert "Suggested next command: `/sdp work <id>`" in prompt
+    assert "`/sdp work <id>` only if local inspection or a draft" in prompt
+
+    # Negative routing: needs_missing_info must NOT recommend /sdp
+    # work until the missing info is on the ticket; unsupported_or_risky
+    # must NOT recommend /sdp work at all.
+    assert (
+        "do not recommend `/sdp work <id>` until the missing info is "
+        "on the ticket"
+    ) in prompt
+    assert "Do not recommend `/sdp work <id>`" in prompt
+
+
+def test_build_servicedesk_triage_prompt_states_capability_boundaries():
+    prompt = build_servicedesk_triage_prompt(5)
+
+    # AD/Exchange read-only inspection scope is documented.
+    assert "Read-only Active Directory inspection" in prompt
+    assert "no AD writes" in prompt
+    assert "Read-only Exchange Online mailbox inspection" in prompt
+    assert "no Exchange" in prompt
+
+    # The save-note write boundary is explicit.
+    assert (
+        "The only ServiceDesk write is `/sdp save-note <id>`, which is "
+        "explicit and approval-gated."
+    ) in prompt
+
+
+def test_build_servicedesk_triage_prompt_blocks_inspectors_and_writes():
+    prompt = build_servicedesk_triage_prompt(5)
+
+    # Triage itself must not run inspectors or post anything; the
+    # prompt explicitly defers inspector execution to /sdp work or
+    # /sdp inspect-skill after a ticket is picked.
+    assert "Do not run inspectors from triage" in prompt
+    assert (
+        "inspector runs only happen via `/sdp work <id>` or "
+        "`/sdp inspect-skill <id>` after the operator picks a ticket"
+    ) in prompt
+    assert (
+        "Do not claim triage will solve, fix, post, or write "
+        "anything automatically."
+    ) in prompt
+
+
+def test_build_servicedesk_triage_prompt_uses_scan_friendly_section_headings():
+    prompt = build_servicedesk_triage_prompt(5)
+
+    # The new output structure uses Markdown headings in a fixed order
+    # so triage output is easy to scan.
+    triage_index = prompt.index("# ServiceDesk triage")
+    ready_index = prompt.index("## High-confidence / ready for work")
+    manual_index = prompt.index("## Manual-only / draft-only")
+    missing_index = prompt.index("## Needs clarification")
+    risky_index = prompt.index("## Unsupported / risky")
+
+    assert (
+        triage_index
+        < ready_index
+        < manual_index
+        < missing_index
+        < risky_index
+    )
+    # Empty sections are omitted to keep output focused.
+    assert "Omit a section entirely if it has no entries." in prompt
+
+
 def test_parse_sdp_draft_reply_command():
     assert parse_interactive_command("/sdp draft-reply 55478") == "sdp_draft_reply"
 
