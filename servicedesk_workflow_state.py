@@ -1,0 +1,419 @@
+"""Read local ServiceDesk workflow artifacts for a request and compute a
+deterministic workflow state (current stage, recommended next action,
+blocker info, status lines).
+
+This module is read-only and side-effect-free except for reading local
+files under `.work_copilot/servicedesk/<request_id>/`. It does not call
+ServiceDesk, AD, Exchange, or any inspector. It does not regenerate or
+modify any artifact. It is intended as a foundation for future
+user-facing commands such as `/sdp work <id>` and `/sdp status <id>`.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from enum import StrEnum
+from pathlib import Path
+
+from draft_exports import (
+    build_servicedesk_draft_note_path,
+    build_servicedesk_latest_context_path,
+    build_servicedesk_latest_skill_plan_path,
+    build_servicedesk_latest_skill_plan_validation_path,
+)
+from inspectors.inspection_report import (
+    SUPPORTED_REPORT_INSPECTOR_IDS,
+    build_servicedesk_inspection_report_path,
+)
+from inspectors.storage import (
+    build_inspector_output_dir,
+    build_inspector_result_path,
+)
+
+
+class ServiceDeskWorkflowStage(StrEnum):
+    MISSING_CONTEXT = "missing_context"
+    MISSING_SKILL_PLAN = "missing_skill_plan"
+    SKILL_PLAN_INVALID = "skill_plan_invalid"
+    READY_FOR_INSPECTION = "ready_for_inspection"
+    INSPECTION_MISSING = "inspection_missing"
+    INSPECTION_REPORT_MISSING = "inspection_report_missing"
+    DRAFT_NOTE_MISSING = "draft_note_missing"
+    READY_FOR_REVIEW = "ready_for_review"
+    READY_TO_SAVE_NOTE = "ready_to_save_note"
+    UNKNOWN = "unknown"
+
+
+class ServiceDeskWorkflowNextAction(StrEnum):
+    RUN_CONTEXT = "run_context"
+    RUN_SKILL_PLAN = "run_skill_plan"
+    REPAIR_SKILL_PLAN = "repair_skill_plan"
+    RUN_INSPECTION = "run_inspection"
+    BUILD_INSPECTION_REPORT = "build_inspection_report"
+    DRAFT_NOTE = "draft_note"
+    REVIEW_DRAFT_NOTE = "review_draft_note"
+    SAVE_NOTE = "save_note"
+    NONE = "none"
+
+
+@dataclass(frozen=True)
+class ServiceDeskWorkflowValidationFinding:
+    severity: str
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class ServiceDeskWorkflowState:
+    request_id: str
+    context_exists: bool = False
+    skill_plan_exists: bool = False
+    validation_exists: bool = False
+    validation_has_errors: bool | None = None
+    validation_findings: list[ServiceDeskWorkflowValidationFinding] = field(
+        default_factory=list
+    )
+    inspector_outputs_exist: bool = False
+    inspection_report_exists: bool = False
+    draft_note_exists: bool = False
+    stage: ServiceDeskWorkflowStage = ServiceDeskWorkflowStage.UNKNOWN
+    next_action: ServiceDeskWorkflowNextAction = (
+        ServiceDeskWorkflowNextAction.NONE
+    )
+    blocked: bool = False
+    blocker: str | None = None
+    status_lines: list[str] = field(default_factory=list)
+
+
+def read_servicedesk_workflow_state(
+    *,
+    workspace: str,
+    request_id: str,
+) -> ServiceDeskWorkflowState:
+    """Inspect local artifacts and return a deterministic workflow state."""
+    context_path = build_servicedesk_latest_context_path(
+        workspace=workspace, request_id=request_id
+    )
+    skill_plan_path = build_servicedesk_latest_skill_plan_path(
+        workspace=workspace, request_id=request_id
+    )
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=workspace, request_id=request_id
+    )
+    inspection_report_path = build_servicedesk_inspection_report_path(
+        workspace=workspace, request_id=request_id
+    )
+    draft_note_path = build_servicedesk_draft_note_path(
+        workspace=workspace, request_id=request_id
+    )
+
+    context_exists = context_path.exists()
+    skill_plan_exists = skill_plan_path.exists()
+    validation_exists = validation_path.exists()
+
+    validation_has_errors: bool | None
+    validation_findings: list[ServiceDeskWorkflowValidationFinding]
+
+    if validation_exists:
+        (
+            validation_has_errors,
+            validation_findings,
+        ) = _read_validation_sidecar(validation_path)
+    else:
+        validation_has_errors = None
+        validation_findings = []
+
+    inspector_outputs_exist = _any_supported_inspector_output_exists(
+        workspace=workspace,
+        request_id=request_id,
+    )
+    inspection_report_exists = inspection_report_path.exists()
+    draft_note_exists = draft_note_path.exists()
+
+    stage, next_action, blocked, blocker = _decide_stage_and_next_action(
+        context_exists=context_exists,
+        skill_plan_exists=skill_plan_exists,
+        validation_exists=validation_exists,
+        validation_has_errors=validation_has_errors,
+        validation_findings=validation_findings,
+        inspector_outputs_exist=inspector_outputs_exist,
+        inspection_report_exists=inspection_report_exists,
+        draft_note_exists=draft_note_exists,
+    )
+
+    status_lines = _format_status_lines(
+        request_id=request_id,
+        context_exists=context_exists,
+        skill_plan_exists=skill_plan_exists,
+        validation_exists=validation_exists,
+        validation_has_errors=validation_has_errors,
+        validation_findings=validation_findings,
+        inspector_outputs_exist=inspector_outputs_exist,
+        inspection_report_exists=inspection_report_exists,
+        draft_note_exists=draft_note_exists,
+        stage=stage,
+        next_action=next_action,
+        blocked=blocked,
+        blocker=blocker,
+    )
+
+    return ServiceDeskWorkflowState(
+        request_id=request_id,
+        context_exists=context_exists,
+        skill_plan_exists=skill_plan_exists,
+        validation_exists=validation_exists,
+        validation_has_errors=validation_has_errors,
+        validation_findings=validation_findings,
+        inspector_outputs_exist=inspector_outputs_exist,
+        inspection_report_exists=inspection_report_exists,
+        draft_note_exists=draft_note_exists,
+        stage=stage,
+        next_action=next_action,
+        blocked=blocked,
+        blocker=blocker,
+        status_lines=status_lines,
+    )
+
+
+# ---- Private helpers ---------------------------------------------------
+
+
+def _read_validation_sidecar(
+    path: Path,
+) -> tuple[bool, list[ServiceDeskWorkflowValidationFinding]]:
+    """Read the JSON sidecar without raising. On any read/parse failure
+    or shape mismatch, treat the sidecar as unreadable: report
+    `has_errors=True` with a synthetic `validation_sidecar_unreadable`
+    finding so the caller can block conservatively.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001 - state read must not raise
+        return True, [
+            ServiceDeskWorkflowValidationFinding(
+                severity="error",
+                code="validation_sidecar_unreadable",
+                message=(
+                    "Local skill plan validation sidecar could not be read: "
+                    f"{exc}"
+                ),
+            )
+        ]
+
+    if not isinstance(payload, dict):
+        return True, [
+            ServiceDeskWorkflowValidationFinding(
+                severity="error",
+                code="validation_sidecar_unreadable",
+                message=(
+                    "Local skill plan validation sidecar is not a JSON object."
+                ),
+            )
+        ]
+
+    raw_findings = payload.get("findings")
+    findings: list[ServiceDeskWorkflowValidationFinding] = []
+
+    if isinstance(raw_findings, list):
+        for item in raw_findings:
+            if not isinstance(item, dict):
+                continue
+            findings.append(
+                ServiceDeskWorkflowValidationFinding(
+                    severity=str(item.get("severity", "")),
+                    code=str(item.get("code", "")),
+                    message=str(item.get("message", "")),
+                )
+            )
+
+    has_errors_raw = payload.get("has_errors")
+    if isinstance(has_errors_raw, bool):
+        has_errors = has_errors_raw
+    else:
+        has_errors = any(finding.severity == "error" for finding in findings)
+
+    return has_errors, findings
+
+
+def _any_supported_inspector_output_exists(
+    *,
+    workspace: str,
+    request_id: str,
+) -> bool:
+    inspector_dir = build_inspector_output_dir(
+        workspace=workspace, request_id=request_id
+    )
+
+    if not inspector_dir.exists():
+        return False
+
+    for inspector_id in SUPPORTED_REPORT_INSPECTOR_IDS:
+        candidate = build_inspector_result_path(
+            workspace=workspace,
+            request_id=request_id,
+            inspector_id=inspector_id,
+        )
+
+        if candidate.exists():
+            return True
+
+    return False
+
+
+def _decide_stage_and_next_action(
+    *,
+    context_exists: bool,
+    skill_plan_exists: bool,
+    validation_exists: bool,
+    validation_has_errors: bool | None,
+    validation_findings: list[ServiceDeskWorkflowValidationFinding],
+    inspector_outputs_exist: bool,
+    inspection_report_exists: bool,
+    draft_note_exists: bool,
+) -> tuple[
+    ServiceDeskWorkflowStage,
+    ServiceDeskWorkflowNextAction,
+    bool,
+    str | None,
+]:
+    if not context_exists:
+        return (
+            ServiceDeskWorkflowStage.MISSING_CONTEXT,
+            ServiceDeskWorkflowNextAction.RUN_CONTEXT,
+            False,
+            None,
+        )
+
+    if not skill_plan_exists:
+        return (
+            ServiceDeskWorkflowStage.MISSING_SKILL_PLAN,
+            ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN,
+            False,
+            None,
+        )
+
+    # Skill plan exists. Honour validation sidecar if present.
+    if not validation_exists:
+        return (
+            ServiceDeskWorkflowStage.UNKNOWN,
+            ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN,
+            True,
+            (
+                "Skill plan validation sidecar is missing; regenerate "
+                "the skill plan or validation state before inspection."
+            ),
+        )
+
+    if validation_has_errors:
+        first_error = next(
+            (
+                finding
+                for finding in validation_findings
+                if finding.severity == "error"
+            ),
+            None,
+        )
+
+        if first_error is not None:
+            blocker = (
+                "Skill plan validation has errors: "
+                f"[{first_error.code}] {first_error.message}"
+            )
+        else:
+            blocker = "Skill plan validation has errors."
+
+        return (
+            ServiceDeskWorkflowStage.SKILL_PLAN_INVALID,
+            ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN,
+            True,
+            blocker,
+        )
+
+    if not inspector_outputs_exist:
+        return (
+            ServiceDeskWorkflowStage.READY_FOR_INSPECTION,
+            ServiceDeskWorkflowNextAction.RUN_INSPECTION,
+            False,
+            None,
+        )
+
+    if not inspection_report_exists:
+        return (
+            ServiceDeskWorkflowStage.INSPECTION_REPORT_MISSING,
+            ServiceDeskWorkflowNextAction.BUILD_INSPECTION_REPORT,
+            False,
+            None,
+        )
+
+    if not draft_note_exists:
+        return (
+            ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING,
+            ServiceDeskWorkflowNextAction.DRAFT_NOTE,
+            False,
+            None,
+        )
+
+    return (
+        ServiceDeskWorkflowStage.READY_TO_SAVE_NOTE,
+        ServiceDeskWorkflowNextAction.SAVE_NOTE,
+        False,
+        None,
+    )
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
+def _format_status_lines(
+    *,
+    request_id: str,
+    context_exists: bool,
+    skill_plan_exists: bool,
+    validation_exists: bool,
+    validation_has_errors: bool | None,
+    validation_findings: list[ServiceDeskWorkflowValidationFinding],
+    inspector_outputs_exist: bool,
+    inspection_report_exists: bool,
+    draft_note_exists: bool,
+    stage: ServiceDeskWorkflowStage,
+    next_action: ServiceDeskWorkflowNextAction,
+    blocked: bool,
+    blocker: str | None,
+) -> list[str]:
+    if validation_exists:
+        finding_count = len(validation_findings)
+        if validation_has_errors:
+            validation_label = (
+                f"yes (errors, {finding_count} finding(s))"
+            )
+        elif finding_count > 0:
+            validation_label = (
+                f"yes (warnings, {finding_count} finding(s))"
+            )
+        else:
+            validation_label = (
+                f"yes (clean, {finding_count} finding(s))"
+            )
+    else:
+        validation_label = "no"
+
+    lines = [
+        f"ServiceDesk workflow state for request {request_id}",
+        f"- context: {_yes_no(context_exists)}",
+        f"- skill plan: {_yes_no(skill_plan_exists)}",
+        f"- skill plan validation: {validation_label}",
+        f"- inspector outputs: {_yes_no(inspector_outputs_exist)}",
+        f"- inspection report: {_yes_no(inspection_report_exists)}",
+        f"- draft note: {_yes_no(draft_note_exists)}",
+        f"- stage: {stage.value}",
+        f"- next action: {next_action.value}",
+        f"- blocked: {_yes_no(blocked)}",
+    ]
+
+    if blocker:
+        lines.append(f"- blocker: {blocker}")
+
+    return lines

@@ -1,0 +1,421 @@
+import json
+from pathlib import Path
+
+from draft_exports import (
+    build_servicedesk_draft_note_path,
+    build_servicedesk_latest_context_path,
+    build_servicedesk_latest_skill_plan_path,
+    build_servicedesk_latest_skill_plan_validation_path,
+)
+from inspectors.inspection_report import build_servicedesk_inspection_report_path
+from inspectors.storage import build_inspector_result_path
+from servicedesk_workflow_state import (
+    ServiceDeskWorkflowNextAction,
+    ServiceDeskWorkflowStage,
+    read_servicedesk_workflow_state,
+)
+
+REQUEST_ID = "55948"
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _seed_context(workspace: Path) -> None:
+    _write(
+        build_servicedesk_latest_context_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        "# ServiceDesk request context\n",
+    )
+
+
+def _seed_skill_plan(workspace: Path) -> None:
+    _write(
+        build_servicedesk_latest_skill_plan_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        "# ServiceDesk skill plan\n",
+    )
+
+
+def _seed_validation(workspace: Path, payload: dict) -> None:
+    _write(
+        build_servicedesk_latest_skill_plan_validation_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        json.dumps(payload, indent=2) + "\n",
+    )
+
+
+def _seed_clean_validation(workspace: Path) -> None:
+    _seed_validation(workspace, {"has_errors": False, "findings": []})
+
+
+def _seed_error_validation(workspace: Path) -> None:
+    _seed_validation(
+        workspace,
+        {
+            "has_errors": True,
+            "findings": [
+                {
+                    "severity": "error",
+                    "code": "ready_for_execution_must_be_no",
+                    "message": (
+                        "Automation handoff `Ready for execution` must be "
+                        "`no`; got `yes`."
+                    ),
+                }
+            ],
+        },
+    )
+
+
+def _seed_inspector_output(workspace: Path) -> None:
+    _write(
+        build_inspector_result_path(
+            workspace=str(workspace),
+            request_id=REQUEST_ID,
+            inspector_id="active_directory.user.inspect",
+        ),
+        json.dumps(
+            {
+                "inspector": "active_directory.user.inspect",
+                "status": "ok",
+                "facts": [],
+            }
+        ),
+    )
+
+
+def _seed_inspection_report(workspace: Path) -> None:
+    _write(
+        build_servicedesk_inspection_report_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        "# Inspection report for ServiceDesk request 55948\n",
+    )
+
+
+def _seed_draft_note(workspace: Path) -> None:
+    _write(
+        build_servicedesk_draft_note_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        "# ServiceDesk internal note draft\n",
+    )
+
+
+# --------------------- Stage progression --------------------------------
+
+
+def test_no_artifacts_returns_missing_context_stage(tmp_path):
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.context_exists is False
+    assert state.skill_plan_exists is False
+    assert state.validation_exists is False
+    assert state.validation_has_errors is None
+    assert state.validation_findings == []
+    assert state.inspector_outputs_exist is False
+    assert state.inspection_report_exists is False
+    assert state.draft_note_exists is False
+    assert state.stage == ServiceDeskWorkflowStage.MISSING_CONTEXT
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_CONTEXT
+    assert state.blocked is False
+    assert state.blocker is None
+    assert any(
+        line.startswith("ServiceDesk workflow state for request ")
+        for line in state.status_lines
+    )
+
+
+def test_context_only_recommends_run_skill_plan(tmp_path):
+    _seed_context(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.context_exists is True
+    assert state.skill_plan_exists is False
+    assert state.stage == ServiceDeskWorkflowStage.MISSING_SKILL_PLAN
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
+    assert state.blocked is False
+
+
+def test_validation_with_errors_blocks_and_recommends_repair(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_error_validation(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_exists is True
+    assert state.validation_has_errors is True
+    assert state.blocked is True
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_INVALID
+    assert state.next_action == ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN
+    assert state.blocker is not None
+    assert "Skill plan validation has errors" in state.blocker
+    assert "ready_for_execution_must_be_no" in state.blocker
+
+    # Validation findings preserve severity/code/message.
+    assert len(state.validation_findings) == 1
+    finding = state.validation_findings[0]
+    assert finding.severity == "error"
+    assert finding.code == "ready_for_execution_must_be_no"
+    assert "Ready for execution" in finding.message
+
+
+def test_clean_validation_without_inspector_outputs_recommends_inspection(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_exists is True
+    assert state.validation_has_errors is False
+    assert state.inspector_outputs_exist is False
+    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
+    assert state.blocked is False
+
+
+def test_inspector_outputs_without_report_recommends_build_report(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_inspector_output(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.inspector_outputs_exist is True
+    assert state.inspection_report_exists is False
+    assert state.stage == ServiceDeskWorkflowStage.INSPECTION_REPORT_MISSING
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.BUILD_INSPECTION_REPORT
+    )
+    assert state.blocked is False
+
+
+def test_inspection_report_without_draft_note_recommends_draft_note(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_inspector_output(tmp_path)
+    _seed_inspection_report(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.inspection_report_exists is True
+    assert state.draft_note_exists is False
+    assert state.stage == ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING
+    assert state.next_action == ServiceDeskWorkflowNextAction.DRAFT_NOTE
+    assert state.blocked is False
+
+
+def test_draft_note_present_recommends_save_note(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_inspector_output(tmp_path)
+    _seed_inspection_report(tmp_path)
+    _seed_draft_note(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.draft_note_exists is True
+    assert state.stage in {
+        ServiceDeskWorkflowStage.READY_TO_SAVE_NOTE,
+        ServiceDeskWorkflowStage.READY_FOR_REVIEW,
+    }
+    assert state.next_action in {
+        ServiceDeskWorkflowNextAction.SAVE_NOTE,
+        ServiceDeskWorkflowNextAction.REVIEW_DRAFT_NOTE,
+    }
+    assert state.blocked is False
+
+
+# --------------------- Sidecar robustness -------------------------------
+
+
+def test_malformed_validation_sidecar_blocks_without_raising(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _write(
+        build_servicedesk_latest_skill_plan_validation_path(
+            workspace=str(tmp_path), request_id=REQUEST_ID
+        ),
+        "{ this is not valid json",
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_exists is True
+    assert state.validation_has_errors is True
+    assert state.blocked is True
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_INVALID
+    assert state.next_action == ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN
+
+    codes = {finding.code for finding in state.validation_findings}
+    assert "validation_sidecar_unreadable" in codes
+    assert state.blocker is not None
+    assert "validation_sidecar_unreadable" in state.blocker
+
+
+def test_validation_sidecar_with_non_object_payload_is_treated_as_unreadable(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _write(
+        build_servicedesk_latest_skill_plan_validation_path(
+            workspace=str(tmp_path), request_id=REQUEST_ID
+        ),
+        json.dumps(["not", "an", "object"]),
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_has_errors is True
+    assert state.blocked is True
+    codes = {finding.code for finding in state.validation_findings}
+    assert "validation_sidecar_unreadable" in codes
+
+
+def test_validation_sidecar_without_explicit_has_errors_infers_from_findings(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_validation(
+        tmp_path,
+        {
+            "findings": [
+                {
+                    "severity": "warning",
+                    "code": "clean_identifier_values",
+                    "message": "Inspector-bound field looks dirty.",
+                }
+            ]
+        },
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    # Warning-only findings + missing has_errors flag should not block.
+    assert state.validation_exists is True
+    assert state.validation_has_errors is False
+    assert state.blocked is False
+    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
+    assert any(
+        finding.code == "clean_identifier_values"
+        for finding in state.validation_findings
+    )
+
+
+# --------------------- Status lines -------------------------------------
+
+
+def test_status_lines_summarize_artifacts_and_decision(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_error_validation(tmp_path)
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    joined = "\n".join(state.status_lines)
+    assert (
+        f"ServiceDesk workflow state for request {REQUEST_ID}" in joined
+    )
+    assert "- context: yes" in joined
+    assert "- skill plan: yes" in joined
+    assert "- skill plan validation: yes (errors" in joined
+    assert "- stage: skill_plan_invalid" in joined
+    assert "- next action: repair_skill_plan" in joined
+    assert "- blocked: yes" in joined
+    assert "- blocker:" in joined
+
+
+# --------------------- Missing-validation safety gate -------------------
+
+
+def test_skill_plan_without_validation_blocks_and_does_not_run_inspection(
+    tmp_path,
+):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    # Intentionally do not seed latest_skill_plan_validation.json.
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.context_exists is True
+    assert state.skill_plan_exists is True
+    assert state.validation_exists is False
+    assert state.validation_has_errors is None
+    assert state.blocked is True
+    assert (
+        state.next_action != ServiceDeskWorkflowNextAction.RUN_INSPECTION
+    )
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN
+    assert state.stage == ServiceDeskWorkflowStage.UNKNOWN
+    assert state.blocker is not None
+    assert "validation sidecar is missing" in state.blocker
+
+
+# --------------------- Status label polish ------------------------------
+
+
+def test_status_lines_label_warning_only_validation_as_warnings(tmp_path):
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_validation(
+        tmp_path,
+        {
+            "has_errors": False,
+            "findings": [
+                {
+                    "severity": "warning",
+                    "code": "clean_identifier_values",
+                    "message": "Inspector-bound field looks dirty.",
+                }
+            ],
+        },
+    )
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    joined = "\n".join(state.status_lines)
+    assert "- skill plan validation: yes (warnings, 1 finding(s))" in joined
+    assert "yes (clean" not in joined
