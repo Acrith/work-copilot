@@ -727,8 +727,88 @@ def test_non_object_structured_skill_plan_is_treated_as_unreadable(tmp_path):
     assert summary.exists is True
     assert summary.readable is False
     assert summary.error == (
-        "Local skill plan JSON sidecar is not a JSON object."
+        "Structured skill plan sidecar is not a JSON object."
     )
 
     joined = "\n".join(state.status_lines)
     assert "- structured skill plan: yes (unreadable:" in joined
+
+
+def test_stale_structured_skill_plan_is_visible_and_does_not_change_decision(
+    tmp_path,
+):
+    """latest_skill_plan.md newer than latest_skill_plan.json triggers
+    the loader's freshness check. Status display must surface this as
+    `stale=True` and a clearly labeled status line, but workflow
+    stage/next_action must come unchanged from the existing artifact +
+    validation sidecar checks.
+    """
+    import os
+
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_clean_validation(tmp_path)
+    _seed_skill_plan_json(tmp_path, _CLEAN_STRUCTURED_PAYLOAD)
+
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+    md_mtime = md_path.stat().st_mtime
+    older = md_mtime - 60.0
+    os.utime(json_path, (older, older))
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    summary = state.skill_plan_summary
+    assert summary.exists is True
+    assert summary.readable is False
+    assert summary.stale is True
+    assert summary.error is not None
+    assert (
+        "older" in summary.error.lower()
+        or "stale" in summary.error.lower()
+    )
+
+    joined = "\n".join(state.status_lines)
+    assert "- structured skill plan: yes (stale:" in joined
+    assert "older than latest_skill_plan.md" in joined
+
+    # Workflow decision is unchanged: clean validation + no inspector
+    # outputs still recommends inspection.
+    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
+    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
+    assert state.blocked is False
+
+
+def test_workflow_state_module_uses_typed_loader_not_raw_json_for_skill_plan():
+    """Source-level guard: servicedesk_workflow_state must build the
+    skill-plan summary via load_skill_plan_json_sidecar(...). It must
+    not independently json.loads latest_skill_plan.json or build the
+    sidecar path on its own — that would risk display drift from the
+    /sdp inspect-skill path that already uses the typed loader.
+
+    `json` is still used to read the *validation* sidecar elsewhere in
+    the module, so this guard targets only the structured skill-plan
+    sidecar pieces.
+    """
+    from pathlib import Path
+
+    source = Path("servicedesk_workflow_state.py").read_text(encoding="utf-8")
+
+    # Typed loader is imported and called.
+    assert "from servicedesk_skill_plan import" in source
+    assert "load_skill_plan_json_sidecar" in source
+    assert "load_skill_plan_json_sidecar(" in source
+
+    # The skill-plan sidecar path helper is no longer used here;
+    # filesystem location is owned by the typed loader.
+    assert "build_servicedesk_latest_skill_plan_json_path" not in source
+
+    # No raw structured-sidecar JSON parsing remains for the skill plan
+    # — checked indirectly: the old raw helper name is gone.
+    assert "_read_skill_plan_json_summary" not in source

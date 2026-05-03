@@ -19,7 +19,6 @@ from pathlib import Path
 from draft_exports import (
     build_servicedesk_draft_note_path,
     build_servicedesk_latest_context_path,
-    build_servicedesk_latest_skill_plan_json_path,
     build_servicedesk_latest_skill_plan_path,
     build_servicedesk_latest_skill_plan_validation_path,
 )
@@ -30,6 +29,10 @@ from inspectors.inspection_report import (
 from inspectors.storage import (
     build_inspector_output_dir,
     build_inspector_result_path,
+)
+from servicedesk_skill_plan import (
+    SKILL_PLAN_JSON_SCHEMA_VERSION,
+    load_skill_plan_json_sidecar,
 )
 
 
@@ -69,8 +72,14 @@ class ServiceDeskWorkflowValidationFinding:
 class ServiceDeskSkillPlanSummary:
     """Read-only display summary of `latest_skill_plan.json`.
 
-    Display-only in this PR. Workflow stage/next-action decisions still
-    use existing artifact checks and `latest_skill_plan_validation.json`.
+    Display-only. Workflow stage/next-action decisions use existing
+    artifact checks and `latest_skill_plan_validation.json`; this
+    summary never blocks the workflow.
+
+    `stale` is True when the JSON sidecar is older than
+    `latest_skill_plan.md` (the loader's freshness check). Stale
+    sidecars are surfaced as `readable=False` so display callers do
+    not present possibly outdated structured fields as authoritative.
     """
 
     exists: bool = False
@@ -83,6 +92,7 @@ class ServiceDeskSkillPlanSummary:
     suggested_inspector_tools: list[str] = field(default_factory=list)
     suggested_execute_tools: list[str] = field(default_factory=list)
     error: str | None = None
+    stale: bool = False
 
 
 @dataclass(frozen=True)
@@ -155,10 +165,9 @@ def read_servicedesk_workflow_state(
     inspection_report_exists = inspection_report_path.exists()
     draft_note_exists = draft_note_path.exists()
 
-    skill_plan_json_path = build_servicedesk_latest_skill_plan_json_path(
+    skill_plan_summary = _build_skill_plan_summary_from_loader(
         workspace=workspace, request_id=request_id
     )
-    skill_plan_summary = _read_skill_plan_json_summary(skill_plan_json_path)
 
     stage, next_action, blocked, blocker = _decide_stage_and_next_action(
         context_exists=context_exists,
@@ -275,94 +284,87 @@ _CAPABILITY_CLASSIFICATION_KEYS = (
 )
 
 
-def _read_skill_plan_json_summary(path: Path) -> ServiceDeskSkillPlanSummary:
-    """Read `latest_skill_plan.json` for display only. Never raises.
+def _build_skill_plan_summary_from_loader(
+    *,
+    workspace: str,
+    request_id: str,
+) -> ServiceDeskSkillPlanSummary:
+    """Build a display summary by delegating to the typed structured
+    skill-plan loader. Never raises.
 
-    Missing → exists/readable false. Malformed/unreadable → exists true,
-    readable false, error populated. This summary is display-only and is
-    not used to decide workflow stage or next action in this PR.
+    The loader handles missing / unreadable / unsupported-schema /
+    stale sidecars uniformly. This module's only responsibilities are
+    to render the loader result into the display shape and to keep
+    `metadata` key lookup tolerant for the labels the parser currently
+    emits ("Skill match", "Capability classification") and possible
+    future snake_case payloads.
+
+    Stale sidecars are surfaced as `exists=True, readable=False,
+    stale=True` with the loader's `error` string so the workflow
+    status display does not present possibly outdated structured
+    fields as authoritative.
     """
-    if not path.exists():
+    result = load_skill_plan_json_sidecar(
+        workspace=workspace, request_id=request_id
+    )
+
+    if not result.exists:
         return ServiceDeskSkillPlanSummary()
 
-    try:
-        raw = path.read_text(encoding="utf-8")
-        payload = json.loads(raw)
-    except Exception as exc:  # noqa: BLE001 - state read must not raise
+    if not result.readable or result.plan is None:
         return ServiceDeskSkillPlanSummary(
             exists=True,
             readable=False,
-            error=f"Local skill plan JSON sidecar could not be read: {exc}",
+            stale=result.stale,
+            error=result.error,
         )
 
-    if not isinstance(payload, dict):
-        return ServiceDeskSkillPlanSummary(
-            exists=True,
-            readable=False,
-            error="Local skill plan JSON sidecar is not a JSON object.",
-        )
-
-    schema_version_raw = payload.get("schema_version")
-    schema_version = (
-        schema_version_raw if isinstance(schema_version_raw, int) else None
-    )
-
-    metadata = payload.get("metadata")
-    if not isinstance(metadata, dict):
-        metadata = {}
-
-    skill_match = _lookup_metadata_value(metadata, _SKILL_MATCH_KEYS)
-    capability_classification = _lookup_metadata_value(
-        metadata, _CAPABILITY_CLASSIFICATION_KEYS
-    )
-
-    handoff = payload.get("automation_handoff")
-    if not isinstance(handoff, dict):
-        handoff = {}
+    plan = result.plan
+    metadata = plan.metadata if isinstance(plan.metadata, dict) else {}
+    handoff = plan.automation_handoff
 
     return ServiceDeskSkillPlanSummary(
         exists=True,
         readable=True,
-        schema_version=schema_version,
-        skill_match=skill_match,
-        capability_classification=capability_classification,
-        ready_for_inspection=_optional_str_value(
-            handoff.get("ready_for_inspection")
+        schema_version=SKILL_PLAN_JSON_SCHEMA_VERSION,
+        skill_match=_lookup_parsed_metadata_value(metadata, _SKILL_MATCH_KEYS),
+        capability_classification=_lookup_parsed_metadata_value(
+            metadata, _CAPABILITY_CLASSIFICATION_KEYS
         ),
-        ready_for_execution=_optional_str_value(
-            handoff.get("ready_for_execution")
+        ready_for_inspection=_clean_optional_str(handoff.ready_for_inspection),
+        ready_for_execution=_clean_optional_str(handoff.ready_for_execution),
+        suggested_inspector_tools=_clean_string_list(
+            handoff.suggested_inspector_tools
         ),
-        suggested_inspector_tools=_string_list(
-            handoff.get("suggested_inspector_tools")
-        ),
-        suggested_execute_tools=_string_list(
-            handoff.get("suggested_execute_tools")
+        suggested_execute_tools=_clean_string_list(
+            handoff.suggested_execute_tools
         ),
         error=None,
+        stale=False,
     )
 
 
-def _lookup_metadata_value(
-    metadata: dict, keys: tuple[str, ...]
+def _lookup_parsed_metadata_value(
+    metadata: dict[str, str], keys: tuple[str, ...]
 ) -> str | None:
     for key in keys:
-        if key in metadata:
-            return _optional_str_value(metadata[key])
+        raw = metadata.get(key)
+        if not isinstance(raw, str):
+            continue
+        cleaned = raw.strip()
+        if cleaned:
+            return cleaned
     return None
 
 
-def _optional_str_value(value: object) -> str | None:
+def _clean_optional_str(value: str | None) -> str | None:
     if value is None:
         return None
-    if isinstance(value, str):
-        cleaned = value.strip()
-        return cleaned or None
-    return None
+    cleaned = value.strip()
+    return cleaned or None
 
 
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
+def _clean_string_list(value: list[str]) -> list[str]:
     items: list[str] = []
     for item in value:
         if isinstance(item, str):
@@ -620,7 +622,8 @@ def _format_skill_plan_summary_lines(
 
     if not summary.readable:
         message = summary.error or "unknown error"
-        return [f"- structured skill plan: yes (unreadable: {message})"]
+        label = "stale" if summary.stale else "unreadable"
+        return [f"- structured skill plan: yes ({label}: {message})"]
 
     return [
         "- structured skill plan: yes",
