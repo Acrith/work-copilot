@@ -1469,6 +1469,18 @@ def test_textual_app_sdp_inspect_skill_branch_prefers_structured_sidecar():
     # Loader is invoked for the structured sidecar.
     assert "load_skill_plan_json_sidecar(" in branch
 
+    # The user command echo must happen before any source-decision /
+    # refresh / validation logging so the activity log reads in the
+    # natural order. The inspect-skill branch also contains a leading
+    # "no skill plan found" advisory (which returns early) — match the
+    # structured-source path's _log_user_message specifically.
+    user_echo_index = branch.index("self._log_user_message(user_prompt)")
+    loader_index = branch.index("load_skill_plan_json_sidecar(")
+    assert user_echo_index < loader_index
+    # And only one user-message echo remains; the previous duplicate
+    # near the inspector-execution loop has been removed.
+    assert branch.count("self._log_user_message(user_prompt)") == 1
+
     # Both validation surfaces are referenced: parsed-plan path and
     # Markdown fallback.
     assert "validate_parsed_skill_plan_for_inspection(" in branch
@@ -1510,6 +1522,17 @@ def test_textual_app_sdp_inspect_skill_branch_prefers_structured_sidecar():
     assert "_run_model_turn_worker(" not in refresh_section
     assert "_save_servicedesk_note_worker(" not in refresh_section
     assert "_save_servicedesk_draft_worker(" not in refresh_section
+
+    # The inspect-skill validation gate logs the clean-success line a
+    # few steps later, so refresh must filter that exact line out to
+    # avoid printing it twice. Other refresh advisories (warnings,
+    # errors, validation unavailable, JSON sidecar unavailable,
+    # persistence failures, …) must still be surfaced.
+    assert (
+        'if line == "Skill plan validation: no issues found.":'
+        in refresh_section
+    )
+    assert "continue" in refresh_section
 
     # Stale/unreadable-after-refresh advisory still mentions
     # latest_skill_plan.md fallback. Adjacent-string-literal layout in

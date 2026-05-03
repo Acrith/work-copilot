@@ -914,6 +914,13 @@ class WorkCopilotTextualApp(App):
                 )
                 return
 
+            # Echo the user command before any source-decision /
+            # refresh / validation log lines so the activity log reads
+            # in the natural order:
+            #   You: /sdp inspect-skill <id>
+            #   <refresh / validation / selection / inspection lines>
+            self._log_user_message(user_prompt)
+
             sidecar_load_result = load_skill_plan_json_sidecar(
                 workspace=self.config.workspace,
                 request_id=request_id,
@@ -938,7 +945,16 @@ class WorkCopilotTextualApp(App):
                     workspace=self.config.workspace,
                     request_id=request_id,
                 )
+                # The inspect-skill validation gate logs the same
+                # "Skill plan validation: no issues found." line a few
+                # steps later. Suppress only that exact success line
+                # from refresh so it does not appear twice. All other
+                # refresh advisories (warnings, errors, validation
+                # unavailable, JSON sidecar unavailable, persistence
+                # failures, etc.) are still surfaced.
                 for line in refresh_lines:
+                    if line == "Skill plan validation: no issues found.":
+                        continue
                     self._log_system_message(line)
 
                 sidecar_load_result = load_skill_plan_json_sidecar(
@@ -1028,8 +1044,6 @@ class WorkCopilotTextualApp(App):
                 self._log_blank()
                 self._log(f"Active Directory inspector configuration error: {exc}")
                 return
-
-            self._log_user_message(user_prompt)
 
             selected_ids = [selection.inspector_id for selection in selections]
             selected_includes_exchange = any(
