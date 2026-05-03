@@ -371,6 +371,45 @@ existing per-step commands.
 `/sdp save-note <id>` remains the explicit approval-gated ServiceDesk
 write boundary; freshness checks never trigger an external write.
 
+### Draft-note validation before save
+
+`/sdp save-note <id>` runs a local validation pass on the draft note
+before it continues to the existing approval-gated ServiceDesk write
+flow. The validation is local-only:
+
+- it does not call the model
+- it does not contact ServiceDesk, Active Directory, or Exchange
+- it does not run any inspector
+- it does not post anything
+
+Validation errors block `/sdp save-note <id>` before the
+approval-gated write path is reached. When validation passes, the
+existing approval flow continues unchanged — `/sdp save-note <id>`
+still requires the operator to intentionally run the command and
+approve the write.
+
+Errors that block:
+
+- `## Note body` section is missing
+- `## Note body` section is empty after stripping whitespace
+- placeholder text remains in the body, including `TODO`, `TBD`,
+  `<fill in>`, `[fill in]`, or `lorem ipsum`
+- explicit first-person write claims appear in the body, including:
+  - `I changed Active Directory`
+  - `I updated Active Directory`
+  - `I modified the mailbox`
+  - `I enabled archive`
+
+When `/sdp save-note <id>` blocks, it logs the validation findings
+and a single advisory line:
+
+```text
+ServiceDesk note save blocked because draft note validation errors were found.
+```
+
+The operator can then edit `draft_note.md` (or regenerate it via
+`/sdp draft-note <id>`) and re-run `/sdp save-note <id>`.
+
 ## Textual mode status
 
 Textual mode is experimental but functional for normal prompt turns and approval-gated write/exec actions.

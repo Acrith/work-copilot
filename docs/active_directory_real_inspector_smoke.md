@@ -117,6 +117,19 @@ approval-gated and posts only the `## Note body` section of the
 generated draft as an internal ServiceDesk note. Up to and including
 `/sdp draft-note`, no ServiceDesk write happens.
 
+`/sdp save-note <request_id>` runs a local draft-note validation
+pass before the approval-gated write path. Validation is local-only:
+it does not call the model, does not contact AD or Exchange, does
+not run inspectors, and does not post anything. It blocks the save
+when the draft has no `## Note body`, an empty body, leftover
+placeholder text (`TODO`, `TBD`, `<fill in>`, `[fill in>`,
+`lorem ipsum`), or explicit first-person write claims such as
+`I changed Active Directory`, `I updated Active Directory`,
+`I modified the mailbox`, or `I enabled archive` — the AD inspectors
+in this smoke flow are read-only, so the draft must not claim
+otherwise. When validation passes, the existing approval flow runs
+unchanged.
+
 The same flow can also be driven one safe step at a time using the
 state-driven workflow commands:
 
