@@ -78,6 +78,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/sdp save-note" in help_text
     assert "/sdp repair-skill-plan" in help_text
     assert "/sdp status <id>" in help_text
+    assert "/sdp work <id>" in help_text
     assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
@@ -1486,3 +1487,73 @@ def test_textual_app_sdp_status_branch_is_local_read_only():
     assert "create_configured_inspector_registry_from_env(" not in branch
     assert "run_inspector_and_save(" not in branch
     assert "build_servicedesk_inspection_report(" not in branch
+
+
+# --------------------- /sdp work parsing --------------------------------
+
+
+def test_parse_sdp_work_command():
+    assert parse_interactive_command("/sdp work 56050") == "sdp_work"
+    assert parse_sdp_request_id("/sdp work 56050") == "56050"
+
+
+def test_parse_sdp_continue_alias():
+    assert parse_interactive_command("/sdp continue 56050") == "sdp_work"
+
+
+# --------------------- /sdp work handler safety guards ------------------
+
+
+def test_textual_app_sdp_work_branch_is_state_driven_and_save_safe():
+    """Source-level guard: /sdp work must read local workflow state,
+    advance at most one step by re-dispatching the existing branch for
+    the next action, and must never auto-save an internal note.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    assert 'if command == "sdp_work":' in source
+
+    branch_start = source.index('if command == "sdp_work":')
+    next_branch = source.index('if command == "unknown":', branch_start)
+    branch = source[branch_start:next_branch]
+
+    # Reads local workflow state; never invents an action without it.
+    assert "read_servicedesk_workflow_state(" in branch
+    assert "workspace=self.config.workspace" in branch
+    assert "request_id=request_id," in branch
+    assert "ServiceDesk workflow state:" in branch
+
+    # Branches explicitly on review/save/none so it never auto-dispatches
+    # the underlying save-note worker.
+    assert "ServiceDeskWorkflowNextAction.SAVE_NOTE" in branch
+    assert "ServiceDeskWorkflowNextAction.REVIEW_DRAFT_NOTE" in branch
+    assert "ServiceDeskWorkflowNextAction.NONE" in branch
+
+    # The save-note branch never invokes the approval-gated worker and
+    # tells the user to review-and-save manually.
+    assert "_save_servicedesk_note_worker(" not in branch
+    assert "servicedesk_add_request_note" not in branch
+    assert (
+        "Draft note appears ready. Review it, then run " in branch
+    )
+    assert "if approved." in branch
+
+    # /sdp work must not directly call any write helper or invent an
+    # inspector run; it must delegate via _submit_prompt so existing
+    # safety gates fire unchanged.
+    assert "_save_servicedesk_draft_worker(" not in branch
+    assert "select_inspectors_for_skill_plan(" not in branch
+    assert "create_configured_inspector_registry_from_env(" not in branch
+    assert "run_inspector_and_save(" not in branch
+    assert "build_servicedesk_inspection_report(" not in branch
+    assert "_run_model_turn_worker(" not in branch
+
+    # Single-step dispatch: synthesize a single /sdp <command> <id> line
+    # via the workflow-state mapping helper and re-enter _submit_prompt
+    # exactly once.
+    assert "suggested_next_command_for_next_action(" in branch
+    assert "Advancing one step: " in branch
+    assert "self._submit_prompt(suggested_command)" in branch
+    assert branch.count("self._submit_prompt(") == 1

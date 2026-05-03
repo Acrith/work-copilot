@@ -74,6 +74,7 @@ from servicedesk_skill_plan import (
     validate_skill_plan_text_for_inspection,
 )
 from servicedesk_workflow_state import (
+    ServiceDeskWorkflowNextAction,
     read_servicedesk_workflow_state,
     suggested_next_command_for_next_action,
 )
@@ -1260,6 +1261,83 @@ class WorkCopilotTextualApp(App):
                     f"- suggested command: {suggested_command}"
                 )
 
+            return
+
+        if command == "sdp_work":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp work <request_id>")
+                return
+
+            self._log_user_message(user_prompt)
+
+            try:
+                state = read_servicedesk_workflow_state(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+            except Exception as exc:
+                self._log_system_message(
+                    f"Could not read local ServiceDesk workflow state: {exc}"
+                )
+                return
+
+            self._log_system_message("ServiceDesk workflow state:")
+            for line in state.status_lines:
+                self._log_system_message(line)
+
+            next_action = state.next_action
+
+            # /sdp work must never auto-save an internal note.
+            if next_action == ServiceDeskWorkflowNextAction.SAVE_NOTE:
+                self._log_system_message(
+                    "Draft note appears ready. Review it, then run "
+                    f"`/sdp save-note {request_id}` if approved."
+                )
+                return
+
+            if next_action == ServiceDeskWorkflowNextAction.REVIEW_DRAFT_NOTE:
+                self._log_system_message(
+                    "Draft note is awaiting human review. Open the draft "
+                    "note locally before deciding to run "
+                    f"`/sdp save-note {request_id}`."
+                )
+                return
+
+            if next_action == ServiceDeskWorkflowNextAction.NONE:
+                self._log_system_message(
+                    "No next action is available for this ticket. Run "
+                    f"`/sdp status {request_id}` for details."
+                )
+                return
+
+            suggested_command = suggested_next_command_for_next_action(
+                next_action=next_action,
+                request_id=request_id,
+            )
+
+            if suggested_command is None:
+                self._log_system_message(
+                    "No automatic command is available for next action: "
+                    f"{next_action.value}. Run `/sdp status {request_id}` "
+                    "for details."
+                )
+                return
+
+            self._log_system_message(
+                f"Advancing one step: {next_action.value}"
+            )
+            self._log_system_message(
+                f"Dispatching: {suggested_command}"
+            )
+
+            # Re-dispatch through the existing command handler so the
+            # underlying branch (and its safety gates, e.g. validation
+            # blocking in `/sdp inspect-skill`) runs unchanged. This
+            # advances exactly one step per `/sdp work` invocation.
+            self._submit_prompt(suggested_command)
             return
 
         if command == "unknown":
