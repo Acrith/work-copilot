@@ -50,7 +50,24 @@ If an operation can modify a mailbox, a ServiceDesk request, a permission set, a
 
 ## How inspectors fit into the workflow
 
-The intended workflow is:
+The intended workflow is state-driven and runs one safe step at a time.
+The recommended operator commands are:
+
+```text
+/sdp status <id>
+/sdp work <id>
+/sdp work <id>
+...
+/sdp save-note <id>
+```
+
+`/sdp work` advances exactly one safe next step per invocation, using
+local workflow state to decide which per-step command to run next. It
+never auto-saves notes to ServiceDesk. At the ready-to-save stage it
+tells the operator to review the local draft and explicitly run
+`/sdp save-note <id>`.
+
+The per-step commands `/sdp work` orchestrates are:
 
 1. `/sdp context <id>`
    - collects ServiceDesk context summaries and request details
@@ -61,17 +78,32 @@ The intended workflow is:
    - extracts inputs, evidence, and handoff details
    - may identify that more technical facts are needed
 
-3. future `/sdp inspect-skill <id>`
+3. `/sdp repair-skill-plan <id>` (when validation findings require it)
+   - regenerates the skill plan against current validation findings
+   - does not perform any external writes
+
+4. `/sdp inspect-skill <id>`
    - invokes one or more inspectors to gather read-only technical facts
    - enriches planning with environment-specific observations
    - does not execute changes
 
-4. future `/sdp execute-skill <id>`
-   - runs approved, action-capable work only when appropriate
-   - may rely on previous inspector results and skill plans
-   - remains separate from inspection
+5. `/sdp inspection-report <id>`
+   - renders saved inspector JSON into a local Markdown report
 
-Inspectors should be thought of as the evidence-gathering layer between planning and execution.
+6. `/sdp draft-note <id>`
+   - drafts a local internal technician note from saved context and
+     the inspection report
+   - remains local-only
+
+7. `/sdp save-note <id>`
+   - explicit approval-gated ServiceDesk write boundary
+   - posts the prepared internal note only when the operator
+     intentionally runs this command and approves the write
+
+Future approval-gated executor commands for action-capable work would
+sit beyond this boundary, separate from inspection and from note
+writing. Inspectors should be thought of as the read-only
+evidence-gathering layer between planning and any later execution.
 
 ## Initial target inspector
 
