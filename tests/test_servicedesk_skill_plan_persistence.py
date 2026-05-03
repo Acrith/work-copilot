@@ -2,11 +2,19 @@ import json
 
 from draft_exports import (
     build_servicedesk_latest_skill_plan_json_path,
+    build_servicedesk_latest_skill_plan_path,
     build_servicedesk_latest_skill_plan_validation_path,
 )
 from servicedesk_skill_plan import (
     SKILL_PLAN_JSON_SCHEMA_VERSION,
+    ExtractedInput,
+    ParsedServiceDeskSkillPlan,
+    SkillPlanAutomationHandoff,
+    SkillPlanJsonLoadError,
+    SkillPlanJsonLoadResult,
     build_persisting_validation_callback,
+    deserialize_skill_plan_payload,
+    load_skill_plan_json_sidecar,
     parse_servicedesk_skill_plan,
     persist_and_format_skill_plan_validation,
     persist_skill_plan_json_sidecar,
@@ -557,3 +565,313 @@ def test_persisting_validation_callback_keeps_validation_lines_on_json_failure(
         "Skill plan JSON sidecar unavailable: synthetic write failure"
         in lines
     )
+
+
+# --------------------- deserialize_skill_plan_payload -------------------
+
+
+_FULL_PAYLOAD = {
+    "schema_version": SKILL_PLAN_JSON_SCHEMA_VERSION,
+    "request_id": "56050",
+    "metadata": {
+        "Skill match": "active_directory.user.update_profile_attributes",
+        "Capability classification": "draft_only_manual_now",
+    },
+    "extracted_inputs": [
+        {
+            "field": "target_user_email",
+            "status": "present",
+            "value": "agata.piatek@exactforestall.com",
+            "evidence": "Email address from ticket context.",
+            "needed_now": "yes",
+        }
+    ],
+    "missing_information_needed_now": [
+        "The Active Directory sam_account_name is not yet known.",
+    ],
+    "current_blocker": (
+        "Canonical Active Directory identifier is not yet known."
+    ),
+    "automation_handoff": {
+        "ready_for_inspection": "yes",
+        "ready_for_execution": "no",
+        "suggested_inspector_tools": ["active_directory.user.inspect"],
+        "suggested_execute_tools": [],
+        "automation_blocker": "Manual technician action is required.",
+    },
+}
+
+
+def test_deserialize_skill_plan_payload_reconstructs_full_plan():
+    plan = deserialize_skill_plan_payload(_FULL_PAYLOAD)
+
+    assert isinstance(plan, ParsedServiceDeskSkillPlan)
+    assert plan.metadata == {
+        "Skill match": "active_directory.user.update_profile_attributes",
+        "Capability classification": "draft_only_manual_now",
+    }
+    assert plan.extracted_inputs == [
+        ExtractedInput(
+            field="target_user_email",
+            status="present",
+            value="agata.piatek@exactforestall.com",
+            evidence="Email address from ticket context.",
+            needed_now="yes",
+        )
+    ]
+    assert plan.missing_information_needed_now == [
+        "The Active Directory sam_account_name is not yet known."
+    ]
+    assert plan.current_blocker == (
+        "Canonical Active Directory identifier is not yet known."
+    )
+    assert plan.automation_handoff == SkillPlanAutomationHandoff(
+        ready_for_inspection="yes",
+        ready_for_execution="no",
+        suggested_inspector_tools=["active_directory.user.inspect"],
+        suggested_execute_tools=[],
+        automation_blocker="Manual technician action is required.",
+    )
+
+
+def test_deserialize_skill_plan_payload_round_trips_with_serializer():
+    """A plan parsed from clean Markdown -> serialized -> deserialized
+    should round-trip into an equal ParsedServiceDeskSkillPlan.
+    """
+    parsed = parse_servicedesk_skill_plan(_CLEAN_PLAN)
+    payload = serialize_parsed_skill_plan(parsed, request_id="56050")
+
+    reloaded = deserialize_skill_plan_payload(payload)
+
+    assert reloaded == parsed
+
+
+def test_deserialize_skill_plan_payload_rejects_non_object():
+    import pytest
+
+    with pytest.raises(SkillPlanJsonLoadError):
+        deserialize_skill_plan_payload([1, 2, 3])
+
+    with pytest.raises(SkillPlanJsonLoadError):
+        deserialize_skill_plan_payload("not a dict")
+
+
+def test_deserialize_skill_plan_payload_rejects_unsupported_schema_version():
+    import pytest
+
+    with pytest.raises(SkillPlanJsonLoadError) as excinfo:
+        deserialize_skill_plan_payload(
+            {**_FULL_PAYLOAD, "schema_version": 999}
+        )
+    assert "schema_version" in str(excinfo.value)
+
+    with pytest.raises(SkillPlanJsonLoadError):
+        payload = dict(_FULL_PAYLOAD)
+        payload.pop("schema_version", None)
+        deserialize_skill_plan_payload(payload)
+
+
+def test_deserialize_skill_plan_payload_rejects_non_list_inspector_tools():
+    import pytest
+
+    bad = {
+        **_FULL_PAYLOAD,
+        "automation_handoff": {
+            **_FULL_PAYLOAD["automation_handoff"],
+            "suggested_inspector_tools": "active_directory.user.inspect",
+        },
+    }
+
+    with pytest.raises(SkillPlanJsonLoadError) as excinfo:
+        deserialize_skill_plan_payload(bad)
+    assert "suggested_inspector_tools" in str(excinfo.value)
+
+
+def test_deserialize_skill_plan_payload_rejects_non_list_execute_tools():
+    import pytest
+
+    bad = {
+        **_FULL_PAYLOAD,
+        "automation_handoff": {
+            **_FULL_PAYLOAD["automation_handoff"],
+            "suggested_execute_tools": {"x": "y"},
+        },
+    }
+
+    with pytest.raises(SkillPlanJsonLoadError) as excinfo:
+        deserialize_skill_plan_payload(bad)
+    assert "suggested_execute_tools" in str(excinfo.value)
+
+
+def test_deserialize_skill_plan_payload_tolerates_missing_optional_sections():
+    plan = deserialize_skill_plan_payload(
+        {
+            "schema_version": SKILL_PLAN_JSON_SCHEMA_VERSION,
+            "request_id": "56050",
+        }
+    )
+
+    assert plan == ParsedServiceDeskSkillPlan()
+
+
+# --------------------- load_skill_plan_json_sidecar ---------------------
+
+
+def test_load_skill_plan_json_sidecar_missing(tmp_path):
+    result = load_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    assert isinstance(result, SkillPlanJsonLoadResult)
+    assert result.exists is False
+    assert result.readable is False
+    assert result.plan is None
+    assert result.error is None
+    assert result.stale is False
+
+
+def test_load_skill_plan_json_sidecar_readable(tmp_path):
+    persist_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text=_CLEAN_PLAN,
+    )
+
+    result = load_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    assert result.exists is True
+    assert result.readable is True
+    assert result.stale is False
+    assert result.error is None
+    assert result.plan is not None
+    assert isinstance(result.plan, ParsedServiceDeskSkillPlan)
+    assert result.plan == parse_servicedesk_skill_plan(_CLEAN_PLAN)
+
+
+def test_load_skill_plan_json_sidecar_malformed(tmp_path):
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text("{this is not valid json", encoding="utf-8")
+
+    result = load_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    assert result.exists is True
+    assert result.readable is False
+    assert result.plan is None
+    assert result.error is not None
+    assert "could not be read" in result.error
+    assert result.stale is False
+
+
+def test_load_skill_plan_json_sidecar_unsupported_schema_version_is_unreadable(
+    tmp_path,
+):
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(
+        json.dumps({"schema_version": 999, "request_id": "56050"}) + "\n",
+        encoding="utf-8",
+    )
+
+    result = load_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    assert result.exists is True
+    assert result.readable is False
+    assert result.plan is None
+    assert result.error is not None
+    assert "schema_version" in result.error
+
+
+def test_load_skill_plan_json_sidecar_stale_when_md_is_newer(tmp_path):
+    persist_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text=_CLEAN_PLAN,
+    )
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(_CLEAN_PLAN, encoding="utf-8")
+
+    # Force the JSON sidecar to look older than the Markdown.
+    import os
+
+    md_mtime = md_path.stat().st_mtime
+    older = md_mtime - 60.0
+    os.utime(json_path, (older, older))
+
+    result = load_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    assert result.exists is True
+    assert result.readable is False
+    assert result.stale is True
+    assert result.plan is None
+    assert result.error is not None
+    assert (
+        "older" in result.error.lower()
+        or "stale" in result.error.lower()
+    )
+
+    # Loader does not delete the on-disk JSON sidecar.
+    assert json_path.exists()
+
+
+def test_load_skill_plan_json_sidecar_not_stale_when_json_is_newer(tmp_path):
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(_CLEAN_PLAN, encoding="utf-8")
+
+    persist_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text=_CLEAN_PLAN,
+    )
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    # Force the JSON sidecar to look newer than the Markdown.
+    import os
+
+    md_mtime = md_path.stat().st_mtime
+    newer = md_mtime + 60.0
+    os.utime(json_path, (newer, newer))
+
+    result = load_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    assert result.exists is True
+    assert result.readable is True
+    assert result.stale is False
+    assert result.plan is not None

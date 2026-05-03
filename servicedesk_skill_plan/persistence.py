@@ -12,6 +12,7 @@ from typing import Callable
 
 from draft_exports import (
     build_servicedesk_latest_skill_plan_json_path,
+    build_servicedesk_latest_skill_plan_path,
     build_servicedesk_latest_skill_plan_validation_path,
 )
 from servicedesk_skill_plan.models import (
@@ -275,3 +276,291 @@ def build_persisting_validation_callback(
         return [*validation_lines, *json_lines]
 
     return _callback
+
+
+# ---------- Structured skill-plan JSON sidecar loader -------------------
+
+
+class SkillPlanJsonLoadError(Exception):
+    """Raised internally by `deserialize_skill_plan_payload` when the
+    payload cannot be safely reconstructed. The loader catches this and
+    converts it into a `SkillPlanJsonLoadResult` with `readable=False`.
+    """
+
+
+@dataclass(frozen=True)
+class SkillPlanJsonLoadResult:
+    """Result of attempting to load `latest_skill_plan.json`.
+
+    Display/consumer-friendly: never raises. Distinguishes missing
+    (`exists=False`), unreadable (`exists=True, readable=False`), stale
+    (`exists=True, readable=False, stale=True`), and successfully
+    loaded (`readable=True, plan=<...>`).
+    """
+
+    exists: bool = False
+    readable: bool = False
+    plan: ParsedServiceDeskSkillPlan | None = None
+    error: str | None = None
+    stale: bool = False
+
+
+def deserialize_skill_plan_payload(
+    payload: object,
+) -> ParsedServiceDeskSkillPlan:
+    """Reconstruct a `ParsedServiceDeskSkillPlan` from a JSON-decoded
+    payload.
+
+    Pure function: no filesystem access. Raises
+    `SkillPlanJsonLoadError` on shape problems (non-object payload,
+    unsupported `schema_version`, non-list tool fields). Tolerates
+    missing optional sections by falling back to parser-model defaults.
+    """
+    if not isinstance(payload, dict):
+        raise SkillPlanJsonLoadError(
+            "Structured skill plan sidecar is not a JSON object."
+        )
+
+    schema_version = payload.get("schema_version")
+    if schema_version != SKILL_PLAN_JSON_SCHEMA_VERSION:
+        raise SkillPlanJsonLoadError(
+            "Structured skill plan sidecar has unsupported "
+            f"schema_version {schema_version!r}; expected "
+            f"{SKILL_PLAN_JSON_SCHEMA_VERSION}."
+        )
+
+    metadata = _deserialize_metadata(payload.get("metadata"))
+    extracted_inputs = _deserialize_extracted_inputs(
+        payload.get("extracted_inputs")
+    )
+    missing_info = _deserialize_string_list(
+        payload.get("missing_information_needed_now"),
+        field_name="missing_information_needed_now",
+    )
+    current_blocker = _deserialize_optional_str(
+        payload.get("current_blocker"),
+        field_name="current_blocker",
+    )
+    handoff = _deserialize_automation_handoff(
+        payload.get("automation_handoff")
+    )
+
+    return ParsedServiceDeskSkillPlan(
+        metadata=metadata,
+        extracted_inputs=extracted_inputs,
+        missing_information_needed_now=missing_info,
+        current_blocker=current_blocker,
+        automation_handoff=handoff,
+    )
+
+
+def _deserialize_metadata(value: object) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise SkillPlanJsonLoadError(
+            "Structured skill plan sidecar `metadata` must be a JSON "
+            "object."
+        )
+    metadata: dict[str, str] = {}
+    for key, raw in value.items():
+        if not isinstance(key, str):
+            raise SkillPlanJsonLoadError(
+                "Structured skill plan sidecar `metadata` has a "
+                "non-string key."
+            )
+        if raw is None:
+            metadata[key] = ""
+        elif isinstance(raw, str):
+            metadata[key] = raw
+        else:
+            raise SkillPlanJsonLoadError(
+                "Structured skill plan sidecar `metadata` value for "
+                f"`{key}` is not a string."
+            )
+    return metadata
+
+
+def _deserialize_extracted_inputs(value: object) -> list[ExtractedInput]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise SkillPlanJsonLoadError(
+            "Structured skill plan sidecar `extracted_inputs` must be a "
+            "JSON array."
+        )
+    inputs: list[ExtractedInput] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise SkillPlanJsonLoadError(
+                "Structured skill plan sidecar `extracted_inputs` entry "
+                f"at index {index} is not a JSON object."
+            )
+        inputs.append(
+            ExtractedInput(
+                field=_input_str_field(item, "field", index),
+                status=_input_str_field(item, "status", index),
+                value=_input_str_field(item, "value", index),
+                evidence=_input_str_field(item, "evidence", index),
+                needed_now=_input_str_field(item, "needed_now", index),
+            )
+        )
+    return inputs
+
+
+def _input_str_field(item: dict, key: str, index: int) -> str:
+    raw = item.get(key)
+    if raw is None:
+        return ""
+    if not isinstance(raw, str):
+        raise SkillPlanJsonLoadError(
+            "Structured skill plan sidecar `extracted_inputs` entry "
+            f"at index {index} has non-string `{key}`."
+        )
+    return raw
+
+
+def _deserialize_automation_handoff(
+    value: object,
+) -> SkillPlanAutomationHandoff:
+    if value is None:
+        return SkillPlanAutomationHandoff()
+    if not isinstance(value, dict):
+        raise SkillPlanJsonLoadError(
+            "Structured skill plan sidecar `automation_handoff` must be "
+            "a JSON object."
+        )
+    return SkillPlanAutomationHandoff(
+        ready_for_inspection=_deserialize_optional_str(
+            value.get("ready_for_inspection"),
+            field_name="automation_handoff.ready_for_inspection",
+        ),
+        ready_for_execution=_deserialize_optional_str(
+            value.get("ready_for_execution"),
+            field_name="automation_handoff.ready_for_execution",
+        ),
+        suggested_inspector_tools=_deserialize_string_list(
+            value.get("suggested_inspector_tools"),
+            field_name="automation_handoff.suggested_inspector_tools",
+        ),
+        suggested_execute_tools=_deserialize_string_list(
+            value.get("suggested_execute_tools"),
+            field_name="automation_handoff.suggested_execute_tools",
+        ),
+        automation_blocker=_deserialize_optional_str(
+            value.get("automation_blocker"),
+            field_name="automation_handoff.automation_blocker",
+        ),
+    )
+
+
+def _deserialize_string_list(value: object, *, field_name: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise SkillPlanJsonLoadError(
+            f"Structured skill plan sidecar `{field_name}` must be a JSON "
+            "array of strings."
+        )
+    items: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise SkillPlanJsonLoadError(
+                f"Structured skill plan sidecar `{field_name}` contains a "
+                "non-string entry."
+            )
+        items.append(item)
+    return items
+
+
+def _deserialize_optional_str(
+    value: object, *, field_name: str
+) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise SkillPlanJsonLoadError(
+            f"Structured skill plan sidecar `{field_name}` must be a "
+            "string or null."
+        )
+    return value
+
+
+def load_skill_plan_json_sidecar(
+    *,
+    workspace: str,
+    request_id: str,
+) -> SkillPlanJsonLoadResult:
+    """Load `latest_skill_plan.json` for a request. Never raises.
+
+    Returns:
+    - `exists=False, readable=False, plan=None` when the JSON sidecar
+      file is missing.
+    - `exists=True, readable=False, stale=True` when the JSON sidecar
+      is older than `latest_skill_plan.md` (a conservative freshness
+      check, since users may manually edit the Markdown).
+    - `exists=True, readable=False, error=<...>` on read/parse/shape
+      failures.
+    - `exists=True, readable=True, plan=<...>` on success.
+    """
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=workspace, request_id=request_id
+    )
+
+    if not json_path.exists():
+        return SkillPlanJsonLoadResult()
+
+    md_path = build_servicedesk_latest_skill_plan_path(
+        workspace=workspace, request_id=request_id
+    )
+    try:
+        if md_path.exists():
+            md_mtime = md_path.stat().st_mtime
+            json_mtime = json_path.stat().st_mtime
+            if json_mtime < md_mtime:
+                return SkillPlanJsonLoadResult(
+                    exists=True,
+                    readable=False,
+                    stale=True,
+                    error=(
+                        "Structured skill plan sidecar is older than "
+                        "latest_skill_plan.md."
+                    ),
+                )
+    except Exception as exc:  # noqa: BLE001 - loader must not raise
+        return SkillPlanJsonLoadResult(
+            exists=True,
+            readable=False,
+            error=(
+                "Structured skill plan sidecar freshness check failed: "
+                f"{exc}"
+            ),
+        )
+
+    try:
+        raw = json_path.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001 - loader must not raise
+        return SkillPlanJsonLoadResult(
+            exists=True,
+            readable=False,
+            error=(
+                "Structured skill plan sidecar could not be read: "
+                f"{exc}"
+            ),
+        )
+
+    try:
+        plan = deserialize_skill_plan_payload(payload)
+    except SkillPlanJsonLoadError as exc:
+        return SkillPlanJsonLoadResult(
+            exists=True,
+            readable=False,
+            error=str(exc),
+        )
+
+    return SkillPlanJsonLoadResult(
+        exists=True,
+        readable=True,
+        plan=plan,
+    )
