@@ -80,6 +80,8 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/sdp status <id>" in help_text
     assert "/sdp work <id>" in help_text
     assert "/sdp context <id>" in help_text
+    assert "/sdp execute <id>" in help_text
+    assert "no external write" in help_text
     assert "/exit" in help_text
 
 
@@ -1922,14 +1924,16 @@ def test_textual_app_sdp_work_branch_runs_local_sidecar_refresh():
     # inspector registry, or any inspector run helper. It also must not
     # dispatch /sdp skill-plan via _submit_prompt — that would
     # re-prompt the model and discard manual edits.
-    refresh_section_end = source.index(
+    # End the refresh sub-section at the start of the dispatched-action
+    # path inside the same /sdp work branch. Both indices are relative
+    # to `branch` so the slice stays within the sdp_work branch
+    # regardless of what other branches follow it in the source.
+    refresh_section_start = branch.index("REFRESH_SKILL_PLAN_SIDECARS")
+    refresh_section_end = branch.index(
         "suggested_command = suggested_next_command_for_next_action(",
-        refresh_index,
+        refresh_section_start,
     )
-    refresh_section = branch[
-        branch.index("REFRESH_SKILL_PLAN_SIDECARS")
-        : refresh_section_end - branch_start
-    ]
+    refresh_section = branch[refresh_section_start:refresh_section_end]
     assert "_run_model_turn_worker(" not in refresh_section
     assert "_save_servicedesk_note_worker(" not in refresh_section
     assert "_save_servicedesk_draft_worker(" not in refresh_section
@@ -1967,3 +1971,162 @@ def test_textual_app_sdp_work_branch_runs_local_sidecar_refresh():
         < updated_header_index
         < again_in_refresh_index
     )
+
+
+# --------------------- /sdp execute parsing + wiring --------------------
+
+
+def test_parse_sdp_execute_command():
+    assert (
+        parse_interactive_command("/sdp execute 56050") == "sdp_execute"
+    )
+    assert parse_sdp_request_id("/sdp execute 56050") == "56050"
+
+
+def test_parse_sdp_execute_without_request_id_is_unknown():
+    # `/sdp execute` with no request id parses as `sdp_execute` (the
+    # branch handles missing id with a "Usage:" advisory), but
+    # parse_sdp_request_id returns None.
+    assert parse_interactive_command("/sdp execute") == "sdp_execute"
+    assert parse_sdp_request_id("/sdp execute") is None
+
+
+def test_textual_app_sdp_execute_branch_is_approval_gated_and_mock_only():
+    """Source-level guard for the new /sdp execute branch and its
+    worker. The flow must:
+
+    - load latest_skill_plan.json via load_skill_plan_json_sidecar
+    - call plan_exchange_grant_full_access_preview_from_skill_plan
+    - display preview fields (executor id, title, summary)
+    - ask approval through the existing TextualApprovalHandler
+    - only invoke the mock executor's execute path after approval
+    - clearly state mock/no-op semantics
+    - never call PowerShell, ServiceDesk write helpers, AD/Exchange
+      command runners, the save-note worker, or run_inspector_and_save
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    # The branch and the worker both exist.
+    assert 'if command == "sdp_execute":' in source
+    assert "def _execute_mock_executor_worker(" in source
+
+    # Slice the worker so the guard targets the actual executor flow.
+    worker_start = source.index("def _execute_mock_executor_worker(")
+    next_method = source.index("\n    @work(", worker_start + 1)
+    worker = source[worker_start:next_method]
+
+    # Loader is invoked on the structured sidecar.
+    assert "load_skill_plan_json_sidecar(" in worker
+
+    # Planner is invoked on the loaded plan.
+    assert (
+        "plan_exchange_grant_full_access_preview_from_skill_plan("
+        in worker
+    )
+
+    # Stale/missing/unreadable structured sidecar must NOT fall back
+    # to Markdown — the branch tells the user to refresh state and
+    # returns. There must be no Markdown skill-plan validation /
+    # selection / request-build call paths inside this worker.
+    assert "validate_skill_plan_text_for_inspection(" not in worker
+    assert "select_inspectors_for_skill_plan(" not in worker
+    assert "build_inspector_request_from_skill_plan(" not in worker
+    assert "Markdown fallback is intentionally not used here" in worker
+
+    # Preview fields are displayed.
+    assert "Executor:" in worker
+    assert "Preview title:" in worker
+    assert "Preview summary:" in worker
+    assert "Requires approval: yes" in worker
+
+    # Approval is requested through the existing handler. The
+    # approval call must precede the executor execute call.
+    assert "TextualApprovalHandler(" in worker
+    assert "request_approval(" in worker
+
+    approval_index = worker.index("request_approval(")
+    execute_index = worker.index("definition.execute(")
+    assert approval_index < execute_index, (
+        "executor must not be invoked before approval is requested"
+    )
+
+    # Denial / non-once approval path returns without invoking
+    # execute. There is exactly one definition.execute(...) call site,
+    # gated on the approval response action.
+    assert worker.count("definition.execute(") == 1
+    assert (
+        "Executor not run: approval must be granted for "
+    ) in worker
+    assert "this operation only." in worker
+
+    # Executor execution must be per-operation only. Only
+    # ApprovalAction.ALLOW_ONCE is allowed past the gate; any session/
+    # path approval (or denial) must NOT execute the executor.
+    assert "ApprovalAction.ALLOW_ONCE" in worker
+    # The condition uses identity-comparison against ALLOW_ONCE only.
+    # Session/path approvals must not appear in the execute-approval
+    # condition (i.e. the worker must not list them as "approving"
+    # actions for executor execution).
+    assert "ApprovalAction.ALLOW_TOOL_SESSION" not in worker
+    assert "ApprovalAction.ALLOW_PATH_SESSION" not in worker
+    # Old broadened approving-actions set must be gone.
+    assert "approving_actions" not in worker
+    # The denied-default wording must not leak back in either.
+    assert "approval was denied." not in worker
+
+    # Mock/no-op semantics are surfaced before AND after execute.
+    assert "Mock executor preview + approval flow" in source
+    assert (
+        "No external write was performed (mock/no-op " in worker
+    )
+
+    # The flow uses the mock definition factory, NOT a real registry
+    # registration or a real executor backend.
+    assert (
+        "create_exchange_grant_full_access_executor_definition("
+        in worker
+    )
+
+    # Default registry must NOT be created or used here — this PR
+    # keeps the default registry empty.
+    assert "create_executor_registry(" not in worker
+    assert "register_executor(" not in worker
+    assert "register_mock_exchange_executors(" not in worker
+
+    # Forbidden write/inspector/save tokens.
+    forbidden = [
+        "Add-MailboxPermission",
+        "Remove-MailboxPermission",
+        "Set-Mailbox",
+        "Enable-Mailbox",
+        "Set-ADUser",
+        "New-ADUser",
+        "powershell.exe",
+        "exchange_command_runner",
+        "exchange_powershell_runner",
+        "exchange_powershell_script",
+        "active_directory_command_runner",
+        "active_directory_powershell_runner",
+        "servicedesk_add_request_note",
+        "servicedesk_update_request",
+        "_save_servicedesk_note_worker(",
+        "_save_servicedesk_draft_worker(",
+        "run_inspector_and_save(",
+        "_run_model_turn_worker(",
+    ]
+    for needle in forbidden:
+        assert needle not in worker, (
+            f"/sdp execute worker must not reference {needle!r}"
+        )
+
+
+def test_default_executor_registry_remains_empty_after_sdp_execute_added():
+    """Adding /sdp execute must not change the default executor
+    registry. Real executors remain opt-in.
+    """
+    from executors import create_executor_registry, list_executor_ids
+
+    registry = create_executor_registry()
+    assert list_executor_ids(registry) == []

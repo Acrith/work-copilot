@@ -13,7 +13,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, RichLog, Static, TextArea
 
 from agent_types import ToolCall
-from approval import ApprovalRequest, ApprovalResponse
+from approval import ApprovalAction, ApprovalRequest, ApprovalResponse
 from draft_exports import (
     build_servicedesk_context_path,
     build_servicedesk_draft_note_path,
@@ -30,6 +30,11 @@ from draft_exports import (
     is_no_requester_reply_recommended,
     read_text_if_exists,
     save_text_draft,
+)
+from executors import ExecutorStatus
+from executors.exchange import (
+    create_exchange_grant_full_access_executor_definition,
+    plan_exchange_grant_full_access_preview_from_skill_plan,
 )
 from inspectors.active_directory_config import (
     ActiveDirectoryInspectorConfigError,
@@ -482,6 +487,184 @@ class WorkCopilotTextualApp(App):
 
         self.sub_title = "Running" if self.is_agent_running else "Experimental Textual shell"
         self._refresh_sidebar()
+
+    @work(thread=True)
+    def _execute_mock_executor_worker(
+        self,
+        *,
+        request_id: str,
+    ) -> None:
+        """Approval-gated mock executor flow for /sdp execute <id>.
+
+        Loads the structured skill plan, plans an Exchange Full
+        Access preview, asks the operator to approve, and on approval
+        invokes the mock execute handler (which returns SKIPPED — no
+        external write). Never contacts Exchange, AD, ServiceDesk, or
+        runs PowerShell.
+        """
+        try:
+            sidecar_load_result = load_skill_plan_json_sidecar(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+
+            if (
+                not sidecar_load_result.readable
+                or sidecar_load_result.plan is None
+            ):
+                advisory = (
+                    sidecar_load_result.error
+                    or "structured skill plan sidecar is unavailable"
+                )
+                self.call_from_thread(
+                    self._log_system_message,
+                    "Structured skill plan sidecar is required for "
+                    f"/sdp execute and is unavailable ({advisory}). "
+                    "Markdown fallback is intentionally not used here. "
+                    f"Run `/sdp work {request_id}` or "
+                    f"`/sdp status {request_id}` to refresh workflow "
+                    "state, then re-run /sdp execute.",
+                )
+                return
+
+            planning = (
+                plan_exchange_grant_full_access_preview_from_skill_plan(
+                    sidecar_load_result.plan,
+                    request_id=request_id,
+                )
+            )
+
+            if not planning.applicable:
+                reason = (
+                    planning.unsupported_reason
+                    or "Skill plan is not supported by any executor."
+                )
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"Executor not applicable: {reason}",
+                )
+                return
+
+            if planning.preview is None or planning.request is None:
+                missing = ", ".join(planning.missing_inputs) or "unknown"
+                self.call_from_thread(
+                    self._log_system_message,
+                    "Executor preview cannot be built: missing inputs: "
+                    f"{missing}. Update the skill plan and try again.",
+                )
+                return
+
+            preview = planning.preview
+            request = planning.request
+
+            self.call_from_thread(
+                self._log_system_message,
+                f"Executor: {preview.executor_id}",
+            )
+            self.call_from_thread(
+                self._log_system_message,
+                f"Preview title: {preview.title}",
+            )
+            self.call_from_thread(
+                self._log_system_message,
+                f"Preview summary: {preview.summary}",
+            )
+            for change in preview.changes:
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"  Change [{change.field}]: {change.description}",
+                )
+            for warning in preview.warnings:
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"  Warning: {warning}",
+                )
+            self.call_from_thread(
+                self._log_system_message,
+                "Requires approval: yes",
+            )
+
+            approval_handler = TextualApprovalHandler(
+                request_callback=lambda request, approval_event: (
+                    self.call_from_thread(
+                        self.request_textual_approval,
+                        request,
+                        approval_event,
+                    )
+                ),
+                response_getter=lambda: self.pending_approval_response,
+            )
+            approval_request = ApprovalRequest(
+                function_name=preview.executor_id,
+                args=dict(request.inputs),
+                preview=preview.summary,
+            )
+            response = approval_handler.request_approval(approval_request)
+
+            # Executor execution must be per-operation only. Session/
+            # path approvals make sense for normal tool approval UX,
+            # but executor execution is the future write surface and
+            # must never be broadened by a session allow. Only
+            # ApprovalAction.ALLOW_ONCE proceeds to execute.
+            if response.action is not ApprovalAction.ALLOW_ONCE:
+                feedback_suffix = (
+                    f" Feedback: {response.feedback}"
+                    if response.feedback
+                    else ""
+                )
+                self.call_from_thread(
+                    self._log_system_message,
+                    "Executor not run: approval must be granted for "
+                    f"this operation only.{feedback_suffix}",
+                )
+                return
+
+            # Approval granted — call the mock executor's execute
+            # handler directly. The mock returns SKIPPED and performs
+            # no external write; this PR does not register the
+            # executor in any default registry.
+            definition = (
+                create_exchange_grant_full_access_executor_definition()
+            )
+            result = definition.execute(request)
+
+            self.call_from_thread(
+                self._log_system_message,
+                f"Executor result status: {result.status.value}",
+            )
+            self.call_from_thread(
+                self._log_system_message,
+                f"Executor result summary: {result.summary}",
+            )
+            for fact in result.facts:
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"  Fact: {fact}",
+                )
+            for error in result.errors:
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"  Error [{error.code}]: {error.message}",
+                )
+            for recommendation in result.verification_recommendations:
+                self.call_from_thread(
+                    self._log_system_message,
+                    f"  Verification: {recommendation}",
+                )
+
+            if result.status is ExecutorStatus.SKIPPED:
+                self.call_from_thread(
+                    self._log_system_message,
+                    "No external write was performed (mock/no-op "
+                    "executor).",
+                )
+        except Exception as exc:  # noqa: BLE001 - worker safety net
+            self.call_from_thread(
+                self._log_system_message,
+                f"Executor flow error: {exc}",
+            )
+        finally:
+            self.call_from_thread(self._set_running, False)
 
     @work(thread=True)
     def _run_model_turn_worker(
@@ -1554,6 +1737,29 @@ class WorkCopilotTextualApp(App):
             # blocking in `/sdp inspect-skill`) runs unchanged. This
             # advances exactly one step per `/sdp work` invocation.
             self._submit_prompt(suggested_command)
+            return
+
+        if command == "sdp_execute":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp execute <request_id>")
+                return
+
+            self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"Mock executor preview + approval flow for "
+                f"ServiceDesk request {request_id}."
+            )
+            self._log_system_message(
+                "This command is mock/no-op only. No external "
+                "ServiceDesk, Active Directory, or Exchange write "
+                "will be performed."
+            )
+
+            self._set_running(True)
+            self._execute_mock_executor_worker(request_id=request_id)
             return
 
         if command == "unknown":
