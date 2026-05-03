@@ -4,6 +4,8 @@ from servicedesk_skill_plan import (
     SkillPlanAutomationHandoff,
     SkillPlanValidationFinding,
     format_skill_plan_validation_findings,
+    parse_servicedesk_skill_plan,
+    validate_parsed_skill_plan_for_inspection,
     validate_servicedesk_skill_plan,
     validate_skill_plan_text_as_lines,
     validate_skill_plan_text_for_inspection,
@@ -654,4 +656,58 @@ def test_validate_skill_plan_text_for_inspection_blocks_on_unexpected_error(
     assert result.has_errors is True
     assert result.lines == [
         "Skill plan validation unavailable: synthetic parser failure",
+    ]
+
+
+def test_validate_parsed_skill_plan_for_inspection_clean_plan_does_not_block():
+    plan = parse_servicedesk_skill_plan(_CLEAN_PLAN_FOR_INSPECTION)
+
+    result = validate_parsed_skill_plan_for_inspection(plan)
+
+    assert result.has_errors is False
+    assert result.lines == ["Skill plan validation: no issues found."]
+
+
+def test_validate_parsed_skill_plan_for_inspection_blocks_on_execute_tools():
+    plan = parse_servicedesk_skill_plan(_ERROR_PLAN_FOR_INSPECTION)
+
+    result = validate_parsed_skill_plan_for_inspection(plan)
+
+    assert result.has_errors is True
+    joined = "\n".join(result.lines)
+    assert "ERROR [ready_for_execution_must_be_no]" in joined
+    assert "ERROR [suggested_execute_tools_must_be_none]" in joined
+
+
+def test_validate_parsed_skill_plan_for_inspection_warning_only_does_not_block():
+    plan = parse_servicedesk_skill_plan(_WARNING_ONLY_PLAN_FOR_INSPECTION)
+
+    result = validate_parsed_skill_plan_for_inspection(plan)
+
+    assert result.has_errors is False
+    joined = "\n".join(result.lines)
+    assert "WARNING [clean_identifier_values]" in joined
+    assert "ERROR " not in joined
+
+
+def test_validate_parsed_skill_plan_for_inspection_handles_unexpected_error(
+    monkeypatch,
+):
+    import servicedesk_skill_plan.validation as validation_module
+
+    def _boom(_plan):
+        raise RuntimeError("synthetic validator failure")
+
+    monkeypatch.setattr(
+        validation_module,
+        "validate_servicedesk_skill_plan",
+        _boom,
+    )
+
+    plan = parse_servicedesk_skill_plan(_CLEAN_PLAN_FOR_INSPECTION)
+    result = validate_parsed_skill_plan_for_inspection(plan)
+
+    assert result.has_errors is True
+    assert result.lines == [
+        "Skill plan validation unavailable: synthetic validator failure",
     ]
