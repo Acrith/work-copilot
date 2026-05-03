@@ -1676,12 +1676,20 @@ def test_textual_app_sdp_work_branch_is_state_driven_and_save_safe():
     # `/sdp save-note <id>` line.
     assert "_save_servicedesk_note_worker(" not in branch
     assert "servicedesk_add_request_note" not in branch
-    assert "Draft note is ready. Review it, then run " in branch
+    assert '"Draft note is ready for review."' in branch
+    assert "Review it, then run " in branch
     assert "`/sdp save-note {request_id}` if approved." in branch
     assert "if approved." in branch
 
+    # Both SAVE_NOTE and REVIEW_DRAFT_NOTE short-circuits surface a
+    # local preview of the draft note via the read-only preview helper.
+    assert "build_servicedesk_draft_note_preview_lines(" in branch
+    assert branch.count(
+        "build_servicedesk_draft_note_preview_lines("
+    ) == 2
+
     # Review-only short-circuit also points at the manual save command.
-    assert "Draft note is ready for review. Review the local " in branch
+    assert "Review the local draft, then run " in branch
 
     # NONE short-circuit points at /sdp status, no dispatch.
     assert "No next workflow action is available." in branch

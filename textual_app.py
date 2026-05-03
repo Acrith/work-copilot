@@ -17,6 +17,7 @@ from approval import ApprovalRequest, ApprovalResponse
 from draft_exports import (
     build_servicedesk_context_path,
     build_servicedesk_draft_note_path,
+    build_servicedesk_draft_note_preview_lines,
     build_servicedesk_draft_path,
     build_servicedesk_draft_subject,
     build_servicedesk_latest_context_path,
@@ -1398,17 +1399,30 @@ class WorkCopilotTextualApp(App):
 
             # /sdp work must never auto-save an internal note.
             if next_action == ServiceDeskWorkflowNextAction.SAVE_NOTE:
+                self._log_system_message("Draft note is ready for review.")
+                preview_lines = build_servicedesk_draft_note_preview_lines(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+                for line in preview_lines:
+                    self._log_system_message(line)
                 self._log_system_message(
-                    "Draft note is ready. Review it, then run "
+                    "Review it, then run "
                     f"`/sdp save-note {request_id}` if approved."
                 )
                 return
 
             if next_action == ServiceDeskWorkflowNextAction.REVIEW_DRAFT_NOTE:
+                self._log_system_message("Draft note is ready for review.")
+                preview_lines = build_servicedesk_draft_note_preview_lines(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+                for line in preview_lines:
+                    self._log_system_message(line)
                 self._log_system_message(
-                    "Draft note is ready for review. Review the local "
-                    f"draft, then run `/sdp save-note {request_id}` if "
-                    "approved."
+                    "Review the local draft, then run "
+                    f"`/sdp save-note {request_id}` if approved."
                 )
                 return
 

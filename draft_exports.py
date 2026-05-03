@@ -202,3 +202,68 @@ def build_servicedesk_draft_note_path(*, workspace: str, request_id: str) -> Pat
         request_id=request_id,
     )
     return output_dir / "draft_note.md"
+
+
+_DRAFT_NOTE_PREVIEW_LINE_LIMIT = 16
+
+
+def build_servicedesk_draft_note_preview_lines(
+    *,
+    workspace: str,
+    request_id: str,
+    line_limit: int = _DRAFT_NOTE_PREVIEW_LINE_LIMIT,
+) -> list[str]:
+    """Return advisory log lines that show a concise local preview of
+    the draft note for a request, without ever raising.
+
+    Used by /sdp work's SAVE_NOTE / REVIEW_DRAFT_NOTE short-circuits to
+    surface the local file path and a short body excerpt of the note
+    that /sdp save-note would post if approved. Read-only: this helper
+    never writes, never contacts ServiceDesk, AD, or Exchange, and
+    never modifies the on-disk draft.
+
+    Behavior:
+    - If the draft file is missing, returns a single advisory line.
+    - If the file exists but cannot be read, returns a single advisory
+      line.
+    - If the file exists, prefers the `## Note body` section (the
+      content /sdp save-note actually posts) for the preview. Falls
+      back to the full Markdown when the section helper returns None.
+    - Trims to non-empty lines and caps at `line_limit`. Adds a
+      `... (preview truncated)` marker when truncation occurs.
+    """
+    path = build_servicedesk_draft_note_path(
+        workspace=workspace, request_id=request_id
+    )
+
+    if not path.exists():
+        return [
+            f"No local draft note found at {path}.",
+        ]
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 - preview must not raise
+        return [
+            f"Local draft note at {path} could not be read: {exc}",
+        ]
+
+    note_body = extract_servicedesk_note_body(text)
+    preview_source = note_body if note_body is not None else text
+
+    non_empty = [line for line in preview_source.splitlines() if line.strip()]
+
+    if not non_empty:
+        return [
+            f"Local draft note: {path}",
+            "Draft note has no preview content.",
+        ]
+
+    truncated = len(non_empty) > line_limit
+    preview = non_empty[:line_limit]
+
+    lines: list[str] = [f"Local draft note: {path}", "Draft note preview:"]
+    lines.extend(f"  {line}" for line in preview)
+    if truncated:
+        lines.append("  ... (preview truncated)")
+    return lines
