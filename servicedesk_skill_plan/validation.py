@@ -490,3 +490,46 @@ def validate_skill_plan_text_as_lines(text: str) -> list[str]:
         return format_skill_plan_validation_findings(findings)
     except Exception as exc:  # noqa: BLE001 - advisory path must not raise
         return [f"Skill plan validation unavailable: {exc}"]
+
+
+@dataclass(frozen=True)
+class SkillPlanValidationDisplayResult:
+    """Result of running validation for a flow that may be gated on errors.
+
+    `lines` are the formatted advisory log lines. `has_errors` is True when
+    the caller should block its next step (e.g. running inspectors).
+    Warnings never set `has_errors`.
+    """
+
+    lines: list[str]
+    has_errors: bool
+
+
+def validate_skill_plan_text_for_inspection(
+    text: str,
+) -> SkillPlanValidationDisplayResult:
+    """Parse+validate a saved skill plan for the inspection gate.
+
+    Returns formatted advisory lines and a boolean signalling whether
+    inspection should be blocked. Errors block; warnings do not. If
+    parsing/validation itself raises, the caller is told to block via
+    `has_errors=True` and given a single
+    `Skill plan validation unavailable: ...` line so the failure is
+    visible without leaking a traceback.
+    """
+    try:
+        plan = parse_servicedesk_skill_plan(text)
+        findings = validate_servicedesk_skill_plan(plan)
+    except Exception as exc:  # noqa: BLE001 - safety gate must not raise
+        return SkillPlanValidationDisplayResult(
+            lines=[f"Skill plan validation unavailable: {exc}"],
+            has_errors=True,
+        )
+
+    lines = format_skill_plan_validation_findings(findings)
+    has_errors = any(finding.severity == "error" for finding in findings)
+
+    return SkillPlanValidationDisplayResult(
+        lines=lines,
+        has_errors=has_errors,
+    )
