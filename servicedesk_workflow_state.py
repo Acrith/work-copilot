@@ -109,7 +109,9 @@ class ServiceDeskWorkflowState:
     )
     inspector_outputs_exist: bool = False
     inspection_report_exists: bool = False
+    inspection_report_stale: bool = False
     draft_note_exists: bool = False
+    draft_note_stale: bool = False
     skill_plan_summary: ServiceDeskSkillPlanSummary = field(
         default_factory=ServiceDeskSkillPlanSummary
     )
@@ -175,6 +177,22 @@ def read_servicedesk_workflow_state(
     inspection_report_exists = inspection_report_path.exists()
     draft_note_exists = draft_note_path.exists()
 
+    inspection_report_stale = (
+        inspection_report_exists
+        and _inspection_report_is_stale_vs_inspector_outputs(
+            workspace=workspace,
+            request_id=request_id,
+            inspection_report_path=inspection_report_path,
+        )
+    )
+    draft_note_stale = (
+        draft_note_exists
+        and _draft_note_is_stale_vs_inspection_report(
+            inspection_report_path=inspection_report_path,
+            draft_note_path=draft_note_path,
+        )
+    )
+
     skill_plan_summary = _build_skill_plan_summary_from_loader(
         workspace=workspace, request_id=request_id
     )
@@ -187,7 +205,9 @@ def read_servicedesk_workflow_state(
         validation_findings=validation_findings,
         inspector_outputs_exist=inspector_outputs_exist,
         inspection_report_exists=inspection_report_exists,
+        inspection_report_stale=inspection_report_stale,
         draft_note_exists=draft_note_exists,
+        draft_note_stale=draft_note_stale,
         skill_plan_summary=skill_plan_summary,
     )
 
@@ -200,7 +220,9 @@ def read_servicedesk_workflow_state(
         validation_findings=validation_findings,
         inspector_outputs_exist=inspector_outputs_exist,
         inspection_report_exists=inspection_report_exists,
+        inspection_report_stale=inspection_report_stale,
         draft_note_exists=draft_note_exists,
+        draft_note_stale=draft_note_stale,
         skill_plan_summary=skill_plan_summary,
         stage=stage,
         next_action=next_action,
@@ -217,7 +239,9 @@ def read_servicedesk_workflow_state(
         validation_findings=validation_findings,
         inspector_outputs_exist=inspector_outputs_exist,
         inspection_report_exists=inspection_report_exists,
+        inspection_report_stale=inspection_report_stale,
         draft_note_exists=draft_note_exists,
+        draft_note_stale=draft_note_stale,
         skill_plan_summary=skill_plan_summary,
         stage=stage,
         next_action=next_action,
@@ -455,6 +479,62 @@ def _any_supported_inspector_output_exists(
     return False
 
 
+def _inspection_report_is_stale_vs_inspector_outputs(
+    *,
+    workspace: str,
+    request_id: str,
+    inspection_report_path: Path,
+) -> bool:
+    """Return True when any supported inspector output JSON has a
+    newer mtime than the inspection report. Conservative: if the stat
+    check itself fails for the report or any candidate inspector
+    output, treat the report as stale so the workflow recommends
+    rebuilding rather than trusting a possibly-outdated render.
+    """
+    try:
+        report_mtime = inspection_report_path.stat().st_mtime
+    except Exception:  # noqa: BLE001 - state read must not raise
+        return True
+
+    for inspector_id in SUPPORTED_REPORT_INSPECTOR_IDS:
+        candidate = build_inspector_result_path(
+            workspace=workspace,
+            request_id=request_id,
+            inspector_id=inspector_id,
+        )
+        if not candidate.exists():
+            continue
+        try:
+            inspector_mtime = candidate.stat().st_mtime
+        except Exception:  # noqa: BLE001 - state read must not raise
+            return True
+        if inspector_mtime > report_mtime:
+            return True
+
+    return False
+
+
+def _draft_note_is_stale_vs_inspection_report(
+    *,
+    inspection_report_path: Path,
+    draft_note_path: Path,
+) -> bool:
+    """Return True when the inspection report is newer than the draft
+    note. The draft note is rendered from the inspection report, so a
+    newer report means the draft no longer reflects the underlying
+    facts. Conservative: stat failure on either side flags the draft
+    as stale.
+    """
+    if not inspection_report_path.exists():
+        return False
+    try:
+        report_mtime = inspection_report_path.stat().st_mtime
+        draft_mtime = draft_note_path.stat().st_mtime
+    except Exception:  # noqa: BLE001 - state read must not raise
+        return True
+    return report_mtime > draft_mtime
+
+
 def _decide_stage_and_next_action(
     *,
     context_exists: bool,
@@ -464,7 +544,9 @@ def _decide_stage_and_next_action(
     validation_findings: list[ServiceDeskWorkflowValidationFinding],
     inspector_outputs_exist: bool,
     inspection_report_exists: bool,
+    inspection_report_stale: bool,
     draft_note_exists: bool,
+    draft_note_stale: bool,
     skill_plan_summary: ServiceDeskSkillPlanSummary,
 ) -> tuple[
     ServiceDeskWorkflowStage,
@@ -617,12 +699,42 @@ def _decide_stage_and_next_action(
             None,
         )
 
+    # Inspection report exists but is older than at least one inspector
+    # output JSON. Rebuild the report so /sdp draft-note sees current
+    # facts. Re-run is local-only and does not contact AD/Exchange.
+    if inspection_report_stale:
+        return (
+            ServiceDeskWorkflowStage.INSPECTION_REPORT_MISSING,
+            ServiceDeskWorkflowNextAction.BUILD_INSPECTION_REPORT,
+            False,
+            (
+                "Inspection report is stale: at least one inspector "
+                "output is newer than inspection_report.md. Rebuild "
+                "the report before drafting the note."
+            ),
+        )
+
     if not draft_note_exists:
         return (
             ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING,
             ServiceDeskWorkflowNextAction.DRAFT_NOTE,
             False,
             None,
+        )
+
+    # Draft note exists but the inspection report is newer, so the
+    # draft no longer reflects the underlying facts. Regenerate the
+    # draft locally before recommending /sdp save-note.
+    if draft_note_stale:
+        return (
+            ServiceDeskWorkflowStage.DRAFT_NOTE_MISSING,
+            ServiceDeskWorkflowNextAction.DRAFT_NOTE,
+            False,
+            (
+                "Draft note is stale: inspection_report.md is newer "
+                "than draft_note.md. Regenerate the draft before "
+                "saving the note."
+            ),
         )
 
     return (
@@ -668,6 +780,14 @@ def suggested_next_command_for_next_action(
     return f"/sdp {command} {request_id}"
 
 
+def _freshness_label(exists: bool, stale: bool) -> str:
+    if not exists:
+        return "no"
+    if stale:
+        return "yes (stale)"
+    return "yes"
+
+
 def _yes_no(value: bool) -> str:
     return "yes" if value else "no"
 
@@ -682,7 +802,9 @@ def _format_status_lines(
     validation_findings: list[ServiceDeskWorkflowValidationFinding],
     inspector_outputs_exist: bool,
     inspection_report_exists: bool,
+    inspection_report_stale: bool,
     draft_note_exists: bool,
+    draft_note_stale: bool,
     skill_plan_summary: ServiceDeskSkillPlanSummary,
     stage: ServiceDeskWorkflowStage,
     next_action: ServiceDeskWorkflowNextAction,
@@ -720,8 +842,8 @@ def _format_status_lines(
         f"- skill plan: {_yes_no(skill_plan_exists)}",
         f"- skill plan validation: {validation_label}",
         f"- inspector outputs: {_yes_no(inspector_outputs_exist)}",
-        f"- inspection report: {_yes_no(inspection_report_exists)}",
-        f"- draft note: {_yes_no(draft_note_exists)}",
+        f"- inspection report: {_freshness_label(inspection_report_exists, inspection_report_stale)}",
+        f"- draft note: {_freshness_label(draft_note_exists, draft_note_stale)}",
     ]
 
     lines.extend(_format_skill_plan_summary_lines(skill_plan_summary))
