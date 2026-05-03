@@ -55,6 +55,50 @@ def _seed_clean_validation(workspace: Path) -> None:
     _seed_validation(workspace, {"has_errors": False, "findings": []})
 
 
+def _seed_skill_plan_json(workspace: Path, payload: dict) -> None:
+    _write(
+        build_servicedesk_latest_skill_plan_json_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        json.dumps(payload, indent=2) + "\n",
+    )
+
+
+def _seed_skill_plan_json_raw(workspace: Path, raw: str) -> None:
+    _write(
+        build_servicedesk_latest_skill_plan_json_path(
+            workspace=str(workspace), request_id=REQUEST_ID
+        ),
+        raw,
+    )
+
+
+_CLEAN_STRUCTURED_PAYLOAD = {
+    "schema_version": 1,
+    "request_id": REQUEST_ID,
+    "metadata": {
+        "Skill match": (
+            "active_directory.user.update_profile_attributes"
+        ),
+        "Capability classification": "draft_only_manual_now",
+    },
+    "extracted_inputs": [],
+    "missing_information_needed_now": [],
+    "current_blocker": None,
+    "automation_handoff": {
+        "ready_for_inspection": "yes",
+        "ready_for_execution": "no",
+        "suggested_inspector_tools": ["active_directory.user.inspect"],
+        "suggested_execute_tools": [],
+        "automation_blocker": None,
+    },
+}
+
+
+def _seed_clean_skill_plan_json(workspace: Path) -> None:
+    _seed_skill_plan_json(workspace, _CLEAN_STRUCTURED_PAYLOAD)
+
+
 def _seed_error_validation(workspace: Path) -> None:
     _seed_validation(
         workspace,
@@ -181,6 +225,7 @@ def test_clean_validation_without_inspector_outputs_recommends_inspection(
     _seed_context(tmp_path)
     _seed_skill_plan(tmp_path)
     _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
 
     state = read_servicedesk_workflow_state(
         workspace=str(tmp_path), request_id=REQUEST_ID
@@ -198,6 +243,7 @@ def test_inspector_outputs_without_report_recommends_build_report(tmp_path):
     _seed_context(tmp_path)
     _seed_skill_plan(tmp_path)
     _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
     _seed_inspector_output(tmp_path)
 
     state = read_servicedesk_workflow_state(
@@ -217,6 +263,7 @@ def test_inspection_report_without_draft_note_recommends_draft_note(tmp_path):
     _seed_context(tmp_path)
     _seed_skill_plan(tmp_path)
     _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
     _seed_inspector_output(tmp_path)
     _seed_inspection_report(tmp_path)
 
@@ -235,6 +282,7 @@ def test_draft_note_present_recommends_save_note(tmp_path):
     _seed_context(tmp_path)
     _seed_skill_plan(tmp_path)
     _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
     _seed_inspector_output(tmp_path)
     _seed_inspection_report(tmp_path)
     _seed_draft_note(tmp_path)
@@ -336,6 +384,7 @@ def test_validation_sidecar_without_explicit_has_errors_infers_from_findings(
             ]
         },
     )
+    _seed_clean_skill_plan_json(tmp_path)
 
     state = read_servicedesk_workflow_state(
         workspace=str(tmp_path), request_id=REQUEST_ID
@@ -505,49 +554,15 @@ def test_suggested_next_command_returns_none_for_review_only_or_none():
 # --------------------- Structured skill-plan sidecar --------------------
 
 
-def _seed_skill_plan_json(workspace: Path, payload: dict) -> None:
-    _write(
-        build_servicedesk_latest_skill_plan_json_path(
-            workspace=str(workspace), request_id=REQUEST_ID
-        ),
-        json.dumps(payload, indent=2) + "\n",
-    )
-
-
-def _seed_skill_plan_json_raw(workspace: Path, raw: str) -> None:
-    _write(
-        build_servicedesk_latest_skill_plan_json_path(
-            workspace=str(workspace), request_id=REQUEST_ID
-        ),
-        raw,
-    )
-
-
-_CLEAN_STRUCTURED_PAYLOAD = {
-    "schema_version": 1,
-    "request_id": REQUEST_ID,
-    "metadata": {
-        "Skill match": (
-            "active_directory.user.update_profile_attributes"
-        ),
-        "Capability classification": "draft_only_manual_now",
-    },
-    "extracted_inputs": [],
-    "missing_information_needed_now": [],
-    "current_blocker": None,
-    "automation_handoff": {
-        "ready_for_inspection": "yes",
-        "ready_for_execution": "no",
-        "suggested_inspector_tools": ["active_directory.user.inspect"],
-        "suggested_execute_tools": [],
-        "automation_blocker": None,
-    },
-}
-
-
-def test_missing_structured_skill_plan_does_not_block_and_status_says_no(
+def test_missing_structured_skill_plan_routes_to_refresh_sidecars(
     tmp_path,
 ):
+    """With clean fresh validation but missing latest_skill_plan.json,
+    workflow now routes to local sidecar refresh from the existing
+    latest_skill_plan.md instead of recommending inspection. /sdp
+    inspect-skill's Markdown fallback is unchanged — this only affects
+    /sdp status / /sdp work recommendations.
+    """
     _seed_context(tmp_path)
     _seed_skill_plan(tmp_path)
     _seed_clean_validation(tmp_path)
@@ -564,14 +579,18 @@ def test_missing_structured_skill_plan_does_not_block_and_status_says_no(
     assert state.skill_plan_summary.suggested_execute_tools == []
 
     joined = "\n".join(state.status_lines)
+    # Missing structured sidecar still displays "no" (no error/stale
+    # qualifier) — the blocker explains the refresh recommendation.
     assert "- structured skill plan: no" in joined
 
-    # Workflow decisions still come from existing artifact + validation
-    # checks. Clean validation with no inspector outputs recommends
-    # inspection.
-    assert state.stage == ServiceDeskWorkflowStage.READY_FOR_INSPECTION
-    assert state.next_action == ServiceDeskWorkflowNextAction.RUN_INSPECTION
-    assert state.blocked is False
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
+    assert state.blocked is True
+    assert state.blocker is not None
+    assert "Structured skill plan sidecar is missing" in state.blocker
+    assert "refresh sidecars from latest_skill_plan.md" in state.blocker
 
 
 def test_readable_structured_skill_plan_populates_summary_and_status_lines(
@@ -912,6 +931,7 @@ def test_fresh_validation_sidecar_keeps_running_inspection_recommendation(
     _seed_context(tmp_path)
     _seed_skill_plan(tmp_path)
     _seed_clean_validation(tmp_path)
+    _seed_clean_skill_plan_json(tmp_path)
 
     md_path = build_servicedesk_latest_skill_plan_path(
         workspace=str(tmp_path), request_id=REQUEST_ID
@@ -919,9 +939,13 @@ def test_fresh_validation_sidecar_keeps_running_inspection_recommendation(
     validation_path = build_servicedesk_latest_skill_plan_validation_path(
         workspace=str(tmp_path), request_id=REQUEST_ID
     )
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
     md_mtime = md_path.stat().st_mtime
     newer = md_mtime + 60.0
     os.utime(validation_path, (newer, newer))
+    os.utime(json_path, (newer, newer))
 
     state = read_servicedesk_workflow_state(
         workspace=str(tmp_path), request_id=REQUEST_ID
@@ -1022,3 +1046,66 @@ def test_workflow_state_with_refresh_is_new_stage_label(tmp_path):
     joined = "\n".join(state.status_lines)
     assert "- stage: skill_plan_sidecars_stale" in joined
     assert "- next action: refresh_skill_plan_sidecars" in joined
+
+
+def test_warning_only_validation_with_missing_structured_routes_to_refresh(
+    tmp_path,
+):
+    """Warnings do not block the workflow on their own, but a missing
+    structured sidecar must still route to local refresh so /sdp work
+    rebuilds it from the existing latest_skill_plan.md.
+    """
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_validation(
+        tmp_path,
+        {
+            "has_errors": False,
+            "findings": [
+                {
+                    "severity": "warning",
+                    "code": "clean_identifier_values",
+                    "message": "Inspector-bound field looks dirty.",
+                }
+            ],
+        },
+    )
+    # Intentionally do not seed latest_skill_plan.json.
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_has_errors is False
+    assert state.skill_plan_summary.exists is False
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_SIDECARS_STALE
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REFRESH_SKILL_PLAN_SIDECARS
+    )
+    assert state.blocked is True
+    assert state.blocker is not None
+    assert "Structured skill plan sidecar is missing" in state.blocker
+
+
+def test_real_validation_error_with_missing_structured_still_routes_to_repair(
+    tmp_path,
+):
+    """A real fresh validation error must still route to
+    REPAIR_SKILL_PLAN even when latest_skill_plan.json is missing —
+    the plan content needs repair before sidecar refresh is meaningful.
+    """
+    _seed_context(tmp_path)
+    _seed_skill_plan(tmp_path)
+    _seed_error_validation(tmp_path)
+    # Intentionally do not seed latest_skill_plan.json.
+
+    state = read_servicedesk_workflow_state(
+        workspace=str(tmp_path), request_id=REQUEST_ID
+    )
+
+    assert state.validation_has_errors is True
+    assert state.skill_plan_summary.exists is False
+    assert state.stage == ServiceDeskWorkflowStage.SKILL_PLAN_INVALID
+    assert state.next_action == (
+        ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN
+    )
