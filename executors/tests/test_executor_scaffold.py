@@ -250,13 +250,14 @@ def test_executors_package_contains_no_powershell_writes_or_servicedesk_writes()
     from pathlib import Path
 
     package_dir = Path(__file__).resolve().parents[1]
-    tests_dir = package_dir / "tests"
-    # Only scan non-test sources. The test file itself lists the
-    # forbidden tokens as string literals so the assertion can run.
+    # Only scan non-test sources. Test files (in any `tests/`
+    # directory under the package, including subpackage tests) list
+    # the forbidden tokens as string literals so the assertion can
+    # run.
     sources = [
         path
         for path in package_dir.rglob("*.py")
-        if tests_dir not in path.parents and path != tests_dir
+        if "tests" not in path.parts
     ]
     assert sources, "executors package should contain source files"
 
