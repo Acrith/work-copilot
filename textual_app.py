@@ -73,6 +73,10 @@ from servicedesk_skill_plan import (
     build_persisting_validation_callback,
     validate_skill_plan_text_for_inspection,
 )
+from servicedesk_workflow_state import (
+    read_servicedesk_workflow_state,
+    suggested_next_command_for_next_action,
+)
 from skills.loader import format_skill_definitions_for_prompt, load_skill_definitions
 from textual_approval import TextualApprovalHandler
 from textual_approval_screen import ApprovalScreen
@@ -1220,6 +1224,42 @@ class WorkCopilotTextualApp(App):
                 request_id=request_id,
                 description=note_body,
             )
+            return
+
+        if command == "sdp_status":
+            request_id = parse_sdp_request_id(user_prompt)
+
+            if request_id is None:
+                self._log_blank()
+                self._log("Usage: /sdp status <request_id>")
+                return
+
+            self._log_user_message(user_prompt)
+
+            try:
+                state = read_servicedesk_workflow_state(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+            except Exception as exc:
+                self._log_system_message(
+                    f"Could not read local ServiceDesk workflow state: {exc}"
+                )
+                return
+
+            for line in state.status_lines:
+                self._log_system_message(line)
+
+            suggested_command = suggested_next_command_for_next_action(
+                next_action=state.next_action,
+                request_id=request_id,
+            )
+
+            if suggested_command is not None:
+                self._log_system_message(
+                    f"- suggested command: {suggested_command}"
+                )
+
             return
 
         if command == "unknown":

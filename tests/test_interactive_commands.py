@@ -77,6 +77,7 @@ def test_format_interactive_help_includes_supported_commands():
     assert "/sdp draft-note" in help_text
     assert "/sdp save-note" in help_text
     assert "/sdp repair-skill-plan" in help_text
+    assert "/sdp status <id>" in help_text
     assert "/sdp context <id>" in help_text
     assert "/exit" in help_text
 
@@ -1431,3 +1432,57 @@ def test_textual_app_repair_skill_plan_branch_is_validation_gated():
     assert "were found." in branch
     assert "Skill plan repair unavailable because validation " in branch
     assert "could not be completed." in branch
+
+
+# --------------------- /sdp status parsing ------------------------------
+
+
+def test_parse_sdp_status_command():
+    assert parse_interactive_command("/sdp status 56050") == "sdp_status"
+    assert parse_sdp_request_id("/sdp status 56050") == "56050"
+
+
+def test_parse_sdp_workflow_status_alias():
+    assert (
+        parse_interactive_command("/sdp workflow-status 56050") == "sdp_status"
+    )
+    assert (
+        parse_interactive_command("/sdp workflow_status 56050") == "sdp_status"
+    )
+
+
+# --------------------- /sdp status handler source guard -----------------
+
+
+def test_textual_app_sdp_status_branch_is_local_read_only():
+    """Source-level guard: /sdp status must read the local workflow
+    state and must not run inspectors, model turns, or external calls.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    assert 'if command == "sdp_status":' in source
+
+    branch_start = source.index('if command == "sdp_status":')
+    next_branch = source.index('if command == "unknown":', branch_start)
+    branch = source[branch_start:next_branch]
+
+    # Reads local workflow state.
+    assert "read_servicedesk_workflow_state(" in branch
+    assert "workspace=self.config.workspace" in branch
+    assert "request_id=request_id," in branch
+
+    # Maps via the helper and only when one is available.
+    assert "suggested_next_command_for_next_action(" in branch
+    assert "next_action=state.next_action" in branch
+
+    # Local read-only: must not run model turns, inspectors, or
+    # connector writes from this branch.
+    assert "_run_model_turn_worker(" not in branch
+    assert "_save_servicedesk_note_worker(" not in branch
+    assert "_save_servicedesk_draft_worker(" not in branch
+    assert "select_inspectors_for_skill_plan(" not in branch
+    assert "create_configured_inspector_registry_from_env(" not in branch
+    assert "run_inspector_and_save(" not in branch
+    assert "build_servicedesk_inspection_report(" not in branch

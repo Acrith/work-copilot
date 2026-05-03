@@ -419,3 +419,66 @@ def test_status_lines_label_warning_only_validation_as_warnings(tmp_path):
     joined = "\n".join(state.status_lines)
     assert "- skill plan validation: yes (warnings, 1 finding(s))" in joined
     assert "yes (clean" not in joined
+
+
+# --------------------- Suggested-command mapping ------------------------
+
+
+def test_suggested_next_command_maps_known_actions():
+    from servicedesk_workflow_state import (
+        suggested_next_command_for_next_action,
+    )
+
+    request_id = "56050"
+
+    cases = {
+        ServiceDeskWorkflowNextAction.RUN_CONTEXT: f"/sdp context {request_id}",
+        ServiceDeskWorkflowNextAction.RUN_SKILL_PLAN: (
+            f"/sdp skill-plan {request_id}"
+        ),
+        ServiceDeskWorkflowNextAction.REPAIR_SKILL_PLAN: (
+            f"/sdp repair-skill-plan {request_id}"
+        ),
+        ServiceDeskWorkflowNextAction.RUN_INSPECTION: (
+            f"/sdp inspect-skill {request_id}"
+        ),
+        ServiceDeskWorkflowNextAction.BUILD_INSPECTION_REPORT: (
+            f"/sdp inspection-report {request_id}"
+        ),
+        ServiceDeskWorkflowNextAction.DRAFT_NOTE: (
+            f"/sdp draft-note {request_id}"
+        ),
+        ServiceDeskWorkflowNextAction.SAVE_NOTE: (
+            f"/sdp save-note {request_id}"
+        ),
+    }
+
+    for next_action, expected in cases.items():
+        assert (
+            suggested_next_command_for_next_action(
+                next_action=next_action,
+                request_id=request_id,
+            )
+            == expected
+        )
+
+
+def test_suggested_next_command_returns_none_for_review_only_or_none():
+    from servicedesk_workflow_state import (
+        suggested_next_command_for_next_action,
+    )
+
+    assert (
+        suggested_next_command_for_next_action(
+            next_action=ServiceDeskWorkflowNextAction.REVIEW_DRAFT_NOTE,
+            request_id="56050",
+        )
+        is None
+    )
+    assert (
+        suggested_next_command_for_next_action(
+            next_action=ServiceDeskWorkflowNextAction.NONE,
+            request_id="56050",
+        )
+        is None
+    )
