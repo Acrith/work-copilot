@@ -76,6 +76,7 @@ from servicedesk_draft_note_validation import (
     build_post_save_draft_note_validation_callback,
     draft_note_findings_have_errors,
     format_draft_note_validation_findings,
+    validate_servicedesk_draft_note_file,
     validate_servicedesk_draft_note_text,
 )
 from servicedesk_skill_plan import (
@@ -1224,15 +1225,33 @@ class WorkCopilotTextualApp(App):
             )
             saved_inspection_report = read_text_if_exists(inspection_report_path)
 
+            note_path = build_servicedesk_draft_note_path(
+                workspace=self.config.workspace,
+                request_id=request_id,
+            )
+
+            # If a previous local draft exists and has validation
+            # errors, surface its findings to the model so the
+            # regenerated draft does not repeat the same mistakes.
+            # Validation is local-only and never raises.
+            previous_validation_lines: list[str] | None = None
+            if note_path.exists():
+                previous_findings = validate_servicedesk_draft_note_file(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                )
+                if draft_note_findings_have_errors(previous_findings):
+                    previous_validation_lines = (
+                        format_draft_note_validation_findings(
+                            previous_findings
+                        )
+                    )
+
             note_prompt = build_servicedesk_draft_note_prompt(
                 request_id,
                 saved_context=saved_context,
                 saved_inspection_report=saved_inspection_report,
-            )
-
-            note_path = build_servicedesk_draft_note_path(
-                workspace=self.config.workspace,
-                request_id=request_id,
+                previous_validation_lines=previous_validation_lines,
             )
 
             self._log_user_message(user_prompt)
@@ -1260,6 +1279,13 @@ class WorkCopilotTextualApp(App):
             self._log_system_message(
                 "Note is local-only. It will not be posted to ServiceDesk."
             )
+
+            if previous_validation_lines is not None:
+                self._log_system_message(
+                    "Previous draft note validation errors will be "
+                    "provided to the model so the regenerated draft "
+                    "can avoid repeating them."
+                )
 
             self._set_running(True)
             self._run_model_turn_worker(
