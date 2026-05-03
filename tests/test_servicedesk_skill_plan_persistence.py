@@ -1,8 +1,16 @@
 import json
 
-from draft_exports import build_servicedesk_latest_skill_plan_validation_path
+from draft_exports import (
+    build_servicedesk_latest_skill_plan_json_path,
+    build_servicedesk_latest_skill_plan_validation_path,
+)
 from servicedesk_skill_plan import (
+    SKILL_PLAN_JSON_SCHEMA_VERSION,
+    build_persisting_validation_callback,
+    parse_servicedesk_skill_plan,
     persist_and_format_skill_plan_validation,
+    persist_skill_plan_json_sidecar,
+    serialize_parsed_skill_plan,
     validate_skill_plan_text_for_persistence,
 )
 
@@ -250,3 +258,302 @@ def test_textual_app_skill_plan_handlers_use_persisting_validation_callback():
     # Sanity: skill-plan and repair-skill-plan branches both exist.
     assert 'if command == "sdp_skill_plan":' in source
     assert 'if command == "sdp_repair_skill_plan":' in source
+
+
+# --------------------- serialize_parsed_skill_plan ----------------------
+
+
+def _read_json_sidecar(workspace, request_id):
+    path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(workspace),
+        request_id=request_id,
+    )
+    return path, json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_serialize_parsed_skill_plan_includes_schema_version_and_request_id():
+    plan = parse_servicedesk_skill_plan(_CLEAN_PLAN)
+
+    payload = serialize_parsed_skill_plan(plan, request_id="56050")
+
+    assert payload["schema_version"] == SKILL_PLAN_JSON_SCHEMA_VERSION
+    assert payload["request_id"] == "56050"
+
+
+def test_serialize_parsed_skill_plan_preserves_parser_field_shapes():
+    plan = parse_servicedesk_skill_plan(_CLEAN_PLAN)
+
+    payload = serialize_parsed_skill_plan(plan, request_id="56050")
+
+    assert payload["metadata"] == {
+        "Capability classification": "read_only_inspection_now"
+    }
+
+    extracted_inputs = payload["extracted_inputs"]
+    assert isinstance(extracted_inputs, list)
+    assert extracted_inputs == [
+        {
+            "field": "target_user",
+            "status": "present",
+            "value": "name.surname",
+            "evidence": "from request body",
+            "needed_now": "yes",
+        }
+    ]
+
+    assert payload["missing_information_needed_now"] == []
+    assert payload["current_blocker"] is None
+
+    handoff = payload["automation_handoff"]
+    assert handoff == {
+        "ready_for_inspection": "yes",
+        "ready_for_execution": "no",
+        "suggested_inspector_tools": ["active_directory.user.inspect"],
+        "suggested_execute_tools": [],
+        "automation_blocker": None,
+    }
+
+
+# --------------------- persist_skill_plan_json_sidecar ------------------
+
+
+def test_persist_skill_plan_json_sidecar_writes_for_clean_plan(tmp_path):
+    lines = persist_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text=_CLEAN_PLAN,
+    )
+
+    assert lines == []
+
+    path, payload = _read_json_sidecar(tmp_path, "56050")
+    assert path.exists()
+    assert payload["schema_version"] == SKILL_PLAN_JSON_SCHEMA_VERSION
+    assert payload["request_id"] == "56050"
+    assert payload["automation_handoff"]["suggested_inspector_tools"] == [
+        "active_directory.user.inspect"
+    ]
+
+
+def test_persist_skill_plan_json_sidecar_writes_when_validation_has_errors(
+    tmp_path,
+):
+    """Markdown parsing succeeds for `_ERROR_PLAN`; the JSON sidecar
+    must still be written even though validation flags errors. The
+    validation sidecar is responsible for capturing has_errors=True.
+    """
+    json_lines = persist_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text=_ERROR_PLAN,
+    )
+    assert json_lines == []
+
+    _, json_payload = _read_json_sidecar(tmp_path, "56050")
+    assert json_payload["schema_version"] == SKILL_PLAN_JSON_SCHEMA_VERSION
+    assert json_payload["automation_handoff"][
+        "ready_for_execution"
+    ] == "yes"
+    assert json_payload["automation_handoff"][
+        "suggested_execute_tools"
+    ] == ["active_directory.user.update_attributes"]
+
+    persist_and_format_skill_plan_validation(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text=_ERROR_PLAN,
+    )
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    validation_payload = json.loads(
+        validation_path.read_text(encoding="utf-8")
+    )
+    assert validation_payload["has_errors"] is True
+
+
+def test_persist_skill_plan_json_sidecar_removes_stale_on_parse_failure(
+    tmp_path, monkeypatch
+):
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(
+        '{"schema_version": 1, "request_id": "56050", "stale": true}\n',
+        encoding="utf-8",
+    )
+    assert json_path.exists()
+
+    import servicedesk_skill_plan.persistence as persistence_module
+
+    def _boom(_text: str):
+        raise RuntimeError("synthetic parser failure")
+
+    monkeypatch.setattr(
+        persistence_module, "parse_servicedesk_skill_plan", _boom
+    )
+
+    lines = persist_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text="ignored",
+    )
+
+    assert lines == [
+        "Skill plan JSON sidecar unavailable: synthetic parser failure",
+    ]
+    assert not json_path.exists()
+
+
+def test_persist_skill_plan_json_sidecar_returns_advisory_on_write_failure(
+    tmp_path, monkeypatch
+):
+    from pathlib import Path
+
+    import servicedesk_skill_plan.persistence as persistence_module
+
+    real_write_text = Path.write_text
+
+    def _boom_write(self, *args, **kwargs):
+        if self.name == "latest_skill_plan.json":
+            raise OSError("synthetic write failure")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(persistence_module.Path, "write_text", _boom_write)
+
+    lines = persist_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text=_CLEAN_PLAN,
+    )
+
+    assert lines == [
+        "Skill plan JSON sidecar unavailable: synthetic write failure",
+    ]
+
+
+def test_persist_skill_plan_json_sidecar_removes_stale_on_write_failure(
+    tmp_path, monkeypatch
+):
+    """If a previous successful run wrote latest_skill_plan.json, and a
+    subsequent write fails, the stale sidecar must be removed (or at
+    minimum must not contain the old payload). latest_skill_plan.json
+    is intended to become trusted workflow input, so a stale file that
+    looks valid would be worse than no file at all.
+    """
+    from pathlib import Path
+
+    import servicedesk_skill_plan.persistence as persistence_module
+
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_payload = {
+        "schema_version": SKILL_PLAN_JSON_SCHEMA_VERSION,
+        "request_id": "56050",
+        "stale": True,
+    }
+    json_path.write_text(
+        json.dumps(stale_payload) + "\n",
+        encoding="utf-8",
+    )
+    assert json_path.exists()
+
+    real_write_text = Path.write_text
+
+    def _boom_write(self, *args, **kwargs):
+        if self.name == "latest_skill_plan.json":
+            raise OSError("synthetic write failure")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(persistence_module.Path, "write_text", _boom_write)
+
+    lines = persist_skill_plan_json_sidecar(
+        workspace=str(tmp_path),
+        request_id="56050",
+        text=_CLEAN_PLAN,
+    )
+
+    assert lines == [
+        "Skill plan JSON sidecar unavailable: synthetic write failure",
+    ]
+
+    if json_path.exists():
+        remaining = json.loads(json_path.read_text(encoding="utf-8"))
+        assert remaining != stale_payload, (
+            "stale latest_skill_plan.json must not survive a write failure"
+        )
+    else:
+        assert not json_path.exists()
+
+
+# --------------------- build_persisting_validation_callback -------------
+
+
+def test_persisting_validation_callback_writes_both_sidecars(tmp_path):
+    callback = build_persisting_validation_callback(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    lines = callback(_CLEAN_PLAN)
+
+    # The validation lines come first; on a clean success the JSON
+    # sidecar adds no extra noise.
+    assert lines == ["Skill plan validation: no issues found."]
+
+    validation_path = build_servicedesk_latest_skill_plan_validation_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+    json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    assert validation_path.exists()
+    assert json_path.exists()
+
+    json_payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert json_payload["schema_version"] == SKILL_PLAN_JSON_SCHEMA_VERSION
+    assert json_payload["request_id"] == "56050"
+
+
+def test_persisting_validation_callback_keeps_validation_lines_on_json_failure(
+    tmp_path, monkeypatch
+):
+    """If the JSON sidecar persistence fails, the validation lines must
+    still be returned unchanged so the existing TUI flow is preserved.
+    """
+    from pathlib import Path
+
+    import servicedesk_skill_plan.persistence as persistence_module
+
+    real_write_text = Path.write_text
+
+    def _boom_for_json(self, *args, **kwargs):
+        if self.name == "latest_skill_plan.json":
+            raise OSError("synthetic write failure")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(
+        persistence_module.Path, "write_text", _boom_for_json
+    )
+
+    callback = build_persisting_validation_callback(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    lines = callback(_CLEAN_PLAN)
+
+    assert "Skill plan validation: no issues found." in lines
+    assert (
+        "Skill plan JSON sidecar unavailable: synthetic write failure"
+        in lines
+    )

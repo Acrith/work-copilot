@@ -8,6 +8,7 @@ from draft_exports import (
     build_servicedesk_draft_subject,
     build_servicedesk_latest_context_path,
     build_servicedesk_latest_draft_path,
+    build_servicedesk_latest_skill_plan_json_path,
     build_servicedesk_latest_skill_plan_path,
     build_servicedesk_output_dir,
     build_servicedesk_skill_plan_path,
@@ -225,6 +226,38 @@ def test_build_servicedesk_latest_skill_plan_path(tmp_path):
         / "servicedesk"
         / "55853"
         / "latest_skill_plan.md"
+    )
+
+
+def test_build_servicedesk_latest_skill_plan_json_path(tmp_path):
+    path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="55853",
+    )
+
+    assert path == (
+        tmp_path
+        / ".work_copilot"
+        / "servicedesk"
+        / "55853"
+        / "latest_skill_plan.json"
+    )
+
+
+def test_build_servicedesk_latest_skill_plan_json_path_sanitizes_request_id(
+    tmp_path,
+):
+    path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=str(tmp_path),
+        request_id="55/853",
+    )
+
+    assert path == (
+        tmp_path
+        / ".work_copilot"
+        / "servicedesk"
+        / "55_853"
+        / "latest_skill_plan.json"
     )
 
 
