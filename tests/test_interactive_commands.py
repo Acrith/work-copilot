@@ -1050,6 +1050,73 @@ def test_build_servicedesk_draft_note_prompt_requires_structured_note_body():
     assert "- Mailbox content and attachments were not inspected." in prompt
 
 
+def test_build_servicedesk_draft_note_prompt_default_omits_previous_validation():
+    """Default invocation (no `previous_validation_lines`) must not
+    add a previous-draft validation section, so existing tests and
+    the no-prior-draft case stay quiet.
+    """
+    prompt = build_servicedesk_draft_note_prompt("55948")
+
+    assert "previous_draft_note_validation_findings" not in prompt
+    assert "previous local draft note for this request failed" not in prompt
+
+
+def test_build_servicedesk_draft_note_prompt_includes_previous_validation_when_provided():
+    """When previous validation lines are provided, the prompt must
+    surface them in a clearly delimited section and instruct the model
+    to fix only the listed issues without inventing external writes
+    or placeholders.
+    """
+    previous = [
+        "Draft note validation: found 2 finding(s).",
+        "- ERROR [placeholder_text_present] Draft note `## Note body` "
+        "contains placeholder text `TODO`; replace it before saving.",
+        "- ERROR [forbidden_write_claim] Draft note `## Note body` "
+        "claims an external write (`I changed Active Directory`); "
+        "workflow runs read-only inspection only. Reword before saving.",
+    ]
+
+    prompt = build_servicedesk_draft_note_prompt(
+        "56050",
+        previous_validation_lines=previous,
+    )
+
+    assert "previous_draft_note_validation_findings" in prompt
+    assert "previous local draft note for this request failed" in prompt
+    # The actual finding lines are rendered inside the delimiter.
+    assert "ERROR [placeholder_text_present]" in prompt
+    assert "ERROR [forbidden_write_claim]" in prompt
+    # Regeneration guidance covers the four required points.
+    assert "Fix only the issues listed above" in prompt
+    assert (
+        "Ensure a `## Note body` section exists and its content is "
+        "non-empty"
+    ) in prompt
+    assert "placeholder text such as `TODO`" in prompt
+    assert "Do not invent completed external writes" in prompt
+    assert "I changed Active Directory" in prompt
+    # The original prompt structure (Note body, structured findings,
+    # save-note-only-posts-Note-body wording, …) must still be present.
+    assert "## Note body" in prompt
+    assert "Required Note body shape (Markdown)" in prompt
+    assert (
+        "a future `/sdp save-note` step will post only the "
+        "Note body section"
+    ) in prompt
+
+
+def test_build_servicedesk_draft_note_prompt_empty_previous_validation_is_no_op():
+    """An empty list should not add a previous-validation section —
+    nothing to report means we don't add prompt noise.
+    """
+    prompt = build_servicedesk_draft_note_prompt(
+        "56050",
+        previous_validation_lines=[],
+    )
+
+    assert "previous_draft_note_validation_findings" not in prompt
+
+
 def test_build_servicedesk_draft_note_prompt_mentions_largest_folders_evidence():
     prompt = build_servicedesk_draft_note_prompt("55948")
 

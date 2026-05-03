@@ -9,6 +9,7 @@ def build_servicedesk_draft_note_prompt(
     request_id: str,
     saved_context: str | None = None,
     saved_inspection_report: str | None = None,
+    previous_validation_lines: list[str] | None = None,
 ) -> str:
     if saved_context:
         context_instruction = (
@@ -80,6 +81,37 @@ def build_servicedesk_draft_note_prompt(
             "technical findings.\n\n"
         )
 
+    if previous_validation_lines:
+        joined_findings = "\n".join(previous_validation_lines).strip()
+        previous_validation_instruction = (
+            "A previous local draft note for this request failed local "
+            "validation. The findings below describe what was wrong with "
+            "the previous draft. Your task is to regenerate the draft so "
+            "those findings no longer apply, while preserving correct "
+            "factual content from the saved context and inspection "
+            "report.\n\n"
+            "<previous_draft_note_validation_findings>\n"
+            f"{joined_findings}\n"
+            "</previous_draft_note_validation_findings>\n\n"
+            "When regenerating the draft:\n"
+            "- Fix only the issues listed above. Preserve correct factual "
+            "findings from the saved context and inspection report.\n"
+            "- Ensure a `## Note body` section exists and its content is "
+            "non-empty after stripping whitespace.\n"
+            "- Do not include placeholder text such as `TODO`, `TBD`, "
+            "`<fill in>`, `[fill in]`, or `lorem ipsum`.\n"
+            "- Do not invent completed external writes. The workflow runs "
+            "read-only inspection only, so do not write first-person claims "
+            "such as `I changed Active Directory`, `I updated Active "
+            "Directory`, `I modified the mailbox`, or `I enabled archive`. "
+            "If the inspection report indicates no changes were made, say "
+            "so plainly under `Scope:`.\n"
+            "- Treat these findings as instructions to fix the draft, not "
+            "as content to copy into the Note body.\n\n"
+        )
+    else:
+        previous_validation_instruction = ""
+
     return (
         f"Prepare a local internal technician note draft for ServiceDesk "
         f"request {request_id}.\n\n"
@@ -89,6 +121,7 @@ def build_servicedesk_draft_note_prompt(
         "internal note. Keep it neutral, concise, and operational.\n\n"
         f"{context_instruction}"
         f"{inspection_instruction}"
+        f"{previous_validation_instruction}"
         f"{SERVICEDESK_CONTEXT_WORKFLOW}"
         "Use this output structure exactly. Keep the Note body section "
         "self-contained: a future `/sdp save-note` step will post only the "

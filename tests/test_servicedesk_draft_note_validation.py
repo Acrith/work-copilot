@@ -516,13 +516,28 @@ def test_textual_app_draft_note_branch_runs_post_save_validation():
     # builder reference appears after `_run_model_turn_worker(`.
     assert worker_index < callback_index
 
-    # Validation must not run before generation — there is no direct
-    # call to validate_servicedesk_draft_note_text or the file
-    # validator inside this branch. The validator is only invoked via
-    # the post-save callback executed by the worker after the draft
-    # is written.
+    # The text validator must not be called directly in this branch —
+    # the post-save callback handles in-memory validation of the
+    # just-saved draft via the file validator instead.
     assert "validate_servicedesk_draft_note_text(" not in branch
-    assert "validate_servicedesk_draft_note_file(" not in branch
+
+    # The file validator IS called once before prompt construction so
+    # that, when an existing draft is invalid, its findings can be
+    # included in the regeneration prompt. It must not be used to
+    # block draft generation; it only feeds prompt context.
+    assert "validate_servicedesk_draft_note_file(" in branch
+    file_validator_index = branch.index(
+        "validate_servicedesk_draft_note_file("
+    )
+    prompt_build_index = branch.index(
+        "build_servicedesk_draft_note_prompt("
+    )
+    assert file_validator_index < prompt_build_index, (
+        "previous-draft validation must run before prompt construction "
+        "so its findings can be passed into the prompt builder"
+    )
+    # And it must run before the model worker dispatches.
+    assert file_validator_index < worker_index
 
     # /sdp draft-note must not invoke any ServiceDesk write helpers,
     # save workers, or inspector helpers.
@@ -533,3 +548,58 @@ def test_textual_app_draft_note_branch_runs_post_save_validation():
     assert "select_inspectors_for_parsed_skill_plan(" not in branch
     assert "create_configured_inspector_registry_from_env(" not in branch
     assert "run_inspector_and_save(" not in branch
+
+
+def test_textual_app_draft_note_branch_passes_previous_validation_to_prompt():
+    """Source-level guard: when a previous local draft fails
+    validation, /sdp draft-note must include the formatted findings in
+    the prompt sent to the model so the regenerated draft can avoid
+    repeating the same mistakes. Validation-feedback discovery must
+    not contact ServiceDesk, AD, or Exchange and must not run any
+    inspector — it is filesystem-only.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    branch_start = source.index('if command == "sdp_draft_note":')
+    next_branch = source.index("if command == ", branch_start + 1)
+    branch = source[branch_start:next_branch]
+
+    # The file validator and the formatter are both invoked in the
+    # branch so previous findings can be turned into prompt context.
+    assert "validate_servicedesk_draft_note_file(" in branch
+    assert "format_draft_note_validation_findings(" in branch
+    assert "draft_note_findings_have_errors(" in branch
+
+    # The formatted lines are passed to the prompt builder via the
+    # new keyword.
+    assert "previous_validation_lines=" in branch
+    assert "build_servicedesk_draft_note_prompt(" in branch
+    prompt_index = branch.index("build_servicedesk_draft_note_prompt(")
+    previous_kwarg_index = branch.index("previous_validation_lines=")
+    assert prompt_index < previous_kwarg_index, (
+        "the previous_validation_lines kwarg must be inside the "
+        "build_servicedesk_draft_note_prompt(...) call"
+    )
+
+    # A concise advisory is logged when previous-validation context
+    # is being attached. Source uses adjacent-string-literal layout —
+    # assert each literal piece rather than the joined runtime string.
+    assert "Previous draft note validation errors will be " in branch
+    assert "provided to the model" in branch
+
+    # The new validation-feedback discovery must not introduce any
+    # ServiceDesk save worker, ServiceDesk write helper, or inspector
+    # runner into the draft-note branch.
+    assert "_save_servicedesk_note_worker(" not in branch
+    assert "_save_servicedesk_draft_worker(" not in branch
+    assert "servicedesk_add_request_note" not in branch
+    assert "run_inspector_and_save(" not in branch
+
+    # Post-save validation callback is still wired so the regenerated
+    # draft is validated immediately after save.
+    assert (
+        "build_post_save_draft_note_validation_callback("
+        in branch
+    )
