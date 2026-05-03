@@ -72,6 +72,11 @@ from interactive_session import (
 )
 from permissions import PermissionContext
 from providers.base import Provider
+from servicedesk_draft_note_validation import (
+    draft_note_findings_have_errors,
+    format_draft_note_validation_findings,
+    validate_servicedesk_draft_note_text,
+)
 from servicedesk_skill_plan import (
     build_persisting_validation_callback,
     load_skill_plan_json_sidecar,
@@ -1285,25 +1290,34 @@ class WorkCopilotTextualApp(App):
                 )
                 return
 
-            note_body = extract_servicedesk_note_body(note_text)
-
-            if note_body is None:
-                self._log_blank()
-                self._log(
-                    f"Could not find a ## Note body section in {note_path}. "
-                    "Note was not posted."
-                )
-                return
-
-            if not note_body.strip():
-                self._log_blank()
-                self._log(
-                    f"## Note body section is empty in {note_path}. "
-                    "Note was not posted."
-                )
-                return
-
             self._log_user_message(user_prompt)
+
+            # Local draft-note validation runs before the
+            # approval-gated ServiceDesk write path. It is
+            # filesystem-only and never calls the model or external
+            # systems. Errors block the save; warnings are surfaced
+            # but do not block.
+            validation_findings = validate_servicedesk_draft_note_text(
+                note_text
+            )
+            for line in format_draft_note_validation_findings(
+                validation_findings
+            ):
+                self._log_system_message(line)
+
+            if draft_note_findings_have_errors(validation_findings):
+                self._log_system_message(
+                    "ServiceDesk note save blocked because draft note "
+                    "validation errors were found."
+                )
+                return
+
+            note_body = extract_servicedesk_note_body(note_text)
+            # Validator already errored on a missing/empty `## Note
+            # body` section above, so a clean validation run guarantees
+            # `note_body` is a non-empty string here.
+            assert note_body is not None and note_body.strip()
+
             self._log_system_message(
                 f"Saving local note draft as an internal ServiceDesk note for "
                 f"request {request_id}."
