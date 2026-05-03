@@ -69,6 +69,10 @@ include = [
     "skills*",
     "inspectors",
     "inspectors*",
+    "servicedesk_prompts",
+    "servicedesk_prompts*",
+    "servicedesk_skill_plan",
+    "servicedesk_skill_plan*",
 ]
 
 [dependency-groups]
