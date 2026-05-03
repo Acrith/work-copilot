@@ -176,8 +176,48 @@ def draft_note_findings_have_errors(
     return any(finding.severity == "error" for finding in findings)
 
 
+_DRAFT_NOTE_VALIDATION_ERROR_ADVISORY = (
+    "Draft note has validation errors. Regenerate or edit the draft "
+    "before saving."
+)
+
+
+def build_post_save_draft_note_validation_callback(
+    *,
+    workspace: str,
+    request_id: str,
+):
+    """Build a `post_save_callback` for the /sdp draft-note model-turn
+    worker that runs local draft-note validation against the
+    just-saved file and returns advisory log lines for the TUI.
+
+    The callback is filesystem-only: it never calls the model, never
+    contacts ServiceDesk/AD/Exchange, and never raises. It does not
+    auto-save anything; it only surfaces validation results so the
+    operator can edit or regenerate the draft if needed.
+    """
+
+    def _callback(_saved_text: str) -> list[str]:
+        # Validate the on-disk file rather than `_saved_text` so the
+        # result is identical to /sdp save-note's later file-based
+        # gate. The worker has already written `latest_skill_plan.md`-
+        # style "latest" path (draft_note.md) before the post-save
+        # callback runs.
+        findings = validate_servicedesk_draft_note_file(
+            workspace=workspace,
+            request_id=request_id,
+        )
+        lines = format_draft_note_validation_findings(findings)
+        if draft_note_findings_have_errors(findings):
+            lines.append(_DRAFT_NOTE_VALIDATION_ERROR_ADVISORY)
+        return lines
+
+    return _callback
+
+
 __all__ = [
     "DraftNoteValidationFinding",
+    "build_post_save_draft_note_validation_callback",
     "draft_note_findings_have_errors",
     "format_draft_note_validation_findings",
     "validate_servicedesk_draft_note_file",

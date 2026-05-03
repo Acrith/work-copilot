@@ -398,3 +398,138 @@ def test_textual_app_save_note_branch_validates_before_writing():
 
     # The save worker is still called exactly once (the clean path).
     assert branch.count("self._save_servicedesk_note_worker(") == 1
+
+
+# --------------------- post-save validation callback -------------------
+
+
+def test_post_save_callback_clean_draft_returns_clean_line(tmp_path):
+    from servicedesk_draft_note_validation import (
+        build_post_save_draft_note_validation_callback,
+    )
+
+    path = build_servicedesk_draft_note_path(
+        workspace=str(tmp_path), request_id="56050"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_VALID_DRAFT, encoding="utf-8")
+
+    callback = build_post_save_draft_note_validation_callback(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    lines = callback("ignored saved text — callback validates the file")
+
+    assert lines == ["Draft note validation: no issues found."]
+
+
+def test_post_save_callback_invalid_draft_returns_findings_and_advisory(
+    tmp_path,
+):
+    from servicedesk_draft_note_validation import (
+        build_post_save_draft_note_validation_callback,
+    )
+
+    path = build_servicedesk_draft_note_path(
+        workspace=str(tmp_path), request_id="56050"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_NOTE_BODY_WITH_TODO, encoding="utf-8")
+
+    callback = build_post_save_draft_note_validation_callback(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    lines = callback("ignored saved text")
+
+    # Header comes first, then per-finding lines, then the trailing
+    # advisory.
+    assert lines[0].startswith("Draft note validation: found ")
+    joined = "\n".join(lines)
+    assert "ERROR [placeholder_text_present]" in joined
+    assert lines[-1] == (
+        "Draft note has validation errors. Regenerate or edit the "
+        "draft before saving."
+    )
+
+
+def test_post_save_callback_missing_draft_returns_findings_and_advisory(
+    tmp_path,
+):
+    from servicedesk_draft_note_validation import (
+        build_post_save_draft_note_validation_callback,
+    )
+
+    callback = build_post_save_draft_note_validation_callback(
+        workspace=str(tmp_path),
+        request_id="56050",
+    )
+
+    lines = callback("ignored saved text")
+
+    # The validator emits a `draft_note_missing` error, the formatter
+    # renders it, and the callback appends the advisory.
+    joined = "\n".join(lines)
+    assert "ERROR [draft_note_missing]" in joined
+    assert lines[-1] == (
+        "Draft note has validation errors. Regenerate or edit the "
+        "draft before saving."
+    )
+
+
+# --------------------- /sdp draft-note source-level guard --------------
+
+
+def test_textual_app_draft_note_branch_runs_post_save_validation():
+    """Source-level guard: the /sdp draft-note branch must wire the
+    post-save validation callback so validation runs immediately after
+    the draft is written. Validation must not run before generation,
+    must not call ServiceDesk save workers, and must not call any
+    inspector helpers.
+    """
+    from pathlib import Path
+
+    source = Path("textual_app.py").read_text(encoding="utf-8")
+
+    assert 'if command == "sdp_draft_note":' in source
+
+    branch_start = source.index('if command == "sdp_draft_note":')
+    next_branch = source.index('if command == ', branch_start + 1)
+    branch = source[branch_start:next_branch]
+
+    # The post-save callback builder is referenced in this branch.
+    assert (
+        "build_post_save_draft_note_validation_callback("
+        in branch
+    )
+
+    # The callback is passed as the post_save_callback to the
+    # model-turn worker.
+    assert "post_save_callback=" in branch
+    callback_index = branch.index(
+        "build_post_save_draft_note_validation_callback("
+    )
+    worker_index = branch.index("self._run_model_turn_worker(")
+    # Callback is constructed inside the worker call kwargs, so the
+    # builder reference appears after `_run_model_turn_worker(`.
+    assert worker_index < callback_index
+
+    # Validation must not run before generation — there is no direct
+    # call to validate_servicedesk_draft_note_text or the file
+    # validator inside this branch. The validator is only invoked via
+    # the post-save callback executed by the worker after the draft
+    # is written.
+    assert "validate_servicedesk_draft_note_text(" not in branch
+    assert "validate_servicedesk_draft_note_file(" not in branch
+
+    # /sdp draft-note must not invoke any ServiceDesk write helpers,
+    # save workers, or inspector helpers.
+    assert "_save_servicedesk_note_worker(" not in branch
+    assert "_save_servicedesk_draft_worker(" not in branch
+    assert "servicedesk_add_request_note" not in branch
+    assert "select_inspectors_for_skill_plan(" not in branch
+    assert "select_inspectors_for_parsed_skill_plan(" not in branch
+    assert "create_configured_inspector_registry_from_env(" not in branch
+    assert "run_inspector_and_save(" not in branch
