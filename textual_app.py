@@ -70,7 +70,7 @@ from interactive_session import (
 from permissions import PermissionContext
 from providers.base import Provider
 from servicedesk_skill_plan import (
-    validate_skill_plan_text_as_lines,
+    build_persisting_validation_callback,
     validate_skill_plan_text_for_inspection,
 )
 from skills.loader import format_skill_definitions_for_prompt, load_skill_definitions
@@ -791,7 +791,10 @@ class WorkCopilotTextualApp(App):
                 skill_plan_prompt,
                 save_output_path=str(skill_plan_path),
                 save_latest_path=str(latest_skill_plan_path),
-                post_save_callback=validate_skill_plan_text_as_lines,
+                post_save_callback=build_persisting_validation_callback(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                ),
             )
             return
 
@@ -872,7 +875,10 @@ class WorkCopilotTextualApp(App):
                 repair_prompt,
                 save_output_path=str(skill_plan_path),
                 save_latest_path=str(latest_skill_plan_path),
-                post_save_callback=validate_skill_plan_text_as_lines,
+                post_save_callback=build_persisting_validation_callback(
+                    workspace=self.config.workspace,
+                    request_id=request_id,
+                ),
             )
             return
 

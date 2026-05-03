@@ -1420,7 +1420,9 @@ def test_textual_app_repair_skill_plan_branch_is_validation_gated():
 
     # Post-save validation runs again so the user sees whether repair
     # succeeded.
-    assert "post_save_callback=validate_skill_plan_text_as_lines" in branch
+    assert (
+        "post_save_callback=build_persisting_validation_callback(" in branch
+    )
 
     # No-error and validation-unavailable short circuits are present.
     # (Source uses Python adjacent-string-literal concatenation; assert
