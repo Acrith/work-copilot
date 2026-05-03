@@ -135,6 +135,15 @@ can review the local draft and explicitly run `/sdp save-note
 <request_id>`. `/sdp continue <request_id>` is an alias for `/sdp work
 <request_id>`.
 
+If `latest_skill_plan.md` is newer than its sidecars (for example,
+after a manual edit), `/sdp work <request_id>` will first run a local
+sidecar refresh from the existing Markdown. The refresh does not call
+the model, does not contact AD or Exchange, and does not run
+inspectors; it just rewrites
+`latest_skill_plan_validation.json` and `latest_skill_plan.json` from
+the current Markdown so the next `/sdp work <request_id>` step sees
+consistent structured data.
+
 ## Known limitations after smoke test
 
 - **No AD writes.** Real AD inspection is read-only. Mutating skills
