@@ -87,10 +87,13 @@ The per-step commands `/sdp work` orchestrates are:
    - enriches planning with environment-specific observations
    - does not execute changes
    - prefers a fresh, readable `latest_skill_plan.json` for validation,
-     inspector selection, and inspector request building. Falls back to
-     parsing `latest_skill_plan.md` when the structured sidecar is
-     missing, stale, or unreadable. Validation runs before any
-     inspector executes in either case.
+     inspector selection, and inspector request building. When the
+     structured sidecar is missing, stale, or unreadable, it first
+     attempts a local sidecar refresh from `latest_skill_plan.md` and
+     reloads the structured sidecar; if the reload still cannot
+     produce a usable structured plan, it falls back to parsing
+     `latest_skill_plan.md` directly. Validation runs before any
+     inspector executes in either path.
 
 5. `/sdp inspection-report <id>`
    - renders saved inspector JSON into a local Markdown report
@@ -136,10 +139,22 @@ sidecars whenever the Markdown plan changes.
   identifiers, etc.) reads from the structured plan's extracted inputs
 
 When the structured sidecar is missing, stale, or unreadable,
-`/sdp inspect-skill` falls back to parsing `latest_skill_plan.md`
-directly so the explicit command still works. Validation still blocks
-before inspector execution in both paths, and inspector execution
-remains strictly read-only.
+`/sdp inspect-skill` first attempts a local sidecar refresh from
+`latest_skill_plan.md` and reloads `latest_skill_plan.json`:
+
+- the refresh runs locally only
+- the refresh does not call the model
+- the refresh does not contact ServiceDesk, Active Directory, or
+  Exchange
+- the refresh does not run any inspectors
+
+If the reload now produces a usable structured plan,
+`/sdp inspect-skill` continues on the structured path. If the
+structured sidecar still cannot be used (for example, the Markdown is
+unparseable), `/sdp inspect-skill` falls back to parsing
+`latest_skill_plan.md` directly so the explicit command still works.
+Validation still blocks before inspector execution in both paths, and
+inspector execution remains strictly read-only.
 
 `/sdp status <id>` and `/sdp work <id>` treat sidecars as untrusted
 when `latest_skill_plan.md` is newer. In that case `/sdp work <id>`

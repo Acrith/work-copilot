@@ -313,13 +313,24 @@ the next safe step.
 `/sdp inspect-skill <id>` prefers a fresh, readable
 `latest_skill_plan.json` for validation, inspector selection, and
 inspector request building. When the structured sidecar is missing,
-stale, or unreadable, `/sdp inspect-skill` falls back to parsing
+stale, or unreadable, `/sdp inspect-skill` first attempts a local
+sidecar refresh from `latest_skill_plan.md` and reloads
+`latest_skill_plan.json`:
+
+- the refresh runs locally only
+- the refresh does not call the model
+- the refresh does not contact ServiceDesk, Active Directory, or
+  Exchange
+- the refresh does not run any inspectors
+
+If the reload now produces a usable structured plan,
+`/sdp inspect-skill` continues on the structured path. If the
+structured sidecar still cannot be used (for example, the Markdown is
+unparseable), `/sdp inspect-skill` falls back to parsing
 `latest_skill_plan.md` directly so the explicit command still works.
 
-In both cases, validation runs before any inspector executes, and
-inspector execution remains read-only. The guided `/sdp work` flow
-prefers to refresh sidecars first so structured data drives inspection,
-but the explicit `/sdp inspect-skill` fallback is unchanged.
+In both paths, validation runs before any inspector executes, and
+inspector execution remains read-only.
 
 ## Textual mode status
 
