@@ -73,6 +73,7 @@ from interactive_session import (
 from permissions import PermissionContext
 from providers.base import Provider
 from servicedesk_draft_note_validation import (
+    build_post_save_draft_note_validation_callback,
     draft_note_findings_have_errors,
     format_draft_note_validation_findings,
     validate_servicedesk_draft_note_text,
@@ -1265,6 +1266,12 @@ class WorkCopilotTextualApp(App):
                 note_prompt,
                 save_output_path=str(note_path),
                 save_latest_path=str(note_path),
+                post_save_callback=(
+                    build_post_save_draft_note_validation_callback(
+                        workspace=self.config.workspace,
+                        request_id=request_id,
+                    )
+                ),
             )
             return
 
