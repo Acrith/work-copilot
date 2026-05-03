@@ -19,6 +19,7 @@ from pathlib import Path
 from draft_exports import (
     build_servicedesk_draft_note_path,
     build_servicedesk_latest_context_path,
+    build_servicedesk_latest_skill_plan_json_path,
     build_servicedesk_latest_skill_plan_path,
     build_servicedesk_latest_skill_plan_validation_path,
 )
@@ -65,6 +66,26 @@ class ServiceDeskWorkflowValidationFinding:
 
 
 @dataclass(frozen=True)
+class ServiceDeskSkillPlanSummary:
+    """Read-only display summary of `latest_skill_plan.json`.
+
+    Display-only in this PR. Workflow stage/next-action decisions still
+    use existing artifact checks and `latest_skill_plan_validation.json`.
+    """
+
+    exists: bool = False
+    readable: bool = False
+    schema_version: int | None = None
+    skill_match: str | None = None
+    capability_classification: str | None = None
+    ready_for_inspection: str | None = None
+    ready_for_execution: str | None = None
+    suggested_inspector_tools: list[str] = field(default_factory=list)
+    suggested_execute_tools: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class ServiceDeskWorkflowState:
     request_id: str
     context_exists: bool = False
@@ -77,6 +98,9 @@ class ServiceDeskWorkflowState:
     inspector_outputs_exist: bool = False
     inspection_report_exists: bool = False
     draft_note_exists: bool = False
+    skill_plan_summary: ServiceDeskSkillPlanSummary = field(
+        default_factory=ServiceDeskSkillPlanSummary
+    )
     stage: ServiceDeskWorkflowStage = ServiceDeskWorkflowStage.UNKNOWN
     next_action: ServiceDeskWorkflowNextAction = (
         ServiceDeskWorkflowNextAction.NONE
@@ -131,6 +155,11 @@ def read_servicedesk_workflow_state(
     inspection_report_exists = inspection_report_path.exists()
     draft_note_exists = draft_note_path.exists()
 
+    skill_plan_json_path = build_servicedesk_latest_skill_plan_json_path(
+        workspace=workspace, request_id=request_id
+    )
+    skill_plan_summary = _read_skill_plan_json_summary(skill_plan_json_path)
+
     stage, next_action, blocked, blocker = _decide_stage_and_next_action(
         context_exists=context_exists,
         skill_plan_exists=skill_plan_exists,
@@ -152,6 +181,7 @@ def read_servicedesk_workflow_state(
         inspector_outputs_exist=inspector_outputs_exist,
         inspection_report_exists=inspection_report_exists,
         draft_note_exists=draft_note_exists,
+        skill_plan_summary=skill_plan_summary,
         stage=stage,
         next_action=next_action,
         blocked=blocked,
@@ -168,6 +198,7 @@ def read_servicedesk_workflow_state(
         inspector_outputs_exist=inspector_outputs_exist,
         inspection_report_exists=inspection_report_exists,
         draft_note_exists=draft_note_exists,
+        skill_plan_summary=skill_plan_summary,
         stage=stage,
         next_action=next_action,
         blocked=blocked,
@@ -235,6 +266,110 @@ def _read_validation_sidecar(
         has_errors = any(finding.severity == "error" for finding in findings)
 
     return has_errors, findings
+
+
+_SKILL_MATCH_KEYS = ("skill_match", "Skill match")
+_CAPABILITY_CLASSIFICATION_KEYS = (
+    "capability_classification",
+    "Capability classification",
+)
+
+
+def _read_skill_plan_json_summary(path: Path) -> ServiceDeskSkillPlanSummary:
+    """Read `latest_skill_plan.json` for display only. Never raises.
+
+    Missing → exists/readable false. Malformed/unreadable → exists true,
+    readable false, error populated. This summary is display-only and is
+    not used to decide workflow stage or next action in this PR.
+    """
+    if not path.exists():
+        return ServiceDeskSkillPlanSummary()
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001 - state read must not raise
+        return ServiceDeskSkillPlanSummary(
+            exists=True,
+            readable=False,
+            error=f"Local skill plan JSON sidecar could not be read: {exc}",
+        )
+
+    if not isinstance(payload, dict):
+        return ServiceDeskSkillPlanSummary(
+            exists=True,
+            readable=False,
+            error="Local skill plan JSON sidecar is not a JSON object.",
+        )
+
+    schema_version_raw = payload.get("schema_version")
+    schema_version = (
+        schema_version_raw if isinstance(schema_version_raw, int) else None
+    )
+
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    skill_match = _lookup_metadata_value(metadata, _SKILL_MATCH_KEYS)
+    capability_classification = _lookup_metadata_value(
+        metadata, _CAPABILITY_CLASSIFICATION_KEYS
+    )
+
+    handoff = payload.get("automation_handoff")
+    if not isinstance(handoff, dict):
+        handoff = {}
+
+    return ServiceDeskSkillPlanSummary(
+        exists=True,
+        readable=True,
+        schema_version=schema_version,
+        skill_match=skill_match,
+        capability_classification=capability_classification,
+        ready_for_inspection=_optional_str_value(
+            handoff.get("ready_for_inspection")
+        ),
+        ready_for_execution=_optional_str_value(
+            handoff.get("ready_for_execution")
+        ),
+        suggested_inspector_tools=_string_list(
+            handoff.get("suggested_inspector_tools")
+        ),
+        suggested_execute_tools=_string_list(
+            handoff.get("suggested_execute_tools")
+        ),
+        error=None,
+    )
+
+
+def _lookup_metadata_value(
+    metadata: dict, keys: tuple[str, ...]
+) -> str | None:
+    for key in keys:
+        if key in metadata:
+            return _optional_str_value(metadata[key])
+    return None
+
+
+def _optional_str_value(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    return None
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            cleaned = item.strip()
+            if cleaned:
+                items.append(cleaned)
+    return items
 
 
 def _any_supported_inspector_output_exists(
@@ -428,6 +563,7 @@ def _format_status_lines(
     inspector_outputs_exist: bool,
     inspection_report_exists: bool,
     draft_note_exists: bool,
+    skill_plan_summary: ServiceDeskSkillPlanSummary,
     stage: ServiceDeskWorkflowStage,
     next_action: ServiceDeskWorkflowNextAction,
     blocked: bool,
@@ -458,12 +594,61 @@ def _format_status_lines(
         f"- inspector outputs: {_yes_no(inspector_outputs_exist)}",
         f"- inspection report: {_yes_no(inspection_report_exists)}",
         f"- draft note: {_yes_no(draft_note_exists)}",
-        f"- stage: {stage.value}",
-        f"- next action: {next_action.value}",
-        f"- blocked: {_yes_no(blocked)}",
     ]
+
+    lines.extend(_format_skill_plan_summary_lines(skill_plan_summary))
+
+    lines.extend(
+        [
+            f"- stage: {stage.value}",
+            f"- next action: {next_action.value}",
+            f"- blocked: {_yes_no(blocked)}",
+        ]
+    )
 
     if blocker:
         lines.append(f"- blocker: {blocker}")
 
     return lines
+
+
+def _format_skill_plan_summary_lines(
+    summary: ServiceDeskSkillPlanSummary,
+) -> list[str]:
+    if not summary.exists:
+        return ["- structured skill plan: no"]
+
+    if not summary.readable:
+        message = summary.error or "unknown error"
+        return [f"- structured skill plan: yes (unreadable: {message})"]
+
+    return [
+        "- structured skill plan: yes",
+        f"- skill match: {summary.skill_match or 'unknown'}",
+        (
+            "- capability classification: "
+            f"{summary.capability_classification or 'unknown'}"
+        ),
+        (
+            "- ready for inspection: "
+            f"{summary.ready_for_inspection or 'unknown'}"
+        ),
+        (
+            "- ready for execution: "
+            f"{summary.ready_for_execution or 'unknown'}"
+        ),
+        (
+            "- suggested inspectors: "
+            f"{_format_tool_list(summary.suggested_inspector_tools)}"
+        ),
+        (
+            "- suggested execute tools: "
+            f"{_format_tool_list(summary.suggested_execute_tools)}"
+        ),
+    ]
+
+
+def _format_tool_list(tools: list[str]) -> str:
+    if not tools:
+        return "none"
+    return ", ".join(tools)
