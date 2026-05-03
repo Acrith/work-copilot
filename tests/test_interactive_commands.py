@@ -1523,7 +1523,17 @@ def test_textual_app_sdp_work_branch_is_state_driven_and_save_safe():
     assert "read_servicedesk_workflow_state(" in branch
     assert "workspace=self.config.workspace" in branch
     assert "request_id=request_id," in branch
-    assert "ServiceDesk workflow state:" in branch
+
+    # Single clear header is printed up front; the duplicate
+    # "ServiceDesk workflow state for request <id>" title from the
+    # status_lines list is skipped.
+    assert "ServiceDesk work for request " in branch
+    assert "duplicate_title = (" in branch
+    assert (
+        'f"ServiceDesk workflow state for request {request_id}"' in branch
+    )
+    assert "if line == duplicate_title:" in branch
+    assert "continue" in branch
 
     # Branches explicitly on review/save/none so it never auto-dispatches
     # the underlying save-note worker.
@@ -1532,13 +1542,20 @@ def test_textual_app_sdp_work_branch_is_state_driven_and_save_safe():
     assert "ServiceDeskWorkflowNextAction.NONE" in branch
 
     # The save-note branch never invokes the approval-gated worker and
-    # tells the user to review-and-save manually.
+    # tells the user to review-and-save manually with the exact
+    # `/sdp save-note <id>` line.
     assert "_save_servicedesk_note_worker(" not in branch
     assert "servicedesk_add_request_note" not in branch
-    assert (
-        "Draft note appears ready. Review it, then run " in branch
-    )
+    assert "Draft note is ready. Review it, then run " in branch
+    assert "`/sdp save-note {request_id}` if approved." in branch
     assert "if approved." in branch
+
+    # Review-only short-circuit also points at the manual save command.
+    assert "Draft note is ready for review. Review the local " in branch
+
+    # NONE short-circuit points at /sdp status, no dispatch.
+    assert "No next workflow action is available." in branch
+    assert "`/sdp status {request_id}` for details." in branch
 
     # /sdp work must not directly call any write helper or invent an
     # inspector run; it must delegate via _submit_prompt so existing
@@ -1551,9 +1568,21 @@ def test_textual_app_sdp_work_branch_is_state_driven_and_save_safe():
     assert "_run_model_turn_worker(" not in branch
 
     # Single-step dispatch: synthesize a single /sdp <command> <id> line
-    # via the workflow-state mapping helper and re-enter _submit_prompt
-    # exactly once.
+    # via the workflow-state mapping helper, log the new "Next safe
+    # step:" / "Running:" / "run `/sdp work <id>` again to continue."
+    # lines, and re-enter _submit_prompt exactly once.
     assert "suggested_next_command_for_next_action(" in branch
-    assert "Advancing one step: " in branch
+    assert "Next safe step: " in branch
+    assert "Running: " in branch
+    assert (
+        "After this step completes, run " in branch
+        and "`/sdp work {request_id}` again to continue." in branch
+    )
     assert "self._submit_prompt(suggested_command)" in branch
     assert branch.count("self._submit_prompt(") == 1
+
+    # Old wording must not appear anywhere in the branch.
+    assert "Advancing one step: " not in branch
+    assert "Dispatching: " not in branch
+    assert "Draft note appears ready" not in branch
+    assert '_log_system_message("ServiceDesk workflow state:")' not in branch

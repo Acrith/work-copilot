@@ -1272,6 +1272,9 @@ class WorkCopilotTextualApp(App):
                 return
 
             self._log_user_message(user_prompt)
+            self._log_system_message(
+                f"ServiceDesk work for request {request_id}"
+            )
 
             try:
                 state = read_servicedesk_workflow_state(
@@ -1284,8 +1287,15 @@ class WorkCopilotTextualApp(App):
                 )
                 return
 
-            self._log_system_message("ServiceDesk workflow state:")
+            # Skip the duplicate "ServiceDesk workflow state for request <id>"
+            # title line that read_servicedesk_workflow_state generates so the
+            # output has a single clear header.
+            duplicate_title = (
+                f"ServiceDesk workflow state for request {request_id}"
+            )
             for line in state.status_lines:
+                if line == duplicate_title:
+                    continue
                 self._log_system_message(line)
 
             next_action = state.next_action
@@ -1293,22 +1303,22 @@ class WorkCopilotTextualApp(App):
             # /sdp work must never auto-save an internal note.
             if next_action == ServiceDeskWorkflowNextAction.SAVE_NOTE:
                 self._log_system_message(
-                    "Draft note appears ready. Review it, then run "
+                    "Draft note is ready. Review it, then run "
                     f"`/sdp save-note {request_id}` if approved."
                 )
                 return
 
             if next_action == ServiceDeskWorkflowNextAction.REVIEW_DRAFT_NOTE:
                 self._log_system_message(
-                    "Draft note is awaiting human review. Open the draft "
-                    "note locally before deciding to run "
-                    f"`/sdp save-note {request_id}`."
+                    "Draft note is ready for review. Review the local "
+                    f"draft, then run `/sdp save-note {request_id}` if "
+                    "approved."
                 )
                 return
 
             if next_action == ServiceDeskWorkflowNextAction.NONE:
                 self._log_system_message(
-                    "No next action is available for this ticket. Run "
+                    "No next workflow action is available. Run "
                     f"`/sdp status {request_id}` for details."
                 )
                 return
@@ -1327,10 +1337,14 @@ class WorkCopilotTextualApp(App):
                 return
 
             self._log_system_message(
-                f"Advancing one step: {next_action.value}"
+                f"Next safe step: {next_action.value}"
             )
             self._log_system_message(
-                f"Dispatching: {suggested_command}"
+                f"Running: {suggested_command}"
+            )
+            self._log_system_message(
+                "After this step completes, run "
+                f"`/sdp work {request_id}` again to continue."
             )
 
             # Re-dispatch through the existing command handler so the
