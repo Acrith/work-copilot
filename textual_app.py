@@ -1385,10 +1385,14 @@ class WorkCopilotTextualApp(App):
             duplicate_title = (
                 f"ServiceDesk workflow state for request {request_id}"
             )
-            for line in state.status_lines:
-                if line == duplicate_title:
-                    continue
-                self._log_system_message(line)
+
+            def _log_status_lines(status_lines):
+                for line in status_lines:
+                    if line == duplicate_title:
+                        continue
+                    self._log_system_message(line)
+
+            _log_status_lines(state.status_lines)
 
             next_action = state.next_action
 
@@ -1434,9 +1438,28 @@ class WorkCopilotTextualApp(App):
                 )
                 for line in refresh_lines:
                     self._log_system_message(line)
+
+                # Refresh ran synchronously, so re-read local workflow
+                # state and show the operator what changed and what
+                # the next action is now.
+                try:
+                    refreshed_state = read_servicedesk_workflow_state(
+                        workspace=self.config.workspace,
+                        request_id=request_id,
+                    )
+                except Exception as exc:
+                    self._log_system_message(
+                        "Could not re-read local ServiceDesk workflow "
+                        f"state after refresh: {exc}"
+                    )
+                else:
+                    self._log_system_message(
+                        "Updated ServiceDesk workflow state:"
+                    )
+                    _log_status_lines(refreshed_state.status_lines)
+
                 self._log_system_message(
-                    "After this step completes, run "
-                    f"`/sdp work {request_id}` again to continue."
+                    f"Run `/sdp work {request_id}` again to continue."
                 )
                 return
 
@@ -1461,7 +1484,8 @@ class WorkCopilotTextualApp(App):
             )
             self._log_system_message(
                 "After this step completes, run "
-                f"`/sdp work {request_id}` again to continue."
+                f"`/sdp status {request_id}` to see the updated state "
+                f"or `/sdp work {request_id}` again to continue."
             )
 
             # Re-dispatch through the existing command handler so the
